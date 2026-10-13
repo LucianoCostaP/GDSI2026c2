@@ -1,10 +1,11 @@
 # Feature Specification: View Explanation of How the Ranking Works
 
 **Feature Branch**: `hu-13-ranking-explanation`
-**Created**: 2026-10-11
+**Created**: 2026-10-11 | **Revised**: 2026-10-12 (v2)
 **Status**: Draft
 **Backlog Reference**: HU-13 (Estimate: 1, Priority: Media, MVP: Yes)
-**Input**: User description: "As a Socio of the club, I want to consult an explanation of how the ranking and scoring system works, so that I understand which criteria determine my priority for ticket purchase access."
+**Shared rules**: [scoring model](../_shared/scoring-model.md), [cross-cutting](../_shared/cross-cutting.md)
+**Input**: "As a Socio of the club, I want to consult an explanation of how the ranking and scoring system works, so that I understand which criteria determine my priority for ticket purchase access."
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -12,43 +13,53 @@
 
 As a Socio of the club, I want to consult an explanation of how the ranking and scoring system works, so that I understand which criteria determine my priority for ticket purchase access.
 
-**Why this priority**: Transparency about the rules builds trust in the ranking and reduces questions to the club.
+**Why this priority**: Transparency about the rules builds trust in the ranking.
 
-**Independent Test**: Log in as a Socio, open the explanation section and verify it describes the current scoring rules in simple language and cannot be edited.
+**Independent Test**: Log in as a Socio, open the explanation, change a weight as Dirigente (HU-28) and verify the explanation shows the new values.
 
 **Acceptance Scenarios**:
 
-1. **Given** a logged-in Socio, **When** they open the ranking explanation section, **Then** a plain-language explanation of how the score is calculated is shown.
+1. **Given** a logged-in Socio, **When** they open the ranking explanation, **Then** a plain-language explanation of the three pillars (asistencia, participación institucional, antigüedad y edad), the new-member bonus and the 0–100 scale is shown, with the **current weights** of the rules in force.
 2. **Given** the explanation screen, **When** the Socio interacts with it, **Then** it is read-only.
-3. **Given** the scoring rules in force changed, **When** the Socio opens the explanation, **Then** it reflects the rules currently in force.
-4. **Given** two different Socios, **When** they open the section, **Then** both see the same general explanation, with no per-profile personalization.
+3. **Given** the rules in force changed (HU-28), **When** the Socio opens the explanation, **Then** it reflects the rules currently in force.
+4. **Given** two different Socios, **When** they open the section, **Then** both see the same explanation, with no personalization.
+5. **Given** the rules in force differ from the rules used by the latest ranking, **When** the Socio opens the explanation, **Then** a notice says the ranking will reflect them after the next calculation.
+6. **Given** the explanation, **When** it describes attendance, **Then** it states that matches of lower demand weigh more and that tiebreaks use seniority, then age, then document number.
 
 ---
 
 ### Edge Cases
 
-- **Rule changes**: the content shown MUST never describe rules that are no longer in force.
+- **Rule changes**: the content MUST never describe rules that are no longer in force.
+- **Tiebreak wording**: stated generally, without exposing other Socios' data.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: System MUST provide a section, accessible from the system, that explains in simple language how the score is calculated.
-- **FR-002**: System MUST present it as read-only to the Socio.
-- **FR-003**: System MUST keep the explanation consistent with the scoring rules currently in force.
-- **FR-004**: System MUST show the same general explanation to all Socios.
+- **FR-001**: System MUST provide a section that explains in simple language how the score is calculated.
+- **FR-002**: System MUST present it as read-only.
+- **FR-003**: System MUST generate the explanation from the rules version in force (weights and parameters), so it cannot drift from the rules.
+- **FR-004**: System MUST show the same explanation to all Socios.
+- **FR-005**: System MUST show the notice of scenario 5 when applicable.
 
 ### Key Entities
 
-- **RankingExplanation**: explanatory content tied to the scoring rules version in force.
+- **RankingExplanation**: static template text plus the values of the rules version in force.
 
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes
 
-- **SC-001**: 100% of Socios see the same explanation.
-- **SC-002**: The explanation matches the rules in force after every rules change (HU-28).
+- **SC-001**: 100% of Socios see the same explanation for the same rules version.
+- **SC-002**: After every rules change the explanation shows the new values with no manual edit.
 
 ## Assumptions
 
-- How the explanation text is kept in sync with the rules (manual copy vs. generated from the rules) is not defined in the backlog and is decided at planning.
+- Decided: the text is a template filled from the rules version in force (this closes the open question about keeping it in sync).
+- Copy is reviewed by the club for plain language.
+
+## Revision Notes (v2)
+
+- Content is now defined by the scoring model and generated from the rules in force.
+- Added the notice for rules in force versus the latest ranking.
