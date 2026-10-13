@@ -15,7 +15,8 @@ Rules that apply to every spec. Individual specs reference this file instead of 
 | Activate account by DNI / member number (HU-01) | Yes | No | No |
 | Log in (HU-05 / HU-06) | HU-05 | HU-06 | HU-06 |
 | Create / activate management accounts (HU-07 / HU-08) | No | No | Create: Yes. Activate: invitee |
-| Load events, publish, attendance, participation (HU-21, 22, 24, N1) | No | No | Yes |
+| Import events, publish, load attendance and activities (HU-21, 22, 24) | No | No | Yes |
+| Refresh, reprogram, withdraw and restore events (HU-23) | No | No | Yes |
 | Run ranking calculation (HU-25) | No | No | Yes |
 | Segmentation and schedule (HU-36, HU-37) | No | No | Yes |
 | Adjust scoring parameters (HU-28) | No | Yes | No |
@@ -38,7 +39,7 @@ Rules that apply to every spec. Individual specs reference this file instead of 
 | Lock after repeated failures | 15 minutes per identifier |
 | Lookup rate limit (HU-01, HU-05, HU-06) | 10 requests/minute per IP and 5 per identifier per hour |
 | Session | idle timeout 30 minutes, absolute 12 hours, server-side revocation on logout |
-| Management invitation | single-use token, valid 72 hours |
+| Management invitation | single-use token, valid 48 hours; after that a new invitation must be created |
 | Code delivery target | 95% of emails delivered in under 30 seconds |
 
 - Responses never include personal data other than what the user typed.
@@ -48,10 +49,10 @@ Rules that apply to every spec. Individual specs reference this file instead of 
 
 | Entity | States |
 |---|---|
-| Event | `pending importance definition` → `published`; `historical` (past event loaded for scoring history, never published) |
+| Event | `pending importance definition` → `published`; `historical` (past event imported for scoring history, never published); `discarded` (pending event the club no longer lists); `withdrawn` (published event that will not take place, restorable while its start has not passed) |
 | Socio account | `not activated`, `activated` |
 | Management account | `pending activation`, `active` |
-| Invitation | `valid`, `used`, `expired`, `replaced`, `revoked` |
+| Invitation | `valid`, `used`, `expired`, `replaced` |
 | Ranking | `running`, `completed`, `failed` |
 
 ## 5. Scoring consistency rules
@@ -64,8 +65,9 @@ Rules that apply to every spec. Individual specs reference this file instead of 
 
 | Area | Target |
 |---|---|
-| Ranking calculation (HU-25) | completes in under 15 minutes for the expected volume N_max [NEEDS CLARIFICATION: N_max; HU-14 uses 5,000 as an example], without blocking other screens |
-| Rules-change simulation (HU-29) | result in under 3 seconds (95th percentile) for N_max |
+| Ranking calculation (HU-25) | completes in under 15 minutes for up to 500,000 Socios, without blocking other screens |
+| Rules-change simulation (HU-29) | result in under 3 seconds (95th percentile) up to 50,000 Socios and under 10 seconds up to 500,000 |
+| Volume | up to 500,000 Socios, typically far fewer. Admin lists are paginated. Wave membership is derived from ranking positions, never copied per Socio |
 | Read-only Socio screens | response under 2 seconds (95th percentile) |
 | Accessibility | WCAG 2.1 AA: high contrast, large touch targets, keyboard navigation, readable at 200% zoom |
 | Audit | every change of events, rules, accounts, attendance loads and ranking runs records who, when and the previous and new values |
@@ -74,18 +76,22 @@ Rules that apply to every spec. Individual specs reference this file instead of 
 ## 7. Bootstrap (technical tasks, not stories)
 
 - Seed the first Administrador account.
+- Configure the credentials of the club API (HU-N2) as a secret.
 - Seed rules version 1 with the defaults in `scoring-model.md`.
-- Seed settings: default event class, season start date, maximum number of waves, minimum wave step, synchronization staleness limit.
+- Seed settings: default event class, default institutional event points, season start date, wave percentile step, minimum wave step, minimum publication lead, synchronization staleness limit.
 - Deliver the application shell with the global navigation menu that HU-11 relies on, and the Socio and management home screens.
 
 ## 8. Settings registry
 
 | Setting | Default | Used by |
 |---|---|---|
-| Default event class when not defined in 24 h | Clase B | HU-22 |
+| Default class for Partido events when not defined in time | Clase B | HU-22 |
+| Default points for institutional/amateur events when not defined in time | 20 | HU-22 |
 | Season start date | none (must be configured) | HU-28 |
-| Maximum number of waves | 10 | HU-36 |
+| Wave percentile step | 20 (waves at 20%, 40%, 60%, 80%, 100%); must divide 100 | HU-36 |
+| Minimum publication lead | 48 hours before the event start | HU-21, HU-22 |
+| Window to adjust class or points after a reprogramming | 24 hours | HU-23 |
 | Minimum minutes between wave openings | 5 | HU-37 |
-| Row error tolerance in file loads | 5% | HU-24, HU-N1 |
+| Row error tolerance in file loads | 5% | HU-24 |
 | Data staleness limit | 24 hours | HU-25, HU-36 |
 | Code, session and invitation values | section 3 | HU-01, 05, 06, 07, 08, 11 |

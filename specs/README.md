@@ -1,20 +1,20 @@
-# MVP Specs Index (v2)
+# MVP Specs Index (v3)
 
-20 specs for the MVP user stories plus 2 new stories required by the scoring model, and 3 shared documents. Backlog estimates are kept; stories whose scope grew are flagged for re-estimation.
+22 specs: the 20 MVP stories, HU-23 in a minimal version, and 1 new story required by the scoring model (HU-N2), plus 3 shared documents. Backlog estimates are kept; stories whose scope grew are flagged for re-estimation. v3 applies the product owner's answers to the open questions.
 
 ## Shared documents
 
 | Document | Purpose |
 |---|---|
-| [Scoring model v1](_shared/scoring-model.md) | The base formula, parameters with defaults and limits, calculation rules, worked example |
-| [Data contract](_shared/data-contract.md) | Socio, event, attendance and participation data and file formats |
+| [Scoring model v1](_shared/scoring-model.md) | The base formula, parameters with defaults and confirmed limits, calculation rules, worked example |
+| [Data contract](_shared/data-contract.md) | Socio, event, attendance and participation data and formats |
 | [Cross-cutting rules](_shared/cross-cutting.md) | Time zone, permissions matrix, authentication parameters, state names, non-functional targets, bootstrap tasks, settings |
 
 ## Stories
 
 | HU | Spec | Est. | Priority | Re-estimate |
 |----|------|------|----------|-------------|
-| HU-01 | [Identity Verification and Activation](hu-01-identity-verification/spec.md) | 3 | Alta | Yes (email-code step added) |
+| HU-01 | [Identity Verification and Activation](hu-01-identity-verification/spec.md) | 3 | Alta | Yes (email-code step) |
 | HU-05 | [Socio Login and Initial Screen](hu-05-socio-login/spec.md) | 1 | Alta | Yes (initial screen, code and session base) |
 | HU-06 | [Dirigente / Administrador Login](hu-06-dirigente-admin-login/spec.md) | 1 | Alta | |
 | HU-07 | [Create Management Account](hu-07-management-account-creation/spec.md) | 3 | Alta | |
@@ -24,58 +24,74 @@
 | HU-14 | [Current Score and Position](hu-14-current-score-and-position/spec.md) | 3 | Alta | |
 | HU-16 | [Score Breakdown](hu-16-score-breakdown/spec.md) | 3 | Media | |
 | HU-17 | [Upcoming Events](hu-17-upcoming-events/spec.md) | 3 | Alta | |
-| HU-18 | [Attendance Score Simulator](hu-18-attendance-score-simulator/spec.md) | 8 | Media | |
-| HU-21 | [Event Base Information](hu-21-event-base-information/spec.md) | 3 | Alta | Yes (capacity, historical load, edit while pending) |
+| HU-18 | [Attendance Score Simulator](hu-18-attendance-score-simulator/spec.md) | 8 | Media | Yes (two event types, estimated position) |
+| HU-21 | [Import Event Base Information from the Club API](hu-21-event-base-information/spec.md) | 3 | Alta | Yes (API import, refresh, discard, historical import) |
 | HU-22 | [Event Class and Publication](hu-22-event-importance-and-publication/spec.md) | 5 | Alta | |
-| HU-24 | [Attendance by File](hu-24-attendance-file-upload/spec.md) | 5 | Alta | |
-| HU-25 | [Ranking Calculation](hu-25-ranking-calculation/spec.md) | 8 | Alta | Yes (full model and snapshot) |
+| HU-23 | [Event Reprogramming and Withdrawal](hu-23-event-reprogramming/spec.md) (minimal version, proposed for the MVP) | 5 in backlog; review | Alta (proposed) | New in the MVP |
+| HU-24 | [Attendance and Recurring Activities from the Club API](hu-24-attendance-load/spec.md) | 5 | Alta | Yes (activities, API client, file fallback) |
+| HU-25 | [Ranking Calculation](hu-25-ranking-calculation/spec.md) | 8 | Alta | Yes (full model, two event types, 500,000 Socios) |
 | HU-28 | [Adjust Scoring Parameters](hu-28-scoring-weights-adjustment/spec.md) | 5 | Media | Yes (11 parameters) |
 | HU-29 | [Rules Change Simulation](hu-29-rules-change-impact-simulation/spec.md) | 8 | Media | |
-| HU-36 | [Wave Segmentation](hu-36-wave-segmentation/spec.md) | 8 | Alta | |
+| HU-36 | [Wave Segmentation](hu-36-wave-segmentation/spec.md) | 8 | Alta | Probably lower (fixed percentile bands) |
 | HU-37 | [Wave Schedule](hu-37-wave-schedule-generation/spec.md) | 3 | Alta | |
 | HU-39 | [Own Slot](hu-39-own-reservation-slot/spec.md) | 2 | Alta | |
-| HU-N1 | [Institutional Participation Load](hu-n1-institutional-participation-load/spec.md) (new) | TBD | Alta | New |
-| HU-N2 | [Club Data Sync](hu-n2-club-data-sync/spec.md) (new) | TBD | Alta | New |
+| HU-N2 | [Club Data Sync (API)](hu-n2-club-data-sync/spec.md) (new) | TBD | Alta | New |
 
 ## Decisions adopted
 
-1. The base formula is the Scoring Model v1 and is complete.
-2. The total score is capped at 100 after adding the new-member bonus; a "cap adjustment" component keeps the breakdown equal to the total.
-3. `dsat` is the **inflection point** of the Gompertz curve (36.8% at `dsat`, about 95% at 1.68 × `dsat`). The "ceiling for 95–100%" wording in the parameter matrix must be corrected.
-4. The parameters editable by the Dirigente are the ones in the parameter matrix (pillar weights, αA, dsat, Pinst_max, αT, Tref, Eref, γ, Bmax, Tmax, tcarencia). Event class factors and institutional point values are constants.
-5. The institutional participation pillar is in the MVP, which adds HU-N1.
+1. The base formula is the Scoring Model v1 and is complete. The total is capped at 100 after the new-member bonus; a "cap adjustment" component keeps the breakdown equal to the total.
+2. `dsat` is the **inflection point** of the Gompertz curve (36.8% at `dsat`, about 95% at 1.68 × `dsat`).
+3. The parameters editable by the Dirigente are the ones in the parameter matrix, with the proposed limits, now confirmed.
+4. The institutional participation pillar is in the MVP.
+5. Activation of a Socio finishes with the code sent by email (HU-01).
+6. Overdue fees do not block login.
+7. Only Socios with fees up to date appear in the ranking. Their history is kept, and a Socio who pays up returns with their accumulated record.
+8. The ranking takes effect when the calculation completes, with no separate confirm step.
+9. **Waves are percentile bands** in steps of 20: 20%, 40%, 60%, 80%, 100% (wave 1 is the best ranked). Capacity is not used.
+10. **Two event types**: Partido (attendance pillar, needs a class, has waves) and Evento institucional/amateur (institutional pillar, no class, no waves). Elections and assemblies are institutional events. Events held outside the stadium are institutional/amateur.
+11. **Minimum publication lead: 48 hours** before the event start. Automatic publication happens at the earlier of 24 hours after loading and 48 hours before the start.
+12. Attendance at events comes from the **club API** in HU-24, like the Socio data of HU-N2. A CSV file with the same data is the fallback (`dni`, optional `numero_socio` and `fecha_evento`).
+13. The attendance simulator (HU-18) shows an estimated position, clearly labeled as an estimate that holds the other Socios constant.
+14. The club data comes from an **API** (HU-N2).
+15. Maximum volume: **500,000 Socios** (typically far fewer).
+16. Management invitations expire after **48 hours** and must then be created again. There is no manual revocation.
+17. **The points of an institutional event are defined by whoever publishes it** (a whole number from 1 to 100), elections and assemblies included, and are fixed once published.
+18. **Recurring activities** (federated sport, subcommissions) are loaded in HU-24 together with event attendance, from the club API, with a file fallback and one shared validation mechanism. They are the only participation records; elections and assemblies are events. The club API (HU-N2) provides Socio data.
+19. **Events come from the club API** (HU-21): the club organizes them. The Administrador adjusts only the class of a Partido or the points of an institutional event when publishing (HU-22). The club event reference identifies the event for attendance requests (HU-24).
+20. **A minimal HU-23 enters the MVP**: reprogramming is a refresh from the club API (the club is the source of truth), with a 24-hour window to adjust class or points, plus the withdrawal (and restoration) of a published event that will not take place. Email notifications stay out.
+21. Confirmed readings: wave 1 is the best 20% of the ranking; the 48-hour lead is the minimum time between publication and the event start; without revocation a mistyped invitation email stays valid up to 48 hours (double entry is the mitigation).
 
 ## Defaults set by this revision (change them in one place)
 
-Event importance = class A/B/C with default class B; ranking population = Socios with fees up to date; attendance window = previous calendar year plus current year to date; rounding to two decimals; wave count rule with a maximum of 10; code, session and invitation parameters; time zone Buenos Aires; row-error tolerance of 5%; 24-hour minimum lead time for upcoming events; revoke of pending invitations.
+Default class B for Partidos not classified in time and 20 default points for institutional events without points when the automatic publication runs; row-error tolerance of 5%; code, session and lockout parameters; time zone Buenos Aires; attendance window of previous calendar year plus current year to date; rounding to two decimals; minimum 5 minutes between wave openings; HU-29 target of under 3 seconds up to 50,000 Socios and under 10 seconds up to 500,000.
 
-## Open questions ([NEEDS CLARIFICATION] markers: 16 in the files, grouped here in 14 questions)
+## Open items
 
-1. Confirm the proposed limits of each parameter (scoring model, section 4).
-2. Is the "next verification step" in HU-01 the email code?
-3. Do overdue fees block login (HU-05)? Current default: no.
-4. Confirm the ranking population (fees up to date).
-5. Confirm that the ranking takes effect at completion, with no separate confirm step (HU-25).
-6. Confirm the wave count rule and the maximum number of waves (HU-36).
-7. Confirm the event type catalog and the 24-hour minimum lead time (HU-21).
-8. Confirm the attendance file format and the 5% tolerance (HU-24, HU-N1).
-9. Should HU-18 also project the new position?
-10. Events held at venues other than the club stadium (distance model).
-11. Mode of the club data source: API or snapshot file (HU-N2).
-12. Expected maximum number of Socios (N_max) for the performance targets.
-13. Revoking a pending invitation (HU-07), not in the backlog.
-14. Format of institutional participation exports (HU-N1).
+None.
+
+## Interpretations to confirm (not blocking)
+
+- Attendance at elections and assemblies is loaded like any other event attendance (HU-24).
+- When nobody defines the points of an institutional event before the automatic publication, a default applies (a system setting, proposed 20).
+- The points of an institutional event are limited to a whole number from 1 to 100, matching the maximum of the participation cap.
+- The performance targets for 500,000 Socios (HU-25 under 15 minutes, HU-29 under 10 seconds) are proposals to validate with a load test.
+- The club API supports pagination and filtering by modification date, and the target for the first full load (under one hour) depends on it.
 
 ## Backlog and plan changes required
 
-- Add HU-N1 and HU-N2 to the backlog and the plan.
-- Rename "importance" in the backlog language to "category (class A/B/C)", and state that a higher factor means lower demand.
+- Add HU-N2 to the backlog and the plan, before HU-25.
+- Extend HU-24 in the backlog to cover the club API as source and the recurring activities.
+- Rename "importance" in the backlog language to "category (class A/B/C)" for Partidos, and state that a higher factor means lower demand.
+- Change HU-23 in the backlog from "Quizás" to "SI", describe it as a refresh from the club API with the 24-hour window, and add the withdrawal and restoration of an event.
+- Rewrite HU-21 in the backlog as an import from the club API (read-only club data, refresh, discard, historical import). Add the 48-hour publication lead and the points of institutional events to HU-22.
+- Remove capacity from the language of HU-36 and describe the percentile waves.
 - Remove from HU-36 and HU-39 the criteria about Abonados and transferred seats (the role no longer exists).
+- Correct the parameter matrix text for `dsat` ("ceiling for 95-100%" is wrong: it is the inflection point).
 - Add the bootstrap tasks of cross-cutting section 7 to the plan.
-- Correct the parameter matrix text for `dsat`.
 
 ## Residual risks
 
-- Published events cannot be corrected in the MVP (HU-23 is out). Consider a minimal version.
+- Socios are not notified by email when an event is rescheduled (HU-19/20 are out): they see the change only when they open the app.
 - The wave schedule is informative: with no reservation, ticket-office export or notifications in the MVP, nothing enforces it. State this clearly in the demo.
 - Using age as a score component is a policy choice the club should be able to defend before its Socios.
+- The quality and availability of the club API determine the freshness of the ranking.

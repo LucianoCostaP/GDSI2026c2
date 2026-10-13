@@ -1,7 +1,7 @@
 # Feature Specification: Socio Login with Emailed Access Code (and Initial Screen)
 
 **Feature Branch**: `hu-05-socio-login`
-**Created**: 2026-10-11 | **Revised**: 2026-10-12 (v2)
+**Created**: 2026-10-11 | **Revised**: 2026-10-13 (v3)
 **Status**: Draft
 **Backlog Reference**: HU-05 (Estimate: 1, Priority: Alta, MVP: Yes). Re-estimate: includes the initial screen (HU-00), code delivery and session creation that HU-06 also reuses.
 **Shared rules**: [cross-cutting](../_shared/cross-cutting.md)
@@ -69,9 +69,10 @@ As a Socio of the club, I want to log in by requesting an access code sent to th
 
 - The initial screen (HU-00 in HU-11) is delivered by this story; HU-06 reuses it.
 - The code and session mechanism built here is reused by HU-01 and HU-06.
-- Fee status does not block login. [NEEDS CLARIFICATION: confirm with the club.]
+- Fee status does not block login (confirmed by the club).
 
 ## Revision Notes (v2)
 
 - Added code parameters, lockout, masked email, ambiguity and shared-email rules, and the overdue-fee decision.
 - Made the generic message for unknown identifiers mandatory.
+- v3: confirmed that fees do not block login.

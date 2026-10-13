@@ -1,7 +1,7 @@
 # Feature Specification: View Current Score and Ranking Position
 
 **Feature Branch**: `hu-14-current-score-and-position`
-**Created**: 2026-10-11 | **Revised**: 2026-10-12 (v2)
+**Created**: 2026-10-11 | **Revised**: 2026-10-13 (v3)
 **Status**: Draft
 **Backlog Reference**: HU-14 (Estimate: 3, Priority: Alta, MVP: Yes)
 **Shared rules**: [scoring model](../_shared/scoring-model.md), [cross-cutting](../_shared/cross-cutting.md)
@@ -23,7 +23,7 @@ As a Socio of the club, I want to consult my current score and my position in th
 2. **Given** the same screen, **When** it renders, **Then** their position in the general ranking is shown as an absolute number with the total number of ranked Socios (for example "puesto 342 de 5000 socios").
 3. **Given** the same screen, **When** it renders, **Then** the date and time of the latest completed ranking and the rules version it used are shown.
 4. **Given** a Socio not included in the latest completed ranking (joined afterwards, or no ranking has ever been calculated), **When** they open the screen, **Then** score 0.00 and the end of the ranking are shown, clearly labeled "provisional: todavía no calculado", and no position is stored for them.
-5. **Given** a Socio with overdue fees (excluded from the ranking population), **When** they open the screen, **Then** the same provisional view is shown with the explanation that the ranking only includes Socios with fees up to date.
+5. **Given** a Socio with overdue fees (excluded from the ranking population), **When** they open the screen, **Then** the provisional view is shown with the explanation that the ranking only includes Socios with fees up to date, that their history is kept, and that they return to the ranking with their accumulated record once they pay up.
 6. **Given** a ranking calculation is running or failed, **When** the Socio opens the screen, **Then** the data of the latest **completed** ranking is shown.
 
 ---
@@ -67,3 +67,4 @@ As a Socio of the club, I want to consult my current score and my position in th
 
 - Resolved the clash between "end of ranking" and unique positions by making the view provisional and not stored.
 - Added the overdue-fee case, rules version display, and handling of running or failed calculations.
+- v3: overdue Socios are told their history is kept.

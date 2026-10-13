@@ -1,7 +1,7 @@
 # Feature Specification: View Explanation of How the Ranking Works
 
 **Feature Branch**: `hu-13-ranking-explanation`
-**Created**: 2026-10-11 | **Revised**: 2026-10-12 (v2)
+**Created**: 2026-10-11 | **Revised**: 2026-10-13 (v3)
 **Status**: Draft
 **Backlog Reference**: HU-13 (Estimate: 1, Priority: Media, MVP: Yes)
 **Shared rules**: [scoring model](../_shared/scoring-model.md), [cross-cutting](../_shared/cross-cutting.md)
@@ -25,6 +25,7 @@ As a Socio of the club, I want to consult an explanation of how the ranking and 
 4. **Given** two different Socios, **When** they open the section, **Then** both see the same explanation, with no personalization.
 5. **Given** the rules in force differ from the rules used by the latest ranking, **When** the Socio opens the explanation, **Then** a notice says the ranking will reflect them after the next calculation.
 6. **Given** the explanation, **When** it describes attendance, **Then** it states that matches of lower demand weigh more and that tiebreaks use seniority, then age, then document number.
+7. **Given** the explanation, **When** it describes who appears in the ranking, **Then** it states that only Socios with fees up to date appear, that their history is kept, and that a Socio who pays up returns with their accumulated record.
 
 ---
 
@@ -63,3 +64,4 @@ As a Socio of the club, I want to consult an explanation of how the ranking and 
 
 - Content is now defined by the scoring model and generated from the rules in force.
 - Added the notice for rules in force versus the latest ranking.
+- v3: added the statement about fee status and kept history.

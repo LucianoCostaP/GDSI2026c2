@@ -1,7 +1,7 @@
 # Feature Specification: Automatic Wave Schedule Generation
 
 **Feature Branch**: `hu-37-wave-schedule-generation`
-**Created**: 2026-10-11 | **Revised**: 2026-10-12 (v2)
+**Created**: 2026-10-11 | **Revised**: 2026-10-13 (v3)
 **Status**: Draft
 **Backlog Reference**: HU-37 (Estimate: 3, Priority: Alta, MVP: Yes)
 **Shared rules**: [cross-cutting](../_shared/cross-cutting.md)
@@ -32,7 +32,10 @@ As a System Administrator, I want to automatically generate the enablement dates
 ### Edge Cases
 
 - **Invalid period**: the opening must be in the future, the closing after the opening, the closing not after the event start, and the step between waves at least the minimum (default 5 minutes). Otherwise the period is rejected with the reason.
-- **One wave**: opening only; it stays open until the closing.
+- **Fewer waves**: waves with no Socios (very small rankings) are omitted by HU-36; the schedule covers only the waves that exist.
+- **Only for Partido events**: institutional/amateur events have no waves.
+- **Event withdrawn** (HU-23): the schedule is voided and no wave opens.
+- **Event rescheduled** (HU-23): the schedule is kept, invalidated or has its closing moved, depending on the new start (rules in HU-23).
 - **Segmentation regenerated** (HU-36): the schedule is invalidated and must be generated again.
 - **Scope of "access"**: in the MVP the schedule is informative. The club's external ticketing platform manages availability and purchase; this system does not take or enforce reservations (HU-40 is outside the MVP).
 
@@ -71,3 +74,4 @@ As a System Administrator, I want to automatically generate the enablement dates
 ## Revision Notes (v2)
 
 - Defined the formula, validations, draft/confirm visibility, regeneration limits, and stated that access is informative in the MVP.
+- v3: only for Partido events; empty waves omitted.

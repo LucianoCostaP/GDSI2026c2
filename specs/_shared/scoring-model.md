@@ -33,7 +33,7 @@ P_frecuencia = 100 · Σ_attended C(Ii) / Σ_total C(Ij)
 
 The factors are constants of the formula (not editable). A higher factor means **lower** demand: the club rewards attending the matches that are harder to fill.
 
-- Only events of type "partido oficial" inside the attendance window count.
+- Only events of type "Partido" inside the attendance window count. Events of type "Evento institucional/amateur" score in the institutional pillar (section 2.2).
 - Only events that already took place **and** have an attendance load (HU-24) count in the denominator. A match whose attendance has not been loaded is ignored, not counted as an absence.
 - For a Socio, the denominator counts only events on or after `max(alta date, window start)`.
 - Denominator = 0 → `P_frecuencia = 0`.
@@ -59,15 +59,15 @@ P_inst = min(Pinst_max, Σ_k (Vk·Ak) + Σ_m (Dm·tm))
 
 | Item | Points |
 |---|---|
-| Elecciones del Club (Vk) | 50 per participation |
-| Asambleas (Vk) | 40 per participation |
+| Institutional event (Vk): elections, assemblies and any other Evento institucional/amateur | points defined by whoever publishes the event, a whole number from 1 to 100 (reference values of the original formula: election 50, assembly 40) |
 | Deporte Federado (Dm) | 10 per month |
 | Subcomisiones (Dm) | 15 per month |
 
+- Elections, assemblies and every other "Evento institucional/amateur" are events: loaded with HU-21, published with their points (HU-22) and attendance loaded with HU-24. This includes events held at venues other than the club stadium. Only recurring activities are loaded as records, through HU-24.
 - `Ak = 1` when a participation record exists for the Socio and the event, otherwise 0. `tm` = number of months of activity.
 - Moving expiration of 365 days: only records whose date (or, for activities, the months) fall inside the last 365 days before the calculation date count. `tm` is capped at 12 per activity.
-- The point values are constants of the formula. `Pinst_max` (default 100) is editable.
-- Data enters through HU-N1 (Load Institutional Participation by File).
+- The points of recurring activities are constants of the formula (federated sport 10 per month, subcommission 15 per month). The points of each institutional event are set at its publication and cannot change afterwards in the MVP. `Pinst_max` (default 100) is editable.
+- Recurring activities enter through HU-24; institutional events (elections and assemblies included) enter through HU-21, HU-22 and the attendance load of HU-24.
 
 ### 2.3 Seniority and age (P_antigüedad)
 
@@ -91,7 +91,7 @@ A Socio with no previous baja gets the bonus. `t ≥ Tmax` → 0.
 
 ## 4. Configurable parameters
 
-All parameters in this table are editable by a Dirigente (HU-28), subject to the limits shown. Limits are **proposed** by this spec set and must be confirmed with the club.
+All parameters in this table are editable by a Dirigente (HU-28), subject to the limits shown. Limits were confirmed by the club.
 
 | Parameter | Symbol | Default | Proposed limits |
 |---|---|---|---|
@@ -115,6 +115,7 @@ All parameters in this table are editable by a Dirigente (HU-28), subject to the
 4. **Inputs snapshot**: each ranking stores, per Socio, the raw inputs (class-weighted sums, distance terms, participation points, T, E, t) so that HU-18 and HU-29 can recompute under other parameters without re-reading source data.
 5. **Tiebreak**: equal totals are ordered by greater seniority, then greater age, then lower document number (HU-25).
 6. **Versioning**: every change of parameters creates a new rules version (HU-28). Every ranking records the rules version it used.
+7. **Eligibility**: only Socios with fees up to date at the calculation time appear in the ranking. Attendance and participation history is kept for every Socio whatever their fee status, so a Socio who pays up returns to the ranking with their accumulated record (inside the windows). Nothing is deleted when fees lapse.
 
 ## 6. Worked example (defaults)
 

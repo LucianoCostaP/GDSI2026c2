@@ -1,7 +1,7 @@
 # Feature Specification: Run Ranking Calculation
 
 **Feature Branch**: `hu-25-ranking-calculation`
-**Created**: 2026-10-11 | **Revised**: 2026-10-12 (v2)
+**Created**: 2026-10-11 | **Revised**: 2026-10-13 (v3)
 **Status**: Draft
 **Backlog Reference**: HU-25 (Estimate: 8, Priority: Alta, MVP: Yes). Re-estimate: the full scoring model with five components and a stored snapshot.
 **Shared rules**: [scoring model](../_shared/scoring-model.md), [data contract](../_shared/data-contract.md), [cross-cutting](../_shared/cross-cutting.md)
@@ -32,7 +32,9 @@ As a System Administrator, I want to run the Socios ranking calculation, so that
 
 ### Edge Cases
 
-- **Ranking population**: all Socios in the club data with fees up to date at the calculation time, whether or not their account is activated. [NEEDS CLARIFICATION: confirm.]
+- **Ranking population**: all Socios in the club data with fees up to date at the calculation time, whether or not their account is activated. Overdue Socios are left out but keep their history; once they pay up they return with their accumulated record (inside the windows).
+- **Event types**: attendance at a Partido feeds the attendance pillar; attendance at an Evento institucional/amateur feeds the institutional pillar with the points defined for that event.
+- **Volume**: up to 500,000 Socios (cross-cutting section 6).
 - **Attendance window**: previous calendar year plus current year to date; counted events are those with a loaded attendance (scoring model).
 - **Changes during a run** (weights, attendance) do not affect it; it uses its snapshot.
 - **Failure atomicity**: a failed run MUST NOT leave a partially updated ranking.
@@ -72,7 +74,7 @@ As a System Administrator, I want to run the Socios ranking calculation, so that
 
 ## Assumptions
 
-- Completion of the calculation is the confirmation: the new ranking replaces the old one at that moment (the backlog phrase "until the new one is confirmed" is read this way). [NEEDS CLARIFICATION: confirm that no separate confirm step is wanted.]
+- Completion of the calculation is the confirmation: the new ranking replaces the old one at that moment (the backlog phrase "until the new one is confirmed" is read this way; confirmed by the product owner).
 - Calculation is manual only.
 - The calculation is deterministic: the same snapshot and rules always give the same ranking.
 
@@ -80,3 +82,4 @@ As a System Administrator, I want to run the Socios ranking calculation, so that
 
 - Fixed the authority wording (weights are set by the Dirigente only).
 - Added population, window, snapshot, single run, atomic replacement, staleness warning and the stored inputs.
+- v3: eligibility and history rules confirmed; event types routed to their pillars; volume up to 500,000.

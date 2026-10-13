@@ -1,7 +1,7 @@
 # Feature Specification: Simulate Impact of a Rules Change
 
 **Feature Branch**: `hu-29-rules-change-impact-simulation`
-**Created**: 2026-10-11 | **Revised**: 2026-10-12 (v2)
+**Created**: 2026-10-11 | **Revised**: 2026-10-13 (v3)
 **Status**: Draft
 **Backlog Reference**: HU-29 (Estimate: 8, Priority: Media, MVP: Yes)
 **Shared rules**: [scoring model](../_shared/scoring-model.md), [cross-cutting](../_shared/cross-cutting.md)
@@ -70,7 +70,9 @@ As a Dirigente or Administrador, I want to simulate the impact of a change in pa
 
 - Baseline ("before") is the stored latest completed ranking, computed with its own rules version, which may differ from the rules in force; both are displayed.
 - Decided: all matrix parameters can be simulated because the inputs snapshot contains raw values, not only pillar scores.
+- Volume: up to 500,000 Socios; the targets are in cross-cutting section 6 and call for computing in memory over the stored snapshot.
 
 ## Revision Notes (v2)
 
 - Defined baseline, histogram bins, tiebreak in simulated positions, validation, parity test and performance target.
+- v3: volume target added.

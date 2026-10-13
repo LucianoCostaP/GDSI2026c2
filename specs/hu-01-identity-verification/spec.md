@@ -1,7 +1,7 @@
 # Feature Specification: Identity Verification and Activation by DNI / Member Number
 
 **Feature Branch**: `hu-01-identity-verification`
-**Created**: 2026-10-11 | **Revised**: 2026-10-12 (v2)
+**Created**: 2026-10-11 | **Revised**: 2026-10-13 (v3)
 **Status**: Draft
 **Backlog Reference**: HU-01 (Estimate: 3, Priority: Alta, MVP: Yes). Re-estimate: scope now includes the email-code step that completes activation.
 **Shared rules**: [cross-cutting](../_shared/cross-cutting.md), [data contract](../_shared/data-contract.md)
@@ -68,7 +68,7 @@ As a Socio accessing the system for the first time, I want to verify my identity
 
 ## Assumptions
 
-- "Next verification step" is the email code (the user story map and WBS describe verification by code to the registered email). [NEEDS CLARIFICATION: confirm with the product owner.]
+- "Next verification step" is the email code (confirmed by the product owner).
 - Activating means proving control of the registered email; the system does not collect passwords (login is by code, HU-05).
 - The club data are read-only for this story.
 
@@ -76,3 +76,4 @@ As a Socio accessing the system for the first time, I want to verify my identity
 
 - Resolved the undefined "next verification step" and completed activation inside this story.
 - Added scenarios for ambiguous identifiers, missing email, wrong code, and abuse limits.
+- v3: confirmed that the next verification step is the email code.

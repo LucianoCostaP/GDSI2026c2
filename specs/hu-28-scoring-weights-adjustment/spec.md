@@ -1,7 +1,7 @@
 # Feature Specification: Adjust Scoring Parameters
 
 **Feature Branch**: `hu-28-scoring-weights-adjustment`
-**Created**: 2026-10-11 | **Revised**: 2026-10-12 (v2)
+**Created**: 2026-10-11 | **Revised**: 2026-10-13 (v3)
 **Status**: Draft
 **Backlog Reference**: HU-28 (Estimate: 5, Priority: Media, MVP: Yes)
 **Shared rules**: [scoring model](../_shared/scoring-model.md), [cross-cutting](../_shared/cross-cutting.md)
@@ -72,10 +72,11 @@ As a Dirigente of the club, I want to adjust the weights of the variables in the
 
 ## Assumptions
 
-- The base formula is the scoring model in `scoring-model.md`, delivered pre-defined (HU-27 is outside the MVP). The proposed limits in that file must be confirmed with the club. [NEEDS CLARIFICATION]
+- The base formula is the scoring model in `scoring-model.md`, delivered pre-defined (HU-27 is outside the MVP). The limits in that file were confirmed by the club.
 - The season start date is a system setting seeded by the team; there is no screen for it in the MVP.
 - Tests inject the current date to exercise the cut-off.
 
 ## Revision Notes (v2)
 
 - The "variables and weights" are now the full parameter matrix; added limits, sum rule, derived `b`, concurrency and season-window semantics.
+- v3: limits confirmed by the club.
