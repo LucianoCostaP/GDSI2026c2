@@ -65,18 +65,21 @@ Son las tareas de la sección 7 de las reglas transversales de los specs:
 
 ### Fase 4. Módulos, en este orden
 
-Para cada módulo, antes de implementarlo: plan corto, contrato OpenAPI y tareas.
+Un **módulo** es un grupo de historias relacionadas que se construyen juntas, de punta a punta (base de datos, API y pantallas), y que termina en algo que se puede probar y mostrar. Es la unidad de planificación; cómo se traduce en el código depende del stack. Para cada módulo, antes de implementarlo: plan corto, contrato OpenAPI y tareas.
 
-| # | Módulo | Historias |
-|---|---|---|
-| 1 | Acceso y cuentas | HU-05, HU-06, HU-11, HU-07, HU-08, HU-01 |
-| 2 | Datos del club | HU-N2 |
-| 3 | Eventos | HU-21, HU-22, HU-23 (y HU-17, que solo los muestra) |
-| 4 | Carga de datos | HU-24 |
-| 5 | Scoring y ranking | modelo de scoring, HU-25 (el cuello de botella) |
-| 6 | Vistas del Socio | HU-14, HU-16, HU-13 |
-| 7 | Reglas y simuladores | HU-28, HU-29, HU-18 |
-| 8 | Oleadas | HU-36, HU-37, HU-39 |
+| # | Módulo | Historias | Qué se puede mostrar al terminar | Depende de |
+|---|---|---|---|---|
+| 1 | Acceso y cuentas de gestión | HU-06, HU-11, HU-07, HU-08 | Un Administrador crea un Dirigente, este activa su cuenta, entra con código y cierra sesión | Base del proyecto (pantalla inicial, correo, sesiones) |
+| 2 | Datos del club | HU-N2 | La copia de socios sincronizada con la API del club y su estado | Credencial de la API |
+| 3 | Acceso de socios | HU-05, HU-01 | Un socio se activa por correo y entra | Módulos 1 y 2 |
+| 4 | Eventos | HU-21, HU-22, HU-23 y HU-17 | Importar, publicar, reprogramar y retirar eventos; el socio los ve | Módulos 2 y 3 |
+| 5 | Carga de datos | HU-24 | Asistencia y actividades cargadas desde la API o el archivo | Módulos 2 y 4 |
+| 6 | Scoring y ranking | modelo de scoring, HU-25 | Ranking calculado con puntajes y posiciones (el cuello de botella) | Módulos 2, 4 y 5 |
+| 7 | Vistas del Socio | HU-14, HU-16, HU-13 | El socio ve su puntaje, su posición y el desglose | Módulos 3 y 6 |
+| 8 | Reglas y simuladores | HU-28, HU-29, HU-18 | El Dirigente ajusta y simula reglas; el socio simula su asistencia | Módulos 1, 4 y 6 |
+| 9 | Oleadas | HU-36, HU-37, HU-39 | Oleadas por percentil, cronograma y turno de cada socio | Módulos 3, 4 y 6 |
+
+Los módulos 7, 8 y 9 pueden avanzar en paralelo una vez listo el 6.
 
 ### Fase 5. Pruebas y demo
 
