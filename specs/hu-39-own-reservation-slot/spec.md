@@ -25,7 +25,8 @@ As a Socio of the club, I want to consult the date and time at which my own rese
 4. **Given** the general closing has passed, **When** the Socio opens the screen, **Then** they are told the reservation period is closed.
 5. **Given** the event has a segmentation but the Socio is not in any wave (joined or became up to date after the segmentation), **When** they open the screen, **Then** they are told that no turn was assigned and that they should contact the club.
 6. **Given** the event has no confirmed schedule, **When** the Socio opens the screen, **Then** they are informed that the schedule is not defined yet, instead of seeing an empty screen.
-7. **Given** a Socio with overdue fees, **When** they open the screen, **Then** they get the message of scenario 5.
+7. **Given** a Socio who was not in the ranking behind the segmentation because their fees were overdue when it was calculated, **When** they open the screen, **Then** they get the message of scenario 5.
+   A Socio who became overdue **after** that ranking keeps their wave: the segmentation is not recalculated with later fee changes.
 8. **Given** an event of type Evento institucional/amateur, **When** the Socio opens the screen, **Then** they are told that this event has no turns.
 9. **Given** an event that was withdrawn (HU-23), **When** the Socio opens its screen by an old link, **Then** they are told that the event was withdrawn.
 

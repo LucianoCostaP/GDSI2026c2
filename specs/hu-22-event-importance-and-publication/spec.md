@@ -24,7 +24,7 @@ As an Administrador, I want to define the importance/weight of an event and publ
 3. **Given** the class chooser, **When** it is shown, **Then** each class shows its meaning and its factor (A = high demand, factor 1.0; B = regular, 1.3; C = low demand, 1.8) and states that a higher factor rewards attendance at lower-demand matches.
 4. **Given** a pending Evento institucional/amateur (elections and assemblies included), **When** the Administrador defines its points (a whole number from 1 to 100) and confirms publication, **Then** the event becomes `published` and those points are the ones its attendees earn.
 5. **Given** a pending event, **When** the Administrador publishes manually, **Then** the action is accepted only while the event start is at least 48 hours away.
-6. **Given** a pending event, **When** its publication deadline arrives, **Then** it is published automatically: the deadline is the earlier of 24 hours after loading and 48 hours before the event start. A Partido without a chosen class gets the default class and an institutional/amateur event without points gets the default points (both system settings, proposed Clase B and 20 points). The publication is recorded as made by the system.
+6. **Given** a pending event, **When** its publication deadline arrives, **Then** it is published automatically: the deadline is the earlier of 24 hours after its import and 48 hours before the event start. A Partido without a chosen class gets the default class and an institutional/amateur event without points gets the default points (both system settings, proposed Clase B and 20 points). The publication is recorded as made by the system.
 7. **Given** the Administrador published before the deadline, **When** the deadline arrives, **Then** nothing happens automatically.
 8. **Given** the Administrador and the scheduler act at the same moment, **When** both try to publish, **Then** exactly one publication takes effect and it is audited.
 9. **Given** a published event, **When** the Administrador looks for a way to change its class or points, **Then** there is none, except during the 24-hour window that opens after a reprogramming (HU-23).
@@ -33,7 +33,8 @@ As an Administrador, I want to define the importance/weight of an event and publ
 
 ### Edge Cases
 
-- **Deadline arithmetic**: because HU-21 requires the start to be at least 48 hours after loading, the deadline is never earlier than the loading time. An event starting 60 hours after loading is published automatically 12 hours after loading.
+- **Deadline arithmetic**: because HU-21 requires the start to be at least 48 hours after the import, the deadline is never earlier than the import time. An event starting 60 hours after the import is published automatically 12 hours after it.
+- **Club API at the deadline**: the automatic publication does not depend on the club API. If the API cannot be reached at the deadline, the event is published as it was imported (the check of HU-21 repeats at the next refresh).
 - **Scheduler failure**: the publication job is idempotent, runs at least every minute and retries; a missed run publishes on the next run and is flagged in the audit, unless the 48-hour lead was lost, in which case the Administrador is warned on screen.
 - **Historical and discarded events** (HU-21) are not listed here.
 - **Events flagged by HU-21** (the club no longer lists them) are not published automatically.
@@ -48,7 +49,7 @@ As an Administrador, I want to define the importance/weight of an event and publ
 - **FR-002**: System MUST let the Administrador define the class (A/B/C) of a Partido, which determines its attendance factor, and the points of an institutional/amateur event, which are the points its attendees earn.
 - **FR-003**: System MUST change the event to `published` and make it visible to Socios when publication is confirmed.
 - **FR-004**: System MUST allow manual publication only while the event start is at least 48 hours away.
-- **FR-005**: System MUST publish automatically at the earlier of 24 hours after loading and 48 hours before the start, applying the default class to a Partido without class and the default points to an institutional/amateur event without points.
+- **FR-005**: System MUST publish automatically at the earlier of 24 hours after its import and 48 hours before the start, applying the default class to a Partido without class and the default points to an institutional/amateur event without points.
 - **FR-006**: System MUST make the transition to `published` atomic and exclusive (compare-and-set on the state).
 - **FR-007**: System MUST record who published (Administrador or system) and whether the class was chosen or default.
 - **FR-008**: System MUST NOT allow changing the class or points after publication, except during the 24-hour window that opens after a reprogramming (HU-23).

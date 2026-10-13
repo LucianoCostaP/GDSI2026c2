@@ -17,6 +17,7 @@ Rules that apply to every spec. Individual specs reference this file instead of 
 | Create / activate management accounts (HU-07 / HU-08) | No | No | Create: Yes. Activate: invitee |
 | Import events, publish, load attendance and activities (HU-21, 22, 24) | No | No | Yes |
 | Refresh, reprogram, withdraw and restore events (HU-23) | No | No | Yes |
+| Run club data synchronization on demand and see its status (HU-N2) | No | No | Yes |
 | Run ranking calculation (HU-25) | No | No | Yes |
 | Segmentation and schedule (HU-36, HU-37) | No | No | Yes |
 | Adjust scoring parameters (HU-28) | No | Yes | No |
