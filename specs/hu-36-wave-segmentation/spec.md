@@ -1,10 +1,11 @@
 # Feature Specification: Segment Socios into Waves
 
 **Feature Branch**: `hu-36-wave-segmentation`
-**Created**: 2026-10-11
+**Created**: 2026-10-11 | **Revised**: 2026-10-13 (v3)
 **Status**: Draft
 **Backlog Reference**: HU-36 (Estimate: 8, Priority: Alta, MVP: Yes)
-**Input**: User description: "As a System Administrator, I want to automatically generate the segmentation of Socios into waves based on their ranking position, so that I establish the groups that will access turn reservation in a staggered way."
+**Shared rules**: [cross-cutting](../_shared/cross-cutting.md), [data contract](../_shared/data-contract.md)
+**Input**: "As a System Administrator, I want to automatically generate the segmentation of Socios into waves based on their ranking position, so that I establish the groups that will access turn reservation in a staggered way."
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -12,52 +13,66 @@
 
 As a System Administrator, I want to automatically generate the segmentation of Socios into waves based on their ranking position, so that I establish the groups that will access turn reservation in a staggered way.
 
-**Why this priority**: Waves are how the club gives higher-ranked Socios earlier access; this is the mechanism that turns the ranking into actual priority.
+**Why this priority**: Waves turn the ranking into actual priority.
 
-**Independent Test**: For a published event with a calculated ranking, trigger segmentation and verify wave count, equal percentile bands, final wave grouping the remainder, and the per-wave output.
+**Independent Test**: For a published Partido and a completed ranking, trigger segmentation and verify five waves at 20%, 40%, 60%, 80% and 100%, with sizes differing by at most one Socio.
 
 **Acceptance Scenarios**:
 
-1. **Given** a published event, **When** the Administrador triggers segmentation generation for it, **Then** the process starts for that event.
-2. **Given** the process, **When** it computes the number of waves, **Then** the count is derived automatically from the number of Socios enabled for the event and the real capacity (entries/seats), using a predefined rule.
-3. **Given** the number of waves, **When** the ranking is divided, **Then** it is split into equal percentile bands according to that number.
-4. **Given** the bands, **When** the last wave (lowest percentile) is defined, **Then** it acts as the final wave, grouping all Socios not included in earlier bands.
-5. **Given** Abonados and Socios who received a seat by transfer, **When** segmentation is generated, **Then** they are excluded from the wave segmentation for that event.
-6. **Given** a generated segmentation, **When** it is shown, **Then** it includes, per wave, its percentile range and the Socios that compose it.
+1. **Given** a `published` event of type Partido and a `completed` ranking, **When** the Administrador triggers segmentation, **Then** the process starts for that event and records the ranking version it uses.
+2. **Given** the process, **When** waves are defined, **Then** they are percentile bands of the ranking in steps of 20: wave 1 covers percentiles up to 20%, wave 2 up to 40%, wave 3 up to 60%, wave 4 up to 80% and wave 5 up to 100%. The step is a system setting (default 20).
+3. **Given** a ranking of M Socios, **When** a Socio's position is p, **Then** their percentile is 100·p / M and they belong to wave k when (k − 1)·step < percentile ≤ k·step. Wave 1 holds the best positions.
+4. **Given** the bands, **When** boundaries fall between positions, **Then** positions are assigned with whole numbers (the boundary of wave k is floor(k·step·M / 100)), so wave sizes differ by at most one Socio and the last wave ends at position M.
+5. **Given** a generated segmentation, **When** it is shown, **Then** it includes, per wave, its order, the percentile range, the position range and the number of Socios.
+6. **Given** an event that is not a published Partido, or no completed ranking, **When** the Administrador triggers segmentation, **Then** it is not possible and the missing prerequisite is stated.
+7. **Given** a segmentation already exists and the first wave has not opened, **When** the Administrador generates it again, **Then** after confirmation it replaces the previous one and any existing schedule (HU-37) is invalidated.
+8. **Given** the first wave already opened, **When** the Administrador tries to generate again, **Then** it is blocked.
+9. **Given** later ranking recalculations, **When** they complete, **Then** the generated waves do not change (the segmentation is fixed to its ranking version).
 
 ---
 
 ### Edge Cases
 
-- **Remainders**: Socios left over by uneven division fall in the final wave.
-- **Unpublished event**: segmentation can only be generated for an already published event.
-- **No calculated ranking**: segmentation requires a completed ranking (HU-25).
+- **Who is segmented**: the Socios of the ranking version used, that is, Socios with fees up to date when that ranking was calculated. Fee status is not re-checked.
+- **Small rankings**: a wave that would hold no Socios is omitted and the others keep their order (for example, 3 Socios give three waves).
+- **Socios outside the ranking version** (joined or paid up afterwards) belong to no wave; HU-39 explains it.
+- **Storage at scale**: the segmentation stores the ranking version, the step and the number of ranked Socios; each Socio's wave is derived from their position, so nothing is copied per Socio (up to 500,000).
+- **Event withdrawn** (HU-23): the segmentation is voided.
+- **Not in scope**: capacity of the stadium, Abonados and seat transfers.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: System MUST let the Administrador trigger segmentation for a specific published event.
-- **FR-002**: System MUST compute the number of waves automatically from enabled Socios and real event capacity using a predefined rule.
-- **FR-003**: System MUST divide the ranking into equal percentile bands according to the resulting number of waves.
-- **FR-004**: System MUST make the last wave (lowest percentile) the final wave, grouping all Socios not included in earlier bands.
-- **FR-005**: System MUST exclude Abonados and Socios with a transferred seat from the segmentation for that event.
-- **FR-006**: System MUST include, per wave, the percentile range and its Socios.
+- **FR-001**: System MUST let the Administrador trigger segmentation for a published event of type Partido with a completed ranking.
+- **FR-002**: System MUST define waves as percentile bands in steps of the configured step (default 20).
+- **FR-003**: System MUST assign each ranked Socio to the wave that contains their percentile, with wave 1 holding the best positions.
+- **FR-004**: System MUST use whole-number boundaries so that wave sizes differ by at most one Socio and every ranked Socio belongs to exactly one wave.
+- **FR-005**: System MUST show, per wave, its order, percentile range, position range and number of Socios.
+- **FR-006**: System MUST fix the segmentation to a ranking version.
+- **FR-007**: System MUST allow regeneration only before the first wave opens, invalidating the schedule.
+- **FR-008**: System MUST audit every generation.
 
 ### Key Entities
 
-- **WaveSegmentation**: event, number of waves, generated at.
-- **Wave**: order, percentile range, member Socios.
+- **WaveSegmentation**: event, ranking version, number of ranked Socios, percentile step, generated at, generated by.
+- **Wave**: order, percentile range, position range (derived), number of Socios.
 
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes
 
-- **SC-001**: 100% of non-excluded enabled Socios belong to exactly one wave.
-- **SC-002**: The last wave contains all Socios not covered by earlier percentile bands.
+- **SC-001**: 100% of ranked Socios belong to exactly one wave.
+- **SC-002**: Wave sizes differ by at most one Socio (a test with 103 Socios gives 20, 21, 20, 21, 21).
+- **SC-003**: 0 waves change after a later ranking calculation.
 
 ## Assumptions
 
-- The predefined rule for the number of waves, and how "Socios enabled for the event" is determined, are not defined in the backlog and must be fixed at planning.
-- Event capacity is required here but is not captured by HU-21 (see README).
-- The Abonado role no longer exists and seat transfer (HU-33) is not in the MVP, so the exclusion rule has no effect in the MVP; it is kept so the segmentation stays correct if those features return.
+- Wave 1 is the best-ranked group ("percentile 20%" is the top 20% by position).
+- The percentile step is configuration, not a screen.
+- Waves apply to Partidos only; institutional/amateur events have no waves.
+
+## Revision Notes (v3)
+
+- Replaced the capacity-based rule with fixed percentile bands (20, 40, 60, 80, 100), as decided by the product owner.
+- Wave membership is derived from the ranking version rather than stored per Socio.
