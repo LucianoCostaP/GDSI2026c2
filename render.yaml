@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: pasion-de-10
+    runtime: docker
+    plan: free
+    region: ohio
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: FRONT_ORIGIN
+        sync: false
