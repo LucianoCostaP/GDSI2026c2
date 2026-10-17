@@ -5,7 +5,7 @@
 **Status**: Draft
 **Backlog Reference**: HU-11 (Estimate: 1, Priority: Alta, MVP: Yes). Re-estimate: depends on the global navigation shell.
 **Shared rules**: [cross-cutting](../_shared/cross-cutting.md)
-**Input**: "As an authenticated user (Socio, Dirigente or Administrador), I want to log out from an access available on every screen, so that I can leave the system securely."
+**Input**: "As an authenticated user (Member, Admin), I want to log out from an access available on every screen, so that I can leave the system securely."
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -29,7 +29,7 @@ As an authenticated user, I want to log out from an access available on every sc
 ### Edge Cases
 
 - **Not logged in**: the logout access is neither visible nor reachable.
-- **All roles**: identical behavior for Socio, Dirigente and Administrador.
+- **All roles**: identical behavior for Member, Admin.
 - **Scope**: logout ends the current session only; other devices keep theirs.
 - **Cache**: protected pages are served with no-store caching so the back button cannot show them.
 

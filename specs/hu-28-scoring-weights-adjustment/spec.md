@@ -5,31 +5,31 @@
 **Status**: Draft
 **Backlog Reference**: HU-28 (Estimate: 5, Priority: Media, MVP: Yes)
 **Shared rules**: [scoring model](../_shared/scoring-model.md), [cross-cutting](../_shared/cross-cutting.md)
-**Input**: "As a Dirigente of the club, I want to adjust the weights of the variables in the base scoring formula, so that I define which Socio behaviors are prioritized when the ranking is calculated."
+**Input**: "As an Admin of the club, I want to adjust the weights of the variables in the base scoring formula, so that I define which Member behaviors are prioritized when the ranking is calculated."
 
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Adjust Scoring Parameters (Priority: P2)
 
-As a Dirigente of the club, I want to adjust the weights of the variables in the base scoring formula, so that I define which Socio behaviors are prioritized when the ranking is calculated.
+As an Admin of the club, I want to adjust the weights of the variables in the base scoring formula, so that I define which Member behaviors are prioritized when the ranking is calculated.
 
 **Why this priority**: Lets the club decide its priorities without changing the algorithm structure.
 
-**Independent Test**: As a Dirigente, change one weight, confirm the warning, and verify the new rules version is in force immediately, logged in the history, and the ranking unchanged until HU-25 runs.
+**Independent Test**: As an Admin, change one weight, confirm the warning, and verify the new rules version is in force immediately, logged in the history, and the ranking unchanged until HU-25 runs.
 
 **Acceptance Scenarios**:
 
-1. **Given** a Dirigente logged in, **When** they open the scoring configuration, **Then** they see all parameters of the scoring model (section 4 of the model) with their current values, allowed limits and the rules version.
-2. **Given** the parameter list, **When** the Dirigente edits a value, **Then** they can change each parameter within its limits and cannot add or remove parameters or change the formula structure or the constants.
+1. **Given** an Admin logged in, **When** they open the scoring configuration, **Then** they see all parameters of the scoring model (section 4 of the model) with their current values, allowed limits and the rules version.
+2. **Given** the parameter list, **When** the Admin edits a value, **Then** they can change each parameter within its limits and cannot add or remove parameters or change the formula structure or the constants.
 3. **Given** edited pillar weights, **When** they do not add up to 1.00, **Then** saving is blocked and the sum is shown.
 4. **Given** a changed `dsat`, **When** it is shown, **Then** the derived `b` is displayed read-only and the curve is described as having its inflection at `dsat`.
 5. **Given** a value outside its limits, **When** saving, **Then** it is rejected with a message naming the parameter and its limits.
-6. **Given** changed values, **When** the Dirigente tries to save, **Then** a confirmation message states these values will become the official rules in force.
-7. **Given** the Dirigente confirms, **When** the save completes, **Then** a new rules version is in force immediately, with no extra approval or publication step.
-8. **Given** new rules in force, **When** the ranking is viewed, **Then** it is unchanged until the calculation (HU-25) is run, and the Socio screens show the notice defined in HU-13.
+6. **Given** changed values, **When** the Admin tries to save, **Then** a confirmation message states these values will become the official rules in force.
+7. **Given** the Admin confirms, **When** the save completes, **Then** a new rules version is in force immediately, with no extra approval or publication step.
+8. **Given** new rules in force, **When** the ranking is viewed, **Then** it is unchanged until the calculation (HU-25) is run, and the Member screens show the notice defined in HU-13.
 9. **Given** a change, **When** it is saved, **Then** the rules version history records who, when, and previous and new values.
-10. **Given** the current time is within 14 days before the season start (or after it), **When** the Dirigente tries to change values, **Then** the change is rejected with the cut-off date.
-11. **Given** two Dirigentes editing at once, **When** the second saves from an outdated version, **Then** the save is refused and they must reload.
+10. **Given** the current time is within 14 days before the season start (or after it), **When** the Admin tries to change values, **Then** the change is rejected with the cut-off date.
+11. **Given** two Admins editing at once, **When** the second saves from an outdated version, **Then** the save is refused and they must reload.
 
 ---
 
@@ -38,7 +38,6 @@ As a Dirigente of the club, I want to adjust the weights of the variables in the
 - **Season cut-off**: changes are allowed only until 14 days before the season start (Buenos Aires time). The window reopens when the next season start date is configured.
 - **First version**: rules version 1 is seeded with the model defaults.
 - **No effect on the ranking** until HU-25 runs.
-- **Administrador**: cannot edit parameters (read-only access is out of scope).
 
 ## Requirements *(mandatory)*
 

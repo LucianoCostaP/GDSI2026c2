@@ -57,7 +57,7 @@ Los specs funcionales dicen **qué** hace el sistema y por qué. Este documento 
 Son las tareas de la sección 7 de las reglas transversales de los specs:
 
 - [ ] Repositorio, integración continua y entregas, base de datos con migraciones.
-- [ ] Primer Administrador, versión 1 de reglas con los valores por defecto y ajustes del sistema.
+- [ ] Primer Admin, versión 1 de reglas con los valores por defecto y ajustes del sistema.
 - [ ] Credencial de la API del club como secreto.
 - [ ] Menú global y pantallas de inicio por rol.
 - [ ] **Reloj inyectable**, desde el primer día: HU-22, HU-28 y HU-39 no se pueden probar sin él.
@@ -69,14 +69,14 @@ Un **módulo** es un grupo de historias relacionadas que se construyen juntas, d
 
 | # | Módulo | Historias | Qué se puede mostrar al terminar | Depende de |
 |---|---|---|---|---|
-| 1 | Acceso y cuentas de gestión | HU-06, HU-11, HU-07, HU-08 | Un Administrador crea un Dirigente, este activa su cuenta, entra con código y cierra sesión | Base del proyecto (pantalla inicial, correo, sesiones) |
+| 1 | Acceso y cuentas de gestión | HU-06, HU-11, HU-07, HU-08 | Un Admin crea otro Admin, este activa su cuenta, entra con código y cierra sesión | Base del proyecto (pantalla inicial, correo, sesiones) |
 | 2 | Datos del club | HU-N2 | La copia de socios sincronizada con la API del club y su estado | Credencial de la API |
 | 3 | Acceso de socios | HU-05, HU-01 | Un socio se activa por correo y entra | Módulos 1 y 2 |
 | 4 | Eventos | HU-21, HU-22, HU-23 y HU-17 | Importar, publicar, reprogramar y retirar eventos; el socio los ve | Módulos 2 y 3 |
 | 5 | Carga de datos | HU-24 | Asistencia y actividades cargadas desde la API o el archivo | Módulos 2 y 4 |
 | 6 | Scoring y ranking | modelo de scoring, HU-25 | Ranking calculado con puntajes y posiciones (el cuello de botella) | Módulos 2, 4 y 5 |
-| 7 | Vistas del Socio | HU-14, HU-16, HU-13 | El socio ve su puntaje, su posición y el desglose | Módulos 3 y 6 |
-| 8 | Reglas y simuladores | HU-28, HU-29, HU-18 | El Dirigente ajusta y simula reglas; el socio simula su asistencia | Módulos 1, 4 y 6 |
+| 7 | Vistas del Member | HU-14, HU-16, HU-13 | El socio ve su puntaje, su posición y el desglose | Módulos 3 y 6 |
+| 8 | Reglas y simuladores | HU-28, HU-29, HU-18 | El Admin ajusta y simula reglas; el socio simula su asistencia | Módulos 1, 4 y 6 |
 | 9 | Oleadas | HU-36, HU-37, HU-39 | Oleadas por percentil, cronograma y turno de cada socio | Módulos 3, 4 y 6 |
 
 Los módulos 7, 8 y 9 pueden avanzar en paralelo una vez listo el 6.
