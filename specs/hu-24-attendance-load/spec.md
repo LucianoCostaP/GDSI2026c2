@@ -13,7 +13,7 @@
 
 As a System Administrator, I want the platform to receive attendance and recurring activity data pushed by the club, so that the system can calculate the impact of that participation on each Socio's scoring. The Administrator can use a CSV file with the same data as a fallback.
 
-**Why this priority**: Attendance and participation are the main inputs to the ranking. Both kinds share the same loading mechanism (validation, tolerance, error report, audit), so they live in one story. The Socio data is pushed through the platform API in HU-N2.
+**Why this priority**: Attendance and participation are the main inputs to the ranking. Both kinds share the same loading mechanism (validation, tolerance, error report, audit), so they live in one story. The Socio data is pushed through the platform API in HU-43.
 
 **Independent Test**: Have a test club client push attendance for a played event and recurring activities, verify the confirmation with loaded and rejected counts; submit an invalid/failed delivery and verify nothing is persisted and the file fallback works.
 
@@ -81,7 +81,7 @@ As a System Administrator, I want the platform to receive attendance and recurri
 
 ## Assumptions
 
-- The club pushes attendance (by event reference) and recurring activities (by modification date), besides the Socio data of HU-N2 and the events of HU-21.
+- The club pushes attendance (by event reference) and recurring activities (by modification date), besides the Socio data of HU-43 and the events of HU-21.
 - The CSV file keeps the same data as the club push schema (data contract, sections 3 and 4) and serves as fallback.
 - Elections and assemblies are events, not activities, and use the attendance kind.
 - Recalculation after a load is a manual decision (HU-25); the stale-ranking notice is the only automatic effect.

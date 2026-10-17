@@ -147,7 +147,7 @@ Request-level errors use `{"error":{"code":"...","message":"..."}}`. Load result
 
 ## Differences and decisions to resolve
 
-1. The architecture is push-only: the club sends roster data to the platform's authenticated API. HU-N2 and the shared data contract specify that direction.
+1. The architecture is push-only: the club sends roster data to the platform's authenticated API. HU-43 and the shared data contract specify that direction.
 2. HU-43 names fields including member identifier, DNI, name, birth date, alta date, fee status, email, and “distancia/localidad”. The shared data contract also requires distance in km and includes previous baja date. Confirm the canonical field list, identifiers, nullability, and fee-state enum with the club.
 3. HU-43 requires full rosters “in lots/paged” and incremental changes, but does not define pagination envelopes, completion/finalization behavior, delta watermarks, or retries. This contract proposes chunked snapshots with `carga_id` and atomic activation, plus incremental batches with watermarks and idempotent `lote_id`.
 4. Agree maximum request/page size, supported date/time precision, rate limits, and whether a push is synchronous or asynchronous. These operational values are not stated in the backlog.
@@ -157,4 +157,4 @@ Request-level errors use `{"error":{"code":"...","message":"..."}}`. Load result
 
 - `Artefactos TP G6.xlsx - Backlog - US.csv`, HU-43: authenticated full and incremental roster loads, validation, read-only copy, removals, freshness warnings, security, and performance objectives.
 - `specs/_shared/data-contract.md`, section 1: canonical scoring/identity fields, fee-status handling, distance, and 500,000-member volume.
-- `specs/hu-n2-club-data-sync/spec.md`: related draft sync story, aligned to club-initiated pushes, pagination, retries, and last-good-copy behavior.
+- `specs/hu-43-club-data-sync/spec.md`: related draft sync story, aligned to club-initiated pushes, pagination, retries, and last-good-copy behavior.

@@ -72,7 +72,7 @@ As a Dirigente of the club, I want to adjust the weights of the variables in the
 
 ## Assumptions
 
-- The base formula is the scoring model in `scoring-model.md`, delivered pre-defined (HU-27 is outside the MVP). The limits in that file were confirmed by the club.
+- The initial base formula is the scoring model in `scoring-model.md` and is published under HU-27. The limits in that file were confirmed by the club. HU-27 and HU-28 need a product decision on whether structural formula revisions are in MVP; this story allows the Dirigente to adjust only the active version's permitted parameters.
 - The season start date is a system setting seeded by the team; there is no screen for it in the MVP.
 - Tests inject the current date to exercise the cut-off.
 

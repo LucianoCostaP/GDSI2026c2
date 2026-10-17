@@ -1,8 +1,9 @@
 # Feature Specification: Receive Club Reference Data (new story)
 
-**Feature Branch**: `hu-n2-club-data-sync`
+**Feature Branch**: `hu-43-club-data-sync`
 **Created**: 2026-10-12 | **Revised**: 2026-10-16 (push integration)
-**Status**: Draft. **New technical story, to be added to the backlog** (provisional id HU-N2; estimate to be defined).
+**Status**: Draft  
+**Backlog Reference**: HU-43 (Estimate: 8, Priority: Alta, MVP: Yes).
 **Shared rules**: [data contract](../_shared/data-contract.md), [cross-cutting](../_shared/cross-cutting.md)
 **API contract**: [Socios API contract](../../docs/socios-api-contract.md)
 **Input**: "As a platform, I need to receive an up-to-date, read-only copy of the club's Socio data through endpoints we provide, so identification, fee checks, scoring inputs and ranking eligibility use the club's source of truth."

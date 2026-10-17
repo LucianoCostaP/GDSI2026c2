@@ -1,6 +1,6 @@
 # Data Contract (inputs from the club)
 
-The system never edits Socio personal data (it is outside the product scope). The club pushes roster data to platform-provided endpoints through HU-N2, and pushes events (HU-21), attendance and recurring activities (HU-24) through platform-provided endpoints. The platform does not call or pull from club APIs. The only data the Administrador enters is the class or the points of an event, and the CSV file used as fallback for HU-24.
+The system never edits Socio personal data (it is outside the product scope). The club pushes roster data to platform-provided endpoints through HU-43, and pushes events (HU-21), attendance and recurring activities (HU-24) through platform-provided endpoints. The platform does not call or pull from club APIs. The only data the Administrador enters is the class or the points of an event, and the CSV file used as fallback for HU-24.
 
 ## 1. Socio reference data (read-only copy, pushed by the club)
 
@@ -60,11 +60,11 @@ The club pushes them, including changes since the last successful delivery. The 
 - ISO dates (`YYYY-MM-DD`).
 - Upsert key: `dni`, `tipo`, `fecha_desde`.
 
-## 5. Club-to-platform integration, shared by HU-N2, HU-21 and HU-24
+## 5. Club-to-platform integration, shared by HU-43, HU-21 and HU-24
 
 | Data | Story | Club push |
 |---|---|---|
-| Socio reference data | HU-N2 | full paged roster initially, then incremental changes (or full roster if delta unavailable) |
+| Socio reference data | HU-43 | full paged roster initially, then incremental changes (or full roster if delta unavailable) |
 | Events | HU-21 | upcoming events and historical events; updates by external event reference |
 | Attendance | HU-24 | attendance records for an event, identified by club event reference |
 | Recurring activities | HU-24 | activity records and changes since last successful delivery |

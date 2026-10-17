@@ -4,7 +4,7 @@ Los specs funcionales dicen **qué** hace el sistema y por qué. Este documento 
 
 ## 1. Dónde estamos
 
-- **22 specs:** las 20 historias del MVP, HU-23 en versión mínima (reprogramar y retirar eventos) y HU-N2 (sincronización de datos del club por API).
+- **24 specs funcionales:** una por cada historia marcada MVP `SI` en el backlog, incluida HU-43 (sincronización de datos del club por API). HU-23 queda fuera porque el CSV la marca `NO` para MVP.
 - **3 documentos compartidos:** modelo de scoring v1, contrato de datos y reglas transversales (permisos, estados, seguridad, requisitos no funcionales, ajustes del sistema y tareas de arranque).
 - **Consistencia revisada:** enlaces, nombres de estados y referencias entre historias están alineados, y no quedan preguntas abiertas en los specs.
 - **Lo que falta** es el **cómo**: acuerdos con el club, decisiones técnicas, contratos y modelo de datos, y el backlog actualizado.
@@ -25,17 +25,16 @@ Los specs funcionales dicen **qué** hace el sistema y por qué. Este documento 
 
 ### Fase 0. Backlog y plan (antes de todo)
 
-- [ ] Agregar **HU-N2** (sincronización de datos del club por API) al backlog, antes de HU-25.
+- [ ] Actualizar **HU-43** en el backlog y el plan para reflejar la sincronización push a la API de la plataforma.
 - [ ] Reescribir **HU-21** como importación desde la API del club: datos del club de solo lectura, actualizar, descartar y carga histórica.
-- [ ] Pasar **HU-23** de "Quizás" a "SI", como actualización desde el club con ventana de 24 horas, y agregar retirar y restaurar un evento.
 - [ ] Ampliar **HU-24** a la API del club como fuente y a las actividades recurrentes (deporte federado y subcomisiones), con el CSV como respaldo.
 - [ ] En **HU-22**, agregar la antelación mínima de 48 horas y los puntos de los eventos institucionales.
 - [ ] Renombrar "importancia" a "categoría (clase A/B/C)" para los partidos, aclarando que un factor mayor significa menor demanda.
 - [ ] En **HU-36**, quitar la capacidad y describir las oleadas por percentil (20, 40, 60, 80 y 100).
 - [ ] Quitar de **HU-36** y **HU-39** los criterios sobre abonados y transferencias.
 - [ ] Corregir en la matriz del PDF la leyenda de `dsat`: es el punto de inflexión, no un techo para 95–100 %.
-- [ ] **Re-estimar** HU-01, HU-05, HU-11, HU-18, HU-21, HU-23, HU-24, HU-25 y HU-28; estimar HU-N2; revisar HU-36 (probablemente baja).
-- [ ] **Replanificar los sprints:** el alcance creció (HU-N2, modelo completo de scoring, tareas de arranque).
+- [ ] **Re-estimar** HU-01, HU-05, HU-11, HU-18, HU-21, HU-24, HU-25 y HU-28; revisar HU-36 (probablemente baja) y HU-43.
+- [ ] **Replanificar los sprints:** el alcance incluye HU-43, el modelo completo de scoring y tareas de arranque.
 
 ### Fase 1. Acuerdos externos (en paralelo, empezar ya)
 
@@ -70,7 +69,7 @@ Un **módulo** es un grupo de historias relacionadas que se construyen juntas, d
 | # | Módulo | Historias | Qué se puede mostrar al terminar | Depende de |
 |---|---|---|---|---|
 | 1 | Acceso y cuentas de gestión | HU-06, HU-11, HU-07, HU-08 | Un Administrador crea un Dirigente, este activa su cuenta, entra con código y cierra sesión | Base del proyecto (pantalla inicial, correo, sesiones) |
-| 2 | Datos del club | HU-N2 | La copia de socios sincronizada con la API del club y su estado | Credencial de la API |
+| 2 | Datos del club | HU-43 | La copia de socios sincronizada con la API del club y su estado | Credencial de la API |
 | 3 | Acceso de socios | HU-05, HU-01 | Un socio se activa por correo y entra | Módulos 1 y 2 |
 | 4 | Eventos | HU-21, HU-22, HU-23 y HU-17 | Importar, publicar, reprogramar y retirar eventos; el socio los ve | Módulos 2 y 3 |
 | 5 | Carga de datos | HU-24 | Asistencia y actividades cargadas desde la API o el archivo | Módulos 2 y 4 |
@@ -106,11 +105,11 @@ Principios que todo PR debe respetar:
 
 ## 5. Contratos
 
-**API del club (la que consumimos).** Es el más importante: HU-21, HU-23, HU-24 y HU-N2 dependen de ella, y hoy solo hay supuestos.
+**API del club (la que consumimos).** Es el más importante: HU-21, HU-23, HU-24 y HU-43 dependen de ella, y hoy solo hay supuestos.
 
 | Dato | Historia | Consulta |
 |---|---|---|
-| Datos de socios | HU-N2 | todos la primera vez; después, los modificados |
+| Datos de socios | HU-43 | todos la primera vez; después, los modificados |
 | Eventos | HU-21, HU-23 | próximos aún no importados; pasados por rango de fechas; uno por su referencia |
 | Asistencia | HU-24 | de un evento, por la referencia del club |
 | Actividades recurrentes | HU-24 | modificadas desde la última carga |

@@ -36,7 +36,7 @@ As a Socio accessing the system for the first time, I want to verify my identity
 - **Empty or malformed input**: blocked with a validation message before any lookup.
 - **Distinct messages**: not found, overdue fees, already activated and missing email MUST show different messages.
 - **Abuse**: lookups are rate limited (cross-cutting section 3) and messages never include personal data.
-- **Fee status source**: the fee status comes from the last synchronization (HU-N2); if the data is older than the staleness limit, the check still runs and the data age is recorded.
+- **Fee status source**: the fee status comes from the last synchronization (HU-43); if the data is older than the staleness limit, the check still runs and the data age is recorded.
 
 ## Requirements *(mandatory)*
 

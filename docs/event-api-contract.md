@@ -1,6 +1,6 @@
 # Event API contract
 
-**Status:** MVP integration contract derived from the Pasion de 10 API description and the event stories in the product backlog (HU-21 to HU-23).
+**Status:** MVP integration contract derived from the Pasion de 10 API description and the event stories in the product backlog (HU-21 and HU-22).
 
 ## Purpose and ownership
 
@@ -58,8 +58,7 @@ On success, create the platform event as `pendiente de definición de importanci
 If `id_externo` already exists:
 
 - If it is pending, treat the call as an update to source fields, subject to all validation and the 48-hour guard. Preserve the original receipt time and publication deadline. Do not create a second event.
-- If it has been published, do not overwrite it through create. Return `409 Conflict` and direct the club to `PUT /api/v1/eventos/{id_interno}`.
-- If it is historical, discarded, or retired, return `409 Conflict`; no implicit reactivation or replacement occurs.
+- If it has been published, historical, or discarded, return `409 Conflict`; no implicit update, reactivation, or replacement occurs.
 
 The PDF says duplicate IDs return conflict, while HU-21 expressly requires pending-event resends to update. The backlog behavior governs retries for pending events; conflict remains the behavior for other existing lifecycle states.
 
@@ -87,9 +86,9 @@ Multiple filters are combined with AND. No matches returns `200 OK` with `[]`. R
 
 `PUT /api/v1/eventos/{id_interno}`
 
-Updates the fields the PDF lists: date/time (`fecha_hora`), venue (`lugar`), and description (`descripcion`). The PDF does not specify whether this PUT uses a partial or full replacement body; this contract requires the fields being changed and allows `descripcion: null` to clear it. `titulo`, `tipo`, and `id_externo` are immutable through this operation because the PDF does not list them as editable. The platform returns `200 OK` with the updated event; returning the full updated resource is a contract detail beyond the PDF's stated response.
+Updates a pending event only. It accepts the fields the PDF lists: date/time (`fecha_hora`), venue (`lugar`), and description (`descripcion`). The PDF does not specify whether this PUT uses a partial or full replacement body; this contract requires the fields being changed and allows `descripcion: null` to clear it. `titulo`, `tipo`, and `id_externo` are immutable through this operation because the PDF does not list them as editable. The platform returns `200 OK` with the updated event; returning the full updated resource is a contract detail beyond the PDF's stated response. Updates to published, historical, or discarded events return `409 Conflict`.
 
-Updates are rejected if the event has already ended. For a pending event, a proposed update that leaves less than 48 hours before start is rejected, consistent with HU-21. For a published event, the backlog's HU-23 rule permits reprogramming without the initial 48-hour publication restriction; this differs from the PDF, which says a changed `fecha_hora` for a `Partido` must remain at least 48 hours ahead of the edit. This contract follows the backlog for published events, so it is a deliberate product-rule deviation from the PDF. Changes to an active published event's date, time, or venue become visible promptly; the platform gives the administrator 24 hours to review importance values. The platform applies the HU-23 wave-schedule consequences and records old and new values in its audit log.
+For a pending event, a proposed update that leaves less than 48 hours before start is rejected, consistent with HU-21. If the event has already started or is no longer pending, the update is rejected without changing the record. Accepted changes preserve the original receipt time and publication deadline and are recorded in the audit log.
 
 If the proposed `tipo` differs from the stored type, return `422 Unprocessable Entity` and make no changes. Attempts to change fields not editable through PUT are rejected; the exact status for those immutable-field errors is an implementation detail to standardize. If club data cannot be validated, leave the event unchanged. A no-op update returns `200 OK` and reports that no fields changed.
 
@@ -97,7 +96,7 @@ If the proposed `tipo` differs from the stored type, return `422 Unprocessable E
 
 `POST /api/v1/eventos/{id_interno}/cancelacion`
 
-The PDF does not define a cancellation operation. HU-21/HU-23 require the club to report cancellations, so this contract proposes an authenticated endpoint using the platform event ID returned by the create response or event query. The request body is `{ "motivo": "..." }`, with `motivo` optional because the backlog does not require the club to provide one. Return `202 Accepted` and mark the event for administrator disposition; do not change it automatically to `descartado` or `retirado`. An administrator discards a pending event or withdraws a published event through the platform workflow. Repeated cancellation notices are idempotent. Unknown IDs return `404 Not Found`.
+The PDF does not define a cancellation operation. HU-21 requires the club to report cancellations of pending events, so this contract proposes an authenticated endpoint using the platform event ID returned by the create response or event query. The request body is `{ "motivo": "..." }`, with `motivo` optional because the backlog does not require the club to provide one. Return `202 Accepted` and flag the pending event for administrator disposition; do not discard it automatically. An administrator may discard the event. Cancellation notices for events that are not pending return `409 Conflict`. Repeated notices for the same pending event are idempotent. Unknown IDs return `404 Not Found`.
 
 ### Import historical events
 
@@ -112,12 +111,11 @@ The API `estado` values below are Spanish wire values. The story specs and persi
 | API `estado` value | Spec/internal state | Meaning and API effects |
 |---|---|---|
 | `pendiente de definición de importancia` | `pending importance definition` | Accepted future event; not visible to members. Admin must assign class for `Partido` or points for `Institucional`. Pending source data may be refreshed without changing receipt time/deadline. |
-| `publicado` | `published` | Visible to members. Platform owns transition and scoring configuration. Club may update eligible source fields through PUT; no re-publication or duplicate is created. Per the PDF, a published `Partido` remains visible until after its start, while an institutional event remains visible through the end of its event day. |
+| `publicado` | `published` | Visible to members. Platform owns transition and scoring configuration. Source-field PUT updates are not accepted in this state. Per the PDF, a published `Partido` remains visible until after its start, while an institutional event remains visible through the end of its event day. |
 | `histórico` | `historical` | Past event imported as history; not visible to members and available for attendance recording. |
 | `descartado` | `discarded` | Admin discarded a pending/cancelled event; not visible and cannot score. No API create retry may restore it. |
-| `retirado` | `withdrawn` | Admin withdrew a published event; not visible and cannot accept attendance or score. Restoration is platform-admin controlled. |
 
-For HU-21/HU-23, the proposed cancellation operation flags an event for administrator review. A pending event is withheld from automatic publication until disposition; the administrator may discard it. A published event remains published until the administrator withdraws it. The platform cannot infer cancellation from omission in a partial POST or batch.
+The proposed cancellation operation flags a pending event for administrator review. It is withheld from automatic publication until disposition; the administrator may discard it. The platform cannot infer cancellation from omission in a partial POST or batch.
 
 Publication, scoring class/points, default values, deadlines, attendance, and member visibility remain platform responsibilities. Platform publication timing and defaults follow HU-22 and the PDF: automatic publication at the earlier of 24 hours after import or 48 hours before start; default `B` for matches and 20 points for institutional events. The API response to creation does not mean the event is published.
 
@@ -149,13 +147,11 @@ Errors use a consistent JSON object: `{"error":{"code":"...","message":"...","fi
 1. Define the historical import route and payload; it is required by HU-21 but absent from the PDF endpoints.
 2. The PDF has no cancellation route. This contract proposes `POST /api/v1/eventos/{id_interno}/cancelacion`; confirm the route and optional `motivo` field with the club before implementation. Omission from a partial submission is not sufficient evidence of cancellation.
 3. The PDF explicitly applies the 48-hour minimum to new `Partido` submissions and edited `Partido` start times. HU-21 applies the publication lead to all upcoming events and pending updates. This contract follows HU-21 for creation and pending updates, applying it to both types.
-4. The PDF says a `Partido`'s new date/time on PUT must remain at least 48 hours after the edit. HU-23 allows reprogramming an already published event without that initial-publication lead. This contract follows HU-23 for published events, so implementation intentionally differs from the PDF rule in that case. Pending events still must meet 48 hours.
-5. The PDF says duplicate external IDs return `409`; HU-21 requires pending records to update on resend. This contract treats pending resends as updates and keeps `409` for other states.
-6. The PDF does not define detailed response schemas, batch item shape, PUT body semantics, or timestamp timezone handling. These are made explicit here for implementation consistency. It lists only `fecha_hora`, `lugar`, and `descripcion` as PUT-editable fields; `titulo` is not editable through PUT under this contract.
+4. The PDF says duplicate external IDs return `409`; HU-21 requires pending records to update on resend. This contract treats pending resends as updates and keeps `409` for other states.
+5. The PDF does not define detailed response schemas, batch item shape, PUT body semantics, or timestamp timezone handling. These are made explicit here for implementation consistency. It lists only `fecha_hora`, `lugar`, and `descripcion` as PUT-editable fields; `titulo` is not editable through PUT under this contract. PUT is limited to pending events.
 
 ## Source references
 
 - `api pasion de 10.pdf`, sections 1.1-1.4: event fields, automated checks, lifecycle, routes, example responses, and bearer API-key authentication.
 - `Artefactos TP G6.xlsx - Backlog - US.csv`, HU-21: authenticated event ingestion, pending updates, lead-time checks, malformed-input rejection, historical imports, cancellation handling, and audit requirements.
 - Same backlog, HU-22: importance assignment, visibility, automatic publication timing and defaults.
-- Same backlog, HU-23: published event reprogramming and its effect on review and wave schedules.
