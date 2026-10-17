@@ -15,7 +15,7 @@ Los specs funcionales dicen **qué** hace el sistema y por qué. Este documento 
 |---|---|---|
 | **Plan** | Sí | Uno global (stack, arquitectura, estructura del repo) y uno corto por módulo, no por historia. |
 | **Modelo de datos** | Sí, antes de codear | Un solo diagrama de entidades compartido. Las mismas entidades aparecen en muchos specs. |
-| **Contratos** | Sí, los dos tipos | El de la API del club y el de la API propia (sección 5). |
+| **Contratos** | Sí, los dos tipos | Un contrato unificado para la API del club en [`docs/club-api-contract.md`](docs/club-api-contract.md) y contratos OpenAPI para la API propia por módulo (sección 5). |
 | **Tareas** | Sí, justo a tiempo | Por módulo, justo antes de implementarlo, no todas de entrada. |
 | **Research** | Solo para incógnitas reales | Un solo documento con decisiones, no uno por historia (sección 6). |
 | **Quickstart** | Útil y barato | Uno global: cómo levantar, sembrar datos y recorrer los escenarios. Sirve para la demo. |
@@ -105,7 +105,7 @@ Principios que todo PR debe respetar:
 
 ## 5. Contratos
 
-**API del club (la que consumimos).** Es el más importante: HU-21, HU-23, HU-24 y HU-43 dependen de ella, y hoy solo hay supuestos.
+**API del club (la que consumimos).** Un contrato unificado para eventos y socios está en [`docs/club-api-contract.md`](docs/club-api-contract.md). HU-21, HU-23, HU-24 y HU-43 dependen de esta integración.
 
 | Dato | Historia | Consulta |
 |---|---|---|

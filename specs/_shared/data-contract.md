@@ -26,7 +26,7 @@ Rules:
 - **Overdue Socios stay in the copy.** Their attendance and participation history is kept; only the ranking excludes them until their fees are up to date.
 - **Stale data**: if the last successful synchronization is older than the configured limit (default 24 h), the ranking calculation (HU-25) and segmentation (HU-36) warn the Administrador before running.
 - **Volume**: up to 500,000 Socios.
-- **Push schema**: field names and load envelopes follow the [Socios API contract](../../docs/socios-api-contract.md). Full snapshots use paged chunks and incremental deliveries use stable external IDs and agreed watermarks.
+- **Push schema**: field names and load envelopes follow the [Club API contract](../../docs/club-api-contract.md). Full snapshots use paged chunks and incremental deliveries use stable external IDs and agreed watermarks.
 
 ## 2. Events (pushed by the club)
 

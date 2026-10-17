@@ -5,7 +5,7 @@
 **Status**: Draft  
 **Backlog Reference**: HU-43 (Estimate: 8, Priority: Alta, MVP: Yes).
 **Shared rules**: [data contract](../_shared/data-contract.md), [cross-cutting](../_shared/cross-cutting.md)
-**API contract**: [Socios API contract](../../docs/socios-api-contract.md)
+**API contract**: [Club API contract](../../docs/club-api-contract.md)
 **Input**: "As a platform, I need to receive an up-to-date, read-only copy of the club's Socio data through endpoints we provide, so identification, fee checks, scoring inputs and ranking eligibility use the club's source of truth."
 
 ## Direction and ownership
@@ -68,7 +68,7 @@ The club is the source of truth and pushes roster data to the platform's authent
 ## Assumptions and integration decisions
 
 - The club can push a full initial snapshot and incremental changes, including removals. The club and platform agree on stable external IDs, page/chunk envelope, completion semantics, delta watermarks, and retry identifiers.
-- Field names, load paths, response reports, and validation rules follow the [Socios API contract](../../docs/socios-api-contract.md); incremental records use `id_externo` and `fecha_modificacion`.
+- Field names, load paths, response reports, and validation rules follow the [Club API contract](../../docs/club-api-contract.md); incremental records use `id_externo` and `fecha_modificacion`.
 - An Administrator-triggered resynchronization is an internal request/notification for the club to push again; it does not cause an outbound API call by the platform.
 - The same platform API credential may authorize the club's event and participation pushes (HU-21 and HU-24), subject to the agreed scope model.
 - Distance to the stadium is included or provided as an agreed precomputed field; the platform does not geocode addresses or store exact home addresses.

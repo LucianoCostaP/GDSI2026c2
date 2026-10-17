@@ -5,7 +5,7 @@
 **Status**: Draft
 **Backlog Reference**: HU-22 (Estimate: 5, Priority: Alta, MVP: Yes)
 **Shared rules**: [scoring model](../_shared/scoring-model.md), [cross-cutting](../_shared/cross-cutting.md)
-**Event integration**: [Event API contract](../../docs/event-api-contract.md)
+**Event integration**: [Club API contract](../../docs/club-api-contract.md)
 **Input**: "As an Administrador, I want to define the importance/weight of an event and publish it, so that the priority criteria for access are set and the event becomes visible to Socios."
 
 ## User Scenarios & Testing *(mandatory)*

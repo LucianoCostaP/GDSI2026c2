@@ -5,7 +5,7 @@
 **Status**: Draft
 **Backlog Reference**: HU-21 (Estimate: 3, Priority: Alta, MVP: Yes).
 **Shared rules**: [cross-cutting](../_shared/cross-cutting.md), [data contract](../_shared/data-contract.md)
-**Contract**: [Event API contract](../../docs/event-api-contract.md)
+**Contract**: [Club API contract](../../docs/club-api-contract.md)
 
 ## Direction and ownership
 
@@ -64,6 +64,6 @@ As a System Administrator, I want the platform to receive upcoming and historica
 ## Integration decisions
 
 - HU-21's PDF describes POST, batch POST, GET, and PUT endpoints on the platform. The club initiates POST/PUT submissions; GET is a read operation available to the club and is not used by the platform to fetch club data.
-- The supported routes and payloads are defined in the [Event API contract](../../docs/event-api-contract.md). PUT uses `/api/v1/eventos/{id_interno}` and edits only `fecha_hora`, `lugar`, and `descripcion`; title and type are not editable through PUT.
+- The supported routes and payloads are defined in the [Club API contract](../../docs/club-api-contract.md). PUT uses `/api/v1/eventos/{id_interno}` and edits only `fecha_hora`, `lugar`, and `descripcion`; title and type are not editable through PUT.
 - The PDF does not define a historical-import route or cancellation signal. The contract proposes a separate historical route (TBD) and `POST /api/v1/eventos/{id_interno}/cancelacion`; confirm both with the club before implementation.
-- Batch response details and retry/idempotency behavior follow the [Event API contract](../../docs/event-api-contract.md).
+- Batch response details and retry/idempotency behavior follow the [Club API contract](../../docs/club-api-contract.md).
