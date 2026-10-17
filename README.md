@@ -56,6 +56,15 @@ Lo que **no** hace falta instalar a mano:
    ```bash
    uv run alembic upgrade head
    ```
+   Si la base no tiene ningún admin, crear el primero (entra por "Admin access" con un código que llega a Mailpit):
+   ```bash
+   INITIAL_ADMIN_EMAIL=tu@mail.com INITIAL_ADMIN_NAME="Tu Nombre" uv run python -m app.bootstrap
+   ```
+   En Render se corre solo en cada arranque, con las variables `INITIAL_ADMIN_EMAIL` e `INITIAL_ADMIN_NAME`.
+   Para tener socios de prueba en la tabla `members` (member ID `123456` a `567890`, DNI `30111222` a `30555666`; el `456789` tiene las cuotas en mora y el `567890` no tiene email):
+   ```bash
+   uv run python -m app.seed
+   ```
 5. Levantar el back:
    ```bash
    uv run uvicorn app.main:app --reload
