@@ -1,84 +1,69 @@
-# Feature Specification: Import Event Base Information from the Club API
+# Feature Specification: Receive Event Base Information from the Club
 
 **Feature Branch**: `hu-21-event-base-information`
-**Created**: 2026-10-11 | **Revised**: 2026-10-13 (v3.4)
+**Revised**: 2026-10-16
 **Status**: Draft
-**Backlog Reference**: HU-21 (Estimate: 3, Priority: Alta, MVP: Yes). Re-estimate: uses the club API client and adds refresh, discard and historical import.
+**Backlog Reference**: HU-21 (Estimate: 3, Priority: Alta, MVP: Yes).
 **Shared rules**: [cross-cutting](../_shared/cross-cutting.md), [data contract](../_shared/data-contract.md)
-**Input**: "As a System Administrator, I want to bring an upcoming event from the club's data (date, time, venue, type), so that it can later be reviewed and have its importance and priority rules defined."
+**Contract**: [Event API contract](../../docs/event-api-contract.md)
 
-## User Scenarios & Testing *(mandatory)*
+## Direction and ownership
 
-### User Story 1 - Import Event Base Information (Priority: P1)
+The club is the source of truth for event data and pushes events, changes, and cancellation notices to authenticated endpoints provided by the platform. The platform does not call, poll, or pull from a club API. The platform assigns an internal event ID and owns importance, publication, scoring configuration, and visibility. Club-owned fields are read-only to platform users.
 
-As a System Administrator, I want to bring an upcoming event from the club's data (date, time, venue, type), so that it can later be reviewed and have its importance and priority rules defined. The club organizes the events and is the source of truth; the system takes the data from the club API and the Administrador adjusts only the scoring parameters (class or points) when publishing.
+## User Story 1 - Receive Event Base Information (Priority: P1)
 
-**Why this priority**: First step of the event lifecycle: no event can be published, segmented or scored until it exists in the system.
+As a System Administrator, I want the platform to receive upcoming and historical events pushed by the club so that they can be reviewed, published, or used for attendance history.
 
-**Independent Test**: As an Administrador, import an upcoming event from the club's list and verify it is saved as `pending importance definition` with the club's data, that the publication deadline is recorded, and that it does not appear in the Socio events list.
+**Independent Test**: Have an authorized club client push a valid upcoming event, an invalid event, and a historical event. Verify the accepted event state, validation response, audit, and member visibility.
 
-**Acceptance Scenarios**:
+### Acceptance Scenarios
 
-1. **Given** an Administrador logged in, **When** they open "Importar evento del club", **Then** the system asks the club API and lists the club's upcoming events not yet imported, each with date, time, venue and type (Partido or Evento institucional/amateur).
-2. **Given** the list, **When** the Administrador selects one or more events and confirms, **Then** each event is created in state `pending importance definition` with the club's data and the club's event reference, and the import time is recorded.
-3. **Given** a saved event, **When** it is listed in the admin view, **Then** its state is `pending importance definition` and the time left to its publication deadline is shown (HU-22).
-4. **Given** a saved event not yet published, **When** a Socio opens the events list (HU-17), **Then** the event is not visible.
-5. **Given** an event in `pending importance definition`, **When** the Administrador looks at its date, time, venue and type, **Then** they are read-only: they belong to the club.
-6. **Given** an event in `pending importance definition`, **When** the Administrador asks to refresh it from the club (for example the club rescheduled it), **Then** the data is updated from the API, the publication window does not restart, and the new start must still respect the 48-hour publication lead. If the club moved it to less than 48 hours from now, the refresh is refused with the reason, because the event could no longer be published with the minimum lead, and the Administrador can discard it.
-7. **Given** a pending event the club no longer lists, **When** the system detects it at a refresh or at its publication deadline, **Then** the event is flagged, it is not published automatically, and the Administrador can discard it (state `discarded`: never visible, never scored). If the API cannot be reached at the deadline, the event is published as imported.
-8. **Given** the club's list, **When** an event starts less than 48 hours from now, **Then** it appears but cannot be imported, with the reason (it could not be published with the minimum 48-hour lead).
-9. **Given** an event already imported, **When** the list is shown, **Then** it is not offered again (the club's event reference is unique).
-10. **Given** an Administrador importing **past** events to give the scoring its history (for example last year's matches), **When** they choose a date range, **Then** the club's past events in that range are listed, the Administrador sets the class (A/B/C) of each Partido and the points of each institutional/amateur event (prefilled with the defaults), and on confirmation they are saved as `historical`: never visible to Socios, never published, able to receive attendance (HU-24).
-11. **Given** the club API is unavailable, times out, is not authorized or answers with an unexpected structure, **When** the Administrador opens the import, **Then** an error is shown and no event is created.
-12. **Given** a club event with missing or unknown date, venue or type, **When** the list is shown, **Then** it is flagged as incomplete and cannot be imported.
+1. **Given** an authenticated club client, **When** it submits one or more valid upcoming events, **Then** each new event is created as `pending importance definition` with the club's external reference and original source data, and the platform records the receipt time.
+2. **Given** an accepted pending event, **When** an Administrator views the event, **Then** the event is visible to administrators with its time remaining to the publication deadline, but not visible to members.
+3. **Given** an event in `pending importance definition`, **When** the club pushes an update, **Then** valid source-field changes are applied without resetting the receipt time or publication window. If the update moves the start to less than 48 hours away, it is rejected, the existing event remains unchanged, and the Administrator is informed.
+4. **Given** a pending event, **When** the club pushes a cancellation notice, **Then** the platform flags it and prevents automatic publication; the Administrator may discard it. Omission from a partial submission is not interpreted as cancellation.
+5. **Given** an event whose start is less than 48 hours after receipt, **When** the club submits it for future publication, **Then** that item is rejected or reported as non-publishable with a reason; no incomplete event is created.
+6. **Given** an event with missing or invalid date/time, venue, or type, **When** the club submits it, **Then** the API reports field-level validation errors and creates no incomplete record.
+7. **Given** a retry with an external reference already stored, **When** the club resubmits it, **Then** no duplicate is created. Pending records may be updated under scenario 3; other lifecycle states return a conflict.
+8. **Given** an authenticated historical import of events whose start has passed, **When** it is accepted, **Then** the events are stored as `historical`, are not published or visible to members, and can receive attendance records (HU-24). The Administrator assigns class/points in the historical import workflow.
+9. **Given** a request without valid credentials, malformed request structure, or an unsupported type, **When** the platform receives it, **Then** it rejects the request without changing existing data. The platform does not make outbound API requests to the club.
 
----
+## Event Data and Lifecycle
 
-### Edge Cases
+- Club-owned fields: external event reference, title, date/time, venue, type, and optional description.
+- API field names: `id_externo`, `titulo`, `fecha_hora`, `lugar`, `tipo`, and optional `descripcion`. Wire values for `tipo` are `Partido` or `Institucional`; the platform may label the latter "Evento institucional/amateur" in product screens. The platform returns `id_interno` for later retrieval and updates.
+- Platform-owned fields: internal ID, receipt time, lifecycle state, importance class/points, publication timestamps, and audit history.
+- The club reference is unique and is used to correlate attendance submissions (HU-24).
+- New future events start as `pending importance definition`; they are not visible to members until published under HU-22.
+- Historical imports are stored as `historical`, never published, and remain available for attendance loading.
+- PUT updates may change only `fecha_hora`, `lugar`, and `descripcion`; `titulo`, `tipo`, and `id_externo` are not editable through PUT. Pending updates do not reset the publication deadline. A club cancellation notice prevents automatic publication until administrator disposition.
+- Event type is immutable after creation. A type mismatch on an update is rejected for administrator review.
+- Events starting under 48 hours from receipt are not eligible for future publication. Historical imports are exempt.
 
-- **Type** is given by the club: **Partido** (counts in the attendance pillar, needs a class, takes part in waves) or **Evento institucional/amateur** (counts in the institutional pillar, has no class and no waves, and its points are set at publication, also for elections and assemblies). Every Partido takes place at the club stadium; events held elsewhere are institutional/amateur.
-- **Adjustable by the Administrador**: only the class (A/B/C) of a Partido or the points of an institutional/amateur event, defined in HU-22 (or at the historical import).
-- **Reference**: the club's event reference is unique and is the key HU-24 uses to ask for attendance.
-- **After publication**: the club data is refreshed only through HU-23 (reprogramming), a minimal version of which is proposed for the MVP.
-- **Volume**: the list is paginated; only upcoming events within the club's published horizon are shown.
+## Functional Requirements
 
-## Requirements *(mandatory)*
+- **FR-001**: System MUST expose authenticated endpoints for club-initiated event submissions, updates, cancellation notices, and historical imports.
+- **FR-002**: System MUST NOT call, poll, or pull event data from a club API.
+- **FR-003**: System MUST validate each event and report rejected records and reasons; structurally invalid or unauthorized requests MUST NOT modify data.
+- **FR-004**: System MUST create valid new future events as `pending importance definition` with source fields and receipt timestamp.
+- **FR-005**: System MUST prevent duplicate events using the club external reference and update eligible pending events without resetting their publication deadline.
+- **FR-006**: System MUST reject a pending update that would leave less than 48 hours before event start, preserving the existing record.
+- **FR-007**: System MUST flag pending cancellations, prevent automatic publication, and permit administrator discard.
+- **FR-008**: System MUST support historical event imports that are not published or visible to members but can receive attendance.
+- **FR-009**: System MUST keep club-owned event data read-only to platform users and audit successful submissions, updates, rejections, cancellations, discards, and historical imports.
 
-### Functional Requirements
+## Success Criteria
 
-- **FR-001**: System MUST list the club's upcoming events, not yet imported, from the club API.
-- **FR-002**: System MUST create each selected event in state `pending importance definition` with the club's data and reference, and keep it available for review and completion.
-- **FR-003**: System MUST NOT show the event to Socios at this step.
-- **FR-004**: System MUST record the import time, as it starts the publication window defined in HU-22.
-- **FR-005**: System MUST make the club's data read-only and allow a refresh from the club while the event is `pending importance definition`, without restarting the window.
-- **FR-006**: System MUST flag a pending event that the club no longer lists or that could no longer be published with the 48-hour lead, withhold its automatic publication, and let the Administrador discard it.
-- **FR-007**: System MUST allow importing past events as `historical`, with class or points set by the Administrador.
-- **FR-008**: System MUST validate that the data is complete, that the type is known, that the reference is not already imported, and the 48-hour minimum lead.
-- **FR-009**: System MUST persist nothing when the API fails.
-- **FR-010**: System MUST audit every import, refresh, discard and historical import.
+- **SC-001**: Every accepted future event begins in `pending importance definition` with its receipt timestamp recorded.
+- **SC-002**: No pending, historical, or discarded event is visible to members.
+- **SC-003**: No future event with less than 48 hours' lead is accepted for publication.
+- **SC-004**: No external event reference produces duplicate platform records.
+- **SC-005**: No platform-initiated outbound request to a club API occurs for event ingestion or refresh.
 
-### Key Entities
+## Integration decisions
 
-- **Event**: club event reference (unique), date, time, venue, type (`Partido` / `Evento institucional/amateur`), class (Partido only) or points (institutional/amateur only), state (`pending importance definition` / `published` / `historical` / `discarded` / `withdrawn`), imported at, last refreshed at.
-
-## Success Criteria *(mandatory)*
-
-### Measurable Outcomes
-
-- **SC-001**: 100% of imported upcoming events start in `pending importance definition` with the import time recorded.
-- **SC-002**: 0 events in `pending importance definition`, `historical` or `discarded` are visible to Socios.
-- **SC-003**: 0 upcoming events are imported with a start less than 48 hours away.
-- **SC-004**: 0 events are imported twice.
-
-## Assumptions
-
-- The club API exposes upcoming and past events with a unique reference, date, time, venue and type, and the club organizes them (confirmed by the product owner).
-- Capacity is not captured: the waves are percentile-based (HU-36) and do not need it.
-- The 48-hour lead is the minimum time between publication and the event start.
-- Clubs reschedule matches often: a **published** event is refreshed from the club through HU-23. Without HU-23 Socios would see an outdated date.
-
-## Revision Notes
-
-- v2: type catalog, historical load, editing while pending, lead time.
-- v3: lead time changed from 24 to 48 hours as the minimum publication lead; capacity removed.
-- v3.4: events are imported from the club API instead of typed in; club data is read-only; added refresh, discard of events the club no longer lists and historical import from the API.
+- HU-21's PDF describes POST, batch POST, GET, and PUT endpoints on the platform. The club initiates POST/PUT submissions; GET is a read operation available to the club and is not used by the platform to fetch club data.
+- The supported routes and payloads are defined in the [Event API contract](../../docs/event-api-contract.md). PUT uses `/api/v1/eventos/{id_interno}` and edits only `fecha_hora`, `lugar`, and `descripcion`; title and type are not editable through PUT.
+- The PDF does not define a historical-import route or cancellation signal. The contract proposes a separate historical route (TBD) and `POST /api/v1/eventos/{id_interno}/cancelacion`; confirm both with the club before implementation.
+- Batch response details and retry/idempotency behavior follow the [Event API contract](../../docs/event-api-contract.md).

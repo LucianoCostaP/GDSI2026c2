@@ -50,7 +50,7 @@ Rules that apply to every spec. Individual specs reference this file instead of 
 
 | Entity | States |
 |---|---|
-| Event | `pending importance definition` → `published`; `historical` (past event imported for scoring history, never published); `discarded` (pending event the club no longer lists); `withdrawn` (published event that will not take place, restorable while its start has not passed) |
+| Event | `pending importance definition` → `published`; `historical` (past event imported for scoring history, never published); `discarded` (pending event reported cancelled by the club and discarded by an Administrator); `withdrawn` (published event that will not take place, restorable while its start has not passed) |
 | Socio account | `not activated`, `activated` |
 | Management account | `pending activation`, `active` |
 | Invitation | `valid`, `used`, `expired`, `replaced` |
@@ -77,7 +77,7 @@ Rules that apply to every spec. Individual specs reference this file instead of 
 ## 7. Bootstrap (technical tasks, not stories)
 
 - Seed the first Administrador account.
-- Configure the credentials of the club API (HU-N2) as a secret.
+- Configure credentials for club-initiated pushes to platform-provided APIs (HU-N2, HU-21, HU-24) as secrets.
 - Seed rules version 1 with the defaults in `scoring-model.md`.
 - Seed settings: default event class, default institutional event points, season start date, wave percentile step, minimum wave step, minimum publication lead, synchronization staleness limit.
 - Deliver the application shell with the global navigation menu that HU-11 relies on, and the Socio and management home screens.

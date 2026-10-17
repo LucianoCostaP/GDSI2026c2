@@ -5,6 +5,7 @@
 **Status**: Draft
 **Backlog Reference**: HU-22 (Estimate: 5, Priority: Alta, MVP: Yes)
 **Shared rules**: [scoring model](../_shared/scoring-model.md), [cross-cutting](../_shared/cross-cutting.md)
+**Event integration**: [Event API contract](../../docs/event-api-contract.md)
 **Input**: "As an Administrador, I want to define the importance/weight of an event and publish it, so that the priority criteria for access are set and the event becomes visible to Socios."
 
 ## User Scenarios & Testing *(mandatory)*
@@ -34,11 +35,11 @@ As an Administrador, I want to define the importance/weight of an event and publ
 ### Edge Cases
 
 - **Deadline arithmetic**: because HU-21 requires the start to be at least 48 hours after the import, the deadline is never earlier than the import time. An event starting 60 hours after the import is published automatically 12 hours after it.
-- **Club API at the deadline**: the automatic publication does not depend on the club API. If the API cannot be reached at the deadline, the event is published as it was imported (the check of HU-21 repeats at the next refresh).
+- **Club updates at the deadline**: automatic publication does not make an outbound call to the club. If no update/cancellation push has been received by the deadline, the event is published using the data already stored (subject to HU-21 cancellation flags).
 - **Scheduler failure**: the publication job is idempotent, runs at least every minute and retries; a missed run publishes on the next run and is flagged in the audit, unless the 48-hour lead was lost, in which case the Administrador is warned on screen.
 - **Historical and discarded events** (HU-21) are not listed here.
-- **Events flagged by HU-21** (the club no longer lists them) are not published automatically.
-- **Club data** (date, time, venue, type) is read-only here; only the class or the points are adjusted. After publication the club data is refreshed only through HU-23.
+- **Events flagged by HU-21** through a club cancellation notice are not published automatically until administrator disposition. A pending event marked cancelled by the club is excluded from automatic publication until the Administrator discards or otherwise resolves it.
+- **Club data** (date, time, venue, type) is read-only here; only the class or the points are adjusted. After publication, supported club-pushed changes arrive by PUT under HU-23.
 - **Class applies only to Partidos; points apply only to institutional/amateur events.**
 
 ## Requirements *(mandatory)*
