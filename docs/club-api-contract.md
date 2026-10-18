@@ -92,7 +92,9 @@ The source API does not define cancellation, but HU-21 requires the club to repo
 
 #### Import historical events
 
-HU-21 requires importing already-started events so administrators can classify them and later load attendance. Store them as historical, hidden from members, and exempt from the 48-hour rule. Apply the same event resource validation and prevent duplicate external IDs. The source API defines no historical route. Before implementation, expose a distinct authenticated historical import operation with a documented route and payload; it may be single or batched, but must not reuse the future-event create or batch routes. Batched imports must return per-item validation results.
+`POST /api/v1/eventos/historicos/batch`
+
+Accepts a JSON array of already-started event objects using the same resource fields as the regular event payload. Historical events are exempt from the 48-hour rule and are created directly in `histórico`, hidden from members and available for attendance recording. For each item, validate required fields and formats independently. If an `id_externo` is already registered for the club, omit that item without creating a duplicate. Return `207 Multi-Status` with one result per input item, in input order, identifying `id_externo` and whether it was created, omitted as a duplicate, or rejected; created items include `id_interno`, and rejected items include a stable error `code` and `message`. A missing or non-array body returns request-level `400` and processes no items. The route requires the shared Bearer authentication.
 
 ### Event lifecycle and visibility
 
@@ -257,7 +259,7 @@ Load results include per-record rejections with `id_externo` when available, `fi
 
 ## Decisions to resolve before implementation
 
-1. Define the distinct historical event import route and payload; it is required by HU-21 but absent from the source API.
+1. Confirm the historical batch route and duplicate handling with the club; `/api/v1/eventos/historicos/batch` and omission of duplicate `id_externo` values follow the source API documentation.
 2. Confirm the proposed cancellation route and optional `motivo` with the club; the source API defines no cancellation operation.
 3. The source API applies a 48-hour minimum to new matches and edited match start times. HU-21 applies publication lead to all upcoming events and pending updates; this contract follows HU-21 for both event types.
 4. The source API says duplicate event IDs conflict, while HU-21 requires pending records to update on resend. This contract updates pending events and keeps `409` for other states.
