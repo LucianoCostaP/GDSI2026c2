@@ -1,32 +1,201 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.exception_handlers import (
+    http_exception_handler as default_http_exception_handler,
+)
+from fastapi.exception_handlers import (
+    request_validation_exception_handler as default_validation_exception_handler,
+)
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from .config import settings
+from .core.exceptions import PasioDe10Exception
 from .db import engine
-from .routers import admin_accounts, auth, member_auth
+from .routers import admin_accounts, auth, eventos, member_auth, socios
 
-app = FastAPI(title="Pasión de 10 API")
+app = FastAPI(
+    title=settings.app_name,
+    version=settings.app_version,
+    description="Backend de Pasión de 10 - API Unificada (Autenticación, Socios y Eventos)",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.front_origin],
+    allow_origins=[settings.front_origin] if settings.front_origin != "*" else ["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    # El front lo usa para mostrar cuánto falta para reenviar un código o salir del bloqueo.
     expose_headers=["Retry-After"],
 )
+
+# Rutas de autenticación y administración existentes
 app.include_router(auth.router)
 app.include_router(member_auth.router)
 app.include_router(admin_accounts.router)
 
+# Rutas de API unificada de clubes (HU-21, HU-22, HU-43)
+app.include_router(eventos.router, prefix=settings.api_v1_prefix)
+app.include_router(socios.router, prefix=settings.api_v1_prefix)
 
-@app.get("/healthz")
+
+# ==============================================================================
+# MANEJADORES DE EXCEPCIONES
+# ==============================================================================
+
+
+@app.exception_handler(PasioDe10Exception)
+async def pasion10_exception_handler(
+    request: Request, exc: PasioDe10Exception
+) -> JSONResponse:
+    """Manejo de excepciones de negocio del módulo de eventos y socios de clubes."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": exc.message,
+            "status_code": exc.status_code,
+            "detail": {
+                "code": exc.code,
+                "message": exc.message,
+            },
+        },
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """
+    Manejo de errores de validación de esquemas Pydantic / formato JSON.
+    Para rutas bajo /api/v1 (APIs de clubes), devuelve el formato canónico exigido por contrato.
+    Para otras rutas (ej. auth/admin), delega en el manejador por defecto (422).
+    """
+    if request.url.path.startswith(settings.api_v1_prefix):
+        errors = exc.errors()
+        field = None
+        message = "Faltan campos obligatorios o el formato es incorrecto."
+        if errors:
+            first_error = errors[0]
+            loc = first_error.get("loc", [])
+            if loc:
+                field = str(loc[-1])
+
+        detalles = []
+        for err in errors:
+            campo = " -> ".join(
+                [str(loc) for loc in err.get("loc", []) if loc != "body"]
+            )
+            detalles.append(f"Campo '{campo}': {err.get('msg')}")
+
+        if request.url.path.startswith(f"{settings.api_v1_prefix}/eventos"):
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={
+                    "error": message,
+                    "status_code": status.HTTP_400_BAD_REQUEST,
+                    "detalles": detalles,
+                    "code": "BAD_REQUEST",
+                    "message": message,
+                    "field": field,
+                },
+            )
+
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "error": {
+                    "code": "BAD_REQUEST",
+                    "message": message,
+                    "field": field,
+                }
+            },
+        )
+
+    return await default_validation_exception_handler(request, exc)
+
+
+@app.exception_handler(HTTPException)
+async def custom_http_exception_handler(
+    request: Request, exc: HTTPException
+) -> JSONResponse:
+    """
+    Manejo de HTTPException para responder con la estructura esperada por la API de clubes
+    sin romper el formato de las rutas de autenticación.
+    """
+    if isinstance(exc.detail, dict) and "error" in exc.detail:
+        content = dict(exc.detail)
+        if "detail" not in content and isinstance(exc.detail.get("error"), dict):
+            content["detail"] = exc.detail["error"].get("message", "Error HTTP")
+        return JSONResponse(status_code=exc.status_code, content=content)
+
+    if request.url.path.startswith(settings.api_v1_prefix):
+        code = "HTTP_ERROR"
+        if exc.status_code == status.HTTP_401_UNAUTHORIZED:
+            code = "UNAUTHORIZED"
+        elif exc.status_code == status.HTTP_404_NOT_FOUND:
+            code = "NOT_FOUND"
+        elif exc.status_code == status.HTTP_409_CONFLICT:
+            code = "CONFLICT"
+        elif exc.status_code == 422:
+            code = "UNPROCESSABLE_ENTITY"
+
+        message = str(exc.detail)
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "detail": message,
+                "error": {
+                    "code": code,
+                    "message": message,
+                },
+            },
+        )
+
+    return await default_http_exception_handler(request, exc)
+
+
+# ==============================================================================
+# MONITOREO Y SALUD
+# ==============================================================================
+
+
+@app.get("/health", summary="Health check general de la API")
+def health() -> dict[str, str]:
+    return {
+        "status": "healthy",
+        "app": settings.app_name,
+        "version": settings.app_version,
+        "engine": settings.db_engine,
+    }
+
+
+@app.get("/healthz", summary="Liveness probe")
 def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/readyz")
+@app.get("/readyz", summary="Readiness probe")
 def readyz() -> dict[str, str]:
     with engine.connect() as conn:
         conn.execute(text("SELECT 1"))
     return {"status": "ready"}
+
+
+@app.get("/debug/eventos", tags=["Herramientas de Desarrollo / Debug"])
+def debug_listar_todos_los_eventos():
+    from .repositories.factory import get_evento_repository
+    from .repositories.memory_repo import MemoryEventoRepository
+
+    repo = get_evento_repository()
+    if isinstance(repo, MemoryEventoRepository):
+        return {
+            "total_pendientes": len(repo.tabla_eventos_pendientes),
+            "total_visibles": len(repo.tabla_eventos_visibles),
+            "eventos_pendientes": repo.tabla_eventos_pendientes,
+            "eventos_visibles": repo.tabla_eventos_visibles,
+        }
+    return {"mensaje": "Modo activo en base de datos PostgreSQL."}

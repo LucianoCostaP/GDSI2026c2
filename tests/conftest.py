@@ -15,6 +15,23 @@ from app.rate_limit import identifier_limiter, ip_limiter
 Outbox = list[tuple[str, str, str]]
 MakeMember = Callable[..., Member]
 
+BOCA_TOKEN = "token_boca_abc123"
+RIVER_TOKEN = "token_river_def456"
+RACING_TOKEN = "token_racing_ghi789"
+
+BOCA_HEADERS = {
+    "Authorization": f"Bearer {BOCA_TOKEN}",
+    "Content-Type": "application/json",
+}
+RIVER_HEADERS = {
+    "Authorization": f"Bearer {RIVER_TOKEN}",
+    "Content-Type": "application/json",
+}
+RACING_HEADERS = {
+    "Authorization": f"Bearer {RACING_TOKEN}",
+    "Content-Type": "application/json",
+}
+
 
 @pytest.fixture
 def db() -> Iterator[Session]:
