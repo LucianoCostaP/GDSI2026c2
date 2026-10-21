@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exception_handlers import (
     http_exception_handler as default_http_exception_handler,
@@ -10,10 +12,26 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
+from .bootstrap import create_initial_admin
 from .config import settings
 from .core.exceptions import PasioDe10Exception
-from .db import engine
+from .db import SessionLocal, engine
 from .routers import admin_accounts, auth, eventos, member_auth, socios
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Garantiza que el admin inicial exista automáticamente al levantar el backend
+    if settings.initial_admin_email and settings.initial_admin_name:
+        try:
+            with SessionLocal() as db:
+                create_initial_admin(
+                    db, settings.initial_admin_email, settings.initial_admin_name
+                )
+        except Exception:
+            pass
+    yield
+
 
 app = FastAPI(
     title=settings.app_name,
@@ -21,6 +39,7 @@ app = FastAPI(
     description="Backend de Pasión de 10 - API Unificada (Autenticación, Socios y Eventos)",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
