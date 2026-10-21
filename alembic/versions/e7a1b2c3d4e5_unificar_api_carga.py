@@ -124,8 +124,8 @@ def upgrade() -> None:
             club_id UUID NOT NULL REFERENCES clubes(id) ON DELETE CASCADE,
             carga_id VARCHAR(100) NOT NULL,
             tipo VARCHAR(20) NOT NULL CHECK (tipo IN ('completa', 'incremental')),
-            estado VARCHAR(20) NOT NULL DEFAULT 'recibiendo' CHECK (estado IN ('recibiendo', 'procesando', 'completada', 'error')),
-            total_paginas INTEGER,
+            estado VARCHAR(20) NOT NULL DEFAULT 'recibiendo' CHECK (estado IN ('recibiendo', 'procesando', 'exitosa', 'fallida')),
+            total_paginas INTEGER NOT NULL DEFAULT 1,
             paginas_recibidas INTEGER NOT NULL DEFAULT 0,
             desde TIMESTAMPTZ,
             hasta TIMESTAMPTZ,
@@ -134,25 +134,40 @@ def upgrade() -> None:
             actualizados INTEGER NOT NULL DEFAULT 0,
             desactivados INTEGER NOT NULL DEFAULT 0,
             rechazados INTEGER NOT NULL DEFAULT 0,
+            payload_hash VARCHAR(64),
+            error_mensaje TEXT,
             iniciado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             completado_en TIMESTAMPTZ,
-            error_mensaje TEXT,
-            CONSTRAINT uq_socios_cargas_club_carga_id UNIQUE (club_id, carga_id)
+            CONSTRAINT uq_cargas_club_carga UNIQUE (club_id, carga_id)
         );
 
         CREATE TABLE IF NOT EXISTS socios_cargas_paginas (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             carga_id_uuid UUID NOT NULL REFERENCES socios_cargas(id) ON DELETE CASCADE,
-            numero_pagina INTEGER NOT NULL,
+            pagina INTEGER NOT NULL,
+            payload_hash VARCHAR(64) NOT NULL,
             recibido_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            CONSTRAINT uq_socios_cargas_paginas_pagina UNIQUE (carga_id_uuid, numero_pagina)
+            CONSTRAINT uq_cargas_paginas UNIQUE (carga_id_uuid, pagina)
         );
 
         CREATE TABLE IF NOT EXISTS socios_staging_completa (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             carga_id_uuid UUID NOT NULL REFERENCES socios_cargas(id) ON DELETE CASCADE,
-            payload JSONB NOT NULL,
-            creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            club_id UUID NOT NULL REFERENCES clubes(id) ON DELETE CASCADE,
+            pagina INTEGER NOT NULL,
+            id_externo VARCHAR(100) NOT NULL,
+            dni VARCHAR(50) NOT NULL,
+            numero_socio VARCHAR(50) NOT NULL,
+            nombre VARCHAR(255) NOT NULL,
+            fecha_nacimiento DATE NOT NULL,
+            fecha_alta DATE NOT NULL,
+            fecha_baja_previa DATE,
+            estado_cuota VARCHAR(20) NOT NULL,
+            email VARCHAR(255) NOT NULL,
+            distancia_km NUMERIC(10, 2) NOT NULL,
+            localidad VARCHAR(255),
+            fecha_modificacion TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            recibido_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
         CREATE TABLE IF NOT EXISTS socios_cargas_rechazos (
@@ -160,10 +175,27 @@ def upgrade() -> None:
             carga_id_uuid UUID NOT NULL REFERENCES socios_cargas(id) ON DELETE CASCADE,
             id_externo VARCHAR(100),
             field VARCHAR(100),
-            codigo VARCHAR(100),
+            codigo VARCHAR(100) NOT NULL,
             motivo TEXT NOT NULL,
             creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
+
+        -- Índices estratégicos
+        CREATE INDEX IF NOT EXISTS idx_clubes_token ON clubes(api_token) WHERE activo = TRUE;
+        CREATE INDEX IF NOT EXISTS idx_pendientes_club_fecha ON eventos_pendientes_verificacion(club_id, fecha_hora);
+        CREATE INDEX IF NOT EXISTS idx_pendientes_club_titulo ON eventos_pendientes_verificacion(club_id, titulo);
+        CREATE INDEX IF NOT EXISTS idx_visibles_club_fecha ON eventos_visibles(club_id, fecha_hora);
+        CREATE INDEX IF NOT EXISTS idx_visibles_club_titulo ON eventos_visibles(club_id, titulo);
+        CREATE INDEX IF NOT EXISTS idx_cambios_evento ON eventos_cambios_pendientes(id_interno, club_id);
+
+        CREATE INDEX IF NOT EXISTS idx_socios_club_activo ON socios(club_id, activo);
+        CREATE INDEX IF NOT EXISTS idx_socios_club_dni ON socios(club_id, dni);
+        CREATE INDEX IF NOT EXISTS idx_socios_club_numero_socio ON socios(club_id, numero_socio);
+        CREATE INDEX IF NOT EXISTS idx_socios_club_email ON socios(club_id, email);
+        CREATE INDEX IF NOT EXISTS idx_socios_cargas_club_estado ON socios_cargas(club_id, estado);
+        CREATE INDEX IF NOT EXISTS idx_staging_carga ON socios_staging_completa(carga_id_uuid);
+        CREATE INDEX IF NOT EXISTS idx_staging_dni ON socios_staging_completa(carga_id_uuid, dni);
+        CREATE INDEX IF NOT EXISTS idx_rechazos_carga ON socios_cargas_rechazos(carga_id_uuid);
     """)
 
     # 7. Vistas Multi-Tenant
