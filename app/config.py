@@ -32,8 +32,8 @@ class Settings(BaseSettings):
     session_absolute_hours: int = 12
     admin_invitation_expiry_hours: int = 48
     # Primer admin (tarea de arranque): se crea al iniciar si todavía no hay ningún admin.
-    initial_admin_email: str | None = None
-    initial_admin_name: str | None = None
+    initial_admin_email: str | None = "admin@club.com"
+    initial_admin_name: str | None = "Admin Demo"
 
     # Compatibilidad con alias en mayúsculas
     @property

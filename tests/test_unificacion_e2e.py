@@ -25,7 +25,7 @@ def test_flujo_unificado_socio_carga_y_login_member():
     identifier_limiter.reset()
     app.dependency_overrides[get_mailer] = lambda: lambda *email: outbox.append(email)
 
-    # Limpiar tablas previas
+    # Limpiar tablas de socios de clubes y datos específicos de este test
     with SessionLocal() as db:
         db.execute(
             text(
@@ -33,12 +33,15 @@ def test_flujo_unificado_socio_carga_y_login_member():
                 "socios_cargas_paginas, socios_cargas, socios CASCADE;"
             )
         )
-        db.execute(
-            text(
-                "DELETE FROM audit_log; DELETE FROM sessions; DELETE FROM access_codes; "
-                "DELETE FROM admin_invitations; DELETE FROM users; DELETE FROM members;"
-            )
-        )
+        member = db.query(Member).filter(Member.dni == "45999888").first()
+        if member:
+            user = db.query(User).filter(User.member_id == member.member_id).first()
+            if user:
+                db.execute(text("DELETE FROM audit_log WHERE actor_user_id = :uid"), {"uid": user.id})
+                db.execute(text("DELETE FROM sessions WHERE user_id = :uid"), {"uid": user.id})
+                db.execute(text("DELETE FROM users WHERE id = :uid"), {"uid": user.id})
+            db.execute(text("DELETE FROM access_codes WHERE member_id = :mid"), {"mid": member.member_id})
+            db.execute(text("DELETE FROM members WHERE member_id = :mid"), {"mid": member.member_id})
         db.commit()
 
     with TestClient(app) as client:
@@ -134,5 +137,18 @@ def test_flujo_unificado_socio_carga_y_login_member():
         assert login_data["user"]["email"] == "carlitos@example.com"
         assert login_data["user"]["name"] == "Carlos Tevez"
         assert login_data["user"]["role"] == "member"
+
+    # Limpiar los registros creados por el test
+    with SessionLocal() as db:
+        member = db.query(Member).filter(Member.dni == "45999888").first()
+        if member:
+            user = db.query(User).filter(User.member_id == member.member_id).first()
+            if user:
+                db.execute(text("DELETE FROM audit_log WHERE actor_user_id = :uid"), {"uid": user.id})
+                db.execute(text("DELETE FROM sessions WHERE user_id = :uid"), {"uid": user.id})
+                db.execute(text("DELETE FROM users WHERE id = :uid"), {"uid": user.id})
+            db.execute(text("DELETE FROM access_codes WHERE member_id = :mid"), {"mid": member.member_id})
+            db.execute(text("DELETE FROM members WHERE member_id = :mid"), {"mid": member.member_id})
+        db.commit()
 
     app.dependency_overrides.clear()
