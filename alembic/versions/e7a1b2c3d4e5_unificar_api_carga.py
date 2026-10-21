@@ -384,24 +384,46 @@ def upgrade() -> None:
 
     # 9. Trigger de sincronización bidireccional entre socios y members
     # Cuando un socio es cargado o actualizado por el club, impacta automáticamente en members.
+    # Controla colisiones tanto por DNI como por member_id para interoperar con seeds y miembros previos.
     op.execute("""
         CREATE OR REPLACE FUNCTION trg_sync_socio_to_member()
         RETURNS TRIGGER AS $$
+        DECLARE
+            v_existing_member_id VARCHAR(32);
         BEGIN
-            INSERT INTO members (member_id, dni, email, name, fee_status, account_state)
-            VALUES (
-                NEW.id_externo,
-                NEW.dni,
-                NEW.email,
-                NEW.nombre,
-                CASE WHEN NEW.estado_cuota = 'al_dia' THEN 'up_to_date'::fee_status ELSE 'overdue'::fee_status END,
-                'not_activated'::member_account_state
-            )
-            ON CONFLICT (member_id) DO UPDATE SET
-                dni = EXCLUDED.dni,
-                email = EXCLUDED.email,
-                name = EXCLUDED.name,
-                fee_status = EXCLUDED.fee_status;
+            -- Verificar si ya existe un miembro con ese DNI
+            SELECT member_id INTO v_existing_member_id FROM members WHERE dni = NEW.dni LIMIT 1;
+            
+            IF v_existing_member_id IS NOT NULL THEN
+                UPDATE members SET
+                    email = NEW.email,
+                    name = NEW.nombre,
+                    fee_status = CASE WHEN NEW.estado_cuota = 'al_dia' THEN 'up_to_date'::fee_status ELSE 'overdue'::fee_status END
+                WHERE member_id = v_existing_member_id;
+            ELSE
+                -- Verificar si existe por member_id
+                SELECT member_id INTO v_existing_member_id FROM members WHERE member_id = NEW.id_externo LIMIT 1;
+                
+                IF v_existing_member_id IS NOT NULL THEN
+                    UPDATE members SET
+                        dni = NEW.dni,
+                        email = NEW.email,
+                        name = NEW.nombre,
+                        fee_status = CASE WHEN NEW.estado_cuota = 'al_dia' THEN 'up_to_date'::fee_status ELSE 'overdue'::fee_status END
+                    WHERE member_id = v_existing_member_id;
+                ELSE
+                    -- Insertar nuevo socio en members
+                    INSERT INTO members (member_id, dni, email, name, fee_status, account_state)
+                    VALUES (
+                        NEW.id_externo,
+                        NEW.dni,
+                        NEW.email,
+                        NEW.nombre,
+                        CASE WHEN NEW.estado_cuota = 'al_dia' THEN 'up_to_date'::fee_status ELSE 'overdue'::fee_status END,
+                        'not_activated'::member_account_state
+                    );
+                END IF;
+            END IF;
             RETURN NEW;
         END;
         $$ LANGUAGE plpgsql;
