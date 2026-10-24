@@ -5,28 +5,28 @@
 **Status**: Draft
 **Backlog Reference**: HU-01 (Estimate: 3, Priority: Alta, MVP: Yes). Re-estimate: scope now includes the email-code step that completes activation.
 **Shared rules**: [cross-cutting](../_shared/cross-cutting.md), [data contract](../_shared/data-contract.md)
-**Input**: "As a Socio accessing the system for the first time, I want to verify my identity by entering my DNI or member number, so that I can start the activation process of my account."
+**Input**: "As a Member accessing the system for the first time, I want to verify my identity by entering my DNI or member number, so that I can start the activation process of my account."
 
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Identity Verification and Activation (Priority: P1)
 
-As a Socio accessing the system for the first time, I want to verify my identity by entering my DNI or member number, so that I can start the activation process of my account.
+As a Member accessing the system for the first time, I want to verify my identity by entering my DNI or member number, so that I can start the activation process of my account.
 
-**Why this priority**: Entry gate for every Socio feature: no Socio can log in or see their score until their identity is checked against the club data and the account is activated.
+**Why this priority**: Entry gate for every Member feature: no Member can log in or see their score until their identity is checked against the club data and the account is activated.
 
-**Independent Test**: Enter the DNI of a Socio in good standing with no activated account, receive the code at the registered email, enter it and verify the account becomes `activated`. Then try an unknown DNI, an overdue Socio and an already activated Socio and verify the three different messages.
+**Independent Test**: Enter the DNI of a Member in good standing with no activated account, receive the code at the registered email, enter it and verify the account becomes `activated`. Then try an unknown DNI, an overdue Member and an already activated Member and verify the three different messages.
 
 **Acceptance Scenarios**:
 
-1. **Given** a Socio exists in the club data, has no activated account and has fees up to date, **When** the Socio enters their DNI or member number, **Then** the identifier is validated and the system sends an activation code to the email registered in the club (the "next verification step").
-2. **Given** an activation code was sent, **When** the Socio enters the correct, non-expired code, **Then** the account becomes `activated` and the Socio is redirected to login (HU-05) with a confirmation message.
-3. **Given** an incorrect or expired code, **When** it is submitted, **Then** activation is denied and the Socio can request a new code (rules in cross-cutting section 3).
+1. **Given** a Member exists in the club data, has no activated account and has fees up to date, **When** the Member enters their DNI or member number, **Then** the identifier is validated and the system sends an activation code to the email registered in the club (the "next verification step").
+2. **Given** an activation code was sent, **When** the Member enters the correct, non-expired code, **Then** the account becomes `activated` and the Member is redirected to login (HU-05) with a confirmation message.
+3. **Given** an incorrect or expired code, **When** it is submitted, **Then** activation is denied and the Member can request a new code (rules in cross-cutting section 3).
 4. **Given** an identifier that does not exist in the club data, **When** it is submitted, **Then** a clear error message is shown and the flow does not advance.
-5. **Given** a Socio who exists but does not have fees up to date, **When** the Socio submits their identifier, **Then** the system informs that the account cannot be activated and states why (fees pending), without showing amounts.
-6. **Given** a Socio who already has an activated account, **When** the Socio submits their identifier, **Then** the system informs that the account is already activated and redirects to login (HU-05).
-7. **Given** an identifier that matches the DNI of one Socio and the member number of another, **When** it is submitted, **Then** the system asks the Socio to choose the identifier type before continuing.
-8. **Given** a Socio with no email registered in the club, **When** they pass the fee check, **Then** the system informs that the club has no email on file and that activation must be solved with the club; no code is sent.
+5. **Given** a Member who exists but does not have fees up to date, **When** the Member submits their identifier, **Then** the system informs that the account cannot be activated and states why (fees pending), without showing amounts.
+6. **Given** a Member who already has an activated account, **When** the Member submits their identifier, **Then** the system informs that the account is already activated and redirects to login (HU-05).
+7. **Given** an identifier that matches the DNI of one Member and the member number of another, **When** it is submitted, **Then** the system asks the Member to choose the identifier type before continuing.
+8. **Given** a Member with no email registered in the club, **When** they pass the fee check, **Then** the system informs that the club has no email on file and that activation must be solved with the club; no code is sent.
 
 ---
 
@@ -44,7 +44,7 @@ As a Socio accessing the system for the first time, I want to verify my identity
 
 - **FR-001**: System MUST accept a DNI or a member number as identifier in one field.
 - **FR-002**: System MUST validate the identifier against the club data.
-- **FR-003**: System MUST send an activation code to the registered email only when the Socio exists, has no activated account and has fees up to date.
+- **FR-003**: System MUST send an activation code to the registered email only when the Member exists, has no activated account and has fees up to date.
 - **FR-004**: System MUST show a clear error when the identifier does not exist.
 - **FR-005**: System MUST inform that the account cannot be activated, and why, when fees are not up to date.
 - **FR-006**: System MUST inform that the account is already activated and redirect to login when an activated account exists.
@@ -55,7 +55,7 @@ As a Socio accessing the system for the first time, I want to verify my identity
 
 ### Key Entities
 
-- **Socio**: DNI, member number, registered email, fee status, account state (`not activated` / `activated`).
+- **Member**: DNI, member number, registered email, fee status, account state (`not activated` / `activated`).
 - **AccessCode** (purpose: activation): recipient, created at, expiry, attempts, status.
 
 ## Success Criteria *(mandatory)*
@@ -63,7 +63,7 @@ As a Socio accessing the system for the first time, I want to verify my identity
 ### Measurable Outcomes
 
 - **SC-001**: Each of the eight scenarios produces exactly the behavior above in automated tests.
-- **SC-002**: 0 Socios with overdue fees or unknown identifiers receive a code.
+- **SC-002**: 0 Members with overdue fees or unknown identifiers receive a code.
 - **SC-003**: 0 accounts become `activated` without a valid code.
 
 ## Assumptions

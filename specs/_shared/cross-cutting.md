@@ -10,24 +10,26 @@ Rules that apply to every spec. Individual specs reference this file instead of 
 
 ## 2. Roles and permissions
 
-| Capability | Socio | Dirigente | Administrador |
-|---|---|---|---|
-| Activate account by DNI / member number (HU-01) | Yes | No | No |
-| Log in (HU-05 / HU-06) | HU-05 | HU-06 | HU-06 |
-| Create / activate management accounts (HU-07 / HU-08) | No | No | Create: Yes. Activate: invitee |
-| Import events, publish, load attendance and activities (HU-21, 22, 24) | No | No | Yes |
-| Refresh, reprogram, withdraw and restore events (HU-23) | No | No | Yes |
-| Run club data synchronization on demand and see its status (HU-N2) | No | No | Yes |
-| Run ranking calculation (HU-25) | No | No | Yes |
-| Segmentation and schedule (HU-36, HU-37) | No | No | Yes |
-| Adjust scoring parameters (HU-28) | No | Yes | No |
-| Simulate rules change (HU-29) | No | Yes | Yes |
-| View ranking explanation, own score, breakdown, simulator (HU-13, 14, 16, 18) | Yes | No | No |
-| View upcoming events, own slot (HU-17, HU-39) | Yes | No | No |
-| Log out (HU-11) | Yes | Yes | Yes |
+There are two roles: **Member** (a club member) and **Admin** (manages the system). Earlier versions of these specs split management into Dirigente and Administrador; both are now the single Admin role, with the union of their permissions.
+
+| Capability | Member | Admin |
+|---|---|---|
+| Activate account by DNI / member number (HU-01) | Yes | No |
+| Log in (HU-05 / HU-06) | HU-05 | HU-06 |
+| Create / activate Admin accounts (HU-07 / HU-08) | No | Create: Yes. Activate: invitee |
+| Import events, publish, load attendance and activities (HU-21, 22, 24) | No | Yes |
+| Refresh, reprogram, withdraw and restore events (HU-23) | No | Yes |
+| Run club data synchronization on demand and see its status (HU-N2) | No | Yes |
+| Run ranking calculation (HU-25) | No | Yes |
+| Segmentation and schedule (HU-36, HU-37) | No | Yes |
+| Adjust scoring parameters (HU-28) | No | Yes |
+| Simulate rules change (HU-29) | No | Yes |
+| View ranking explanation, own score, breakdown, simulator (HU-13, 14, 16, 18) | Yes | No |
+| View upcoming events, own slot (HU-17, HU-39) | Yes | No |
+| Log out (HU-11) | Yes | Yes |
 
 - Every protected action is authorized on the server by role. Hiding a button is not enough.
-- A person who is both Socio and Dirigente has **separate accounts** per door. "Acceso Socio" never grants management access and "Acceso Dirigente/Administrador" never accepts DNI or member number.
+- A person who is both Member and Admin has **separate accounts** per door. "Member access" never grants management access and "Admin access" never accepts DNI or member number.
 
 ## 3. Authentication parameters (defaults)
 
@@ -51,14 +53,14 @@ Rules that apply to every spec. Individual specs reference this file instead of 
 | Entity | States |
 |---|---|
 | Event | `pending importance definition` → `published`; `historical` (past event imported for scoring history, never published); `discarded` (pending event the club no longer lists); `withdrawn` (published event that will not take place, restorable while its start has not passed) |
-| Socio account | `not activated`, `activated` |
+| Member account | `not activated`, `activated` |
 | Management account | `pending activation`, `active` |
 | Invitation | `valid`, `used`, `expired`, `replaced` |
 | Ranking | `running`, `completed`, `failed` |
 
 ## 5. Scoring consistency rules
 
-- Socio-facing views (HU-14, HU-16, HU-18) are anchored to the **rules version of the latest completed ranking** and show it.
+- Member-facing views (HU-14, HU-16, HU-18) are anchored to the **rules version of the latest completed ranking** and show it.
 - HU-13 explains the rules **in force**. If they differ from the rules of the latest ranking, it states that the ranking will reflect them after the next calculation.
 - HU-29 compares against the latest completed ranking.
 
@@ -66,21 +68,21 @@ Rules that apply to every spec. Individual specs reference this file instead of 
 
 | Area | Target |
 |---|---|
-| Ranking calculation (HU-25) | completes in under 15 minutes for up to 500,000 Socios, without blocking other screens |
-| Rules-change simulation (HU-29) | result in under 3 seconds (95th percentile) up to 50,000 Socios and under 10 seconds up to 500,000 |
-| Volume | up to 500,000 Socios, typically far fewer. Admin lists are paginated. Wave membership is derived from ranking positions, never copied per Socio |
-| Read-only Socio screens | response under 2 seconds (95th percentile) |
+| Ranking calculation (HU-25) | completes in under 15 minutes for up to 500,000 Members, without blocking other screens |
+| Rules-change simulation (HU-29) | result in under 3 seconds (95th percentile) up to 50,000 Members and under 10 seconds up to 500,000 |
+| Volume | up to 500,000 Members, typically far fewer. Admin lists are paginated. Wave membership is derived from ranking positions, never copied per Member |
+| Read-only Member screens | response under 2 seconds (95th percentile) |
 | Accessibility | WCAG 2.1 AA: high contrast, large touch targets, keyboard navigation, readable at 200% zoom |
 | Audit | every change of events, rules, accounts, attendance loads and ranking runs records who, when and the previous and new values |
 | Language | UI in Spanish (Argentina); specs in English |
 
 ## 7. Bootstrap (technical tasks, not stories)
 
-- Seed the first Administrador account.
+- Seed the first Admin account.
 - Configure the credentials of the club API (HU-N2) as a secret.
 - Seed rules version 1 with the defaults in `scoring-model.md`.
 - Seed settings: default event class, default institutional event points, season start date, wave percentile step, minimum wave step, minimum publication lead, synchronization staleness limit.
-- Deliver the application shell with the global navigation menu that HU-11 relies on, and the Socio and management home screens.
+- Deliver the application shell with the global navigation menu that HU-11 relies on, and the Member and management home screens.
 
 ## 8. Settings registry
 
