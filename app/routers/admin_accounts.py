@@ -117,7 +117,7 @@ def create_admin(
         "Te invitaron a administrar Pasión de 10",
         f"Hola {body.name},\n\n{admin.name} te creó una cuenta de administrador "
         "en Pasión de 10.\n"
-        f"Para activarla entrá a este link:\n{link}\n\n"
+        f"Para activarla entrá a este link:\n\n{link}\n\n"
         f"El link vence en {settings.admin_invitation_expiry_hours} horas y sirve una "
         "sola vez. Si no esperabas esta invitación, ignorá este mail.",
     )
