@@ -52,12 +52,33 @@ class EventoNoEncontradoError(PasioDe10Exception):
         )
 
 
+class EventoYaPublicadoError(PasioDe10Exception):
+    """409: El evento ya se encuentra publicado y no puede ser modificado ni publicado nuevamente."""
+
+    def __init__(self, message: str = "El evento ya se encuentra publicado."):
+        super().__init__(
+            message,
+            status_code=status.HTTP_409_CONFLICT,
+            code="EVENT_ALREADY_PUBLISHED",
+        )
+
+
+class PublicacionInvalidaError(PasioDe10Exception):
+    """422: Parámetros de publicación inválidos o antelación menor a 48 horas."""
+
+    def __init__(self, message: str):
+        super().__init__(message, status_code=422, code="UNPROCESSABLE_ENTITY")
+
+
 class TokenInvalidoError(PasioDe10Exception):
     """401: Token ausente, revocado o inválido."""
 
     def __init__(
-        self, message: str = "No autorizado: Token inválido, expirado o revocado."
+        self,
+        message: str = "No autorizado: Token inválido, expirado o revocado.",
     ):
         super().__init__(
-            message, status_code=status.HTTP_401_UNAUTHORIZED, code="UNAUTHORIZED"
+            message,
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            code="UNAUTHORIZED",
         )

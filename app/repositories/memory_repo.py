@@ -2,6 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from ..core.exceptions import EventoYaPublicadoError
 from ..models.domain import ClubDomain
 from ..models.enums import TipoEvento
 from ..schemas.eventos import EventoCreateRequest
@@ -176,4 +177,152 @@ class MemoryEventoRepository(EventoRepository):
             if titulo and (titulo.lower() not in e["titulo"].lower()):
                 continue
             resultado.append(e)
+        return resultado
+
+    def find_eventos_pendientes(
+        self,
+        club_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Lista los eventos pendientes de definición de importancia (HU-22).
+        Excluye eventos históricos y descartados.
+        """
+        resultado = []
+        for e in self.tabla_eventos_pendientes:
+            if club_id and str(e.get("club_id")) != str(club_id):
+                continue
+            estado = e.get("estado")
+            if estado != "pendiente_definicion_importancia":
+                continue
+            if e.get("es_historico", False) or e.get("tipo") == TipoEvento.HISTORICO:
+                continue
+            resultado.append(dict(e))
+        return resultado
+
+    def get_evento_pendiente(
+        self,
+        club_id: str | None,
+        id_externo_o_interno: str,
+    ) -> dict[str, Any] | None:
+        for p in self.tabla_eventos_pendientes:
+            if (not club_id or str(p["club_id"]) == str(club_id)) and (
+                p["id_externo"] == id_externo_o_interno
+                or p["id_interno"] == id_externo_o_interno
+            ):
+                return dict(p)
+        return None
+
+    def is_already_published(
+        self,
+        club_id: str | None,
+        id_externo_o_interno: str,
+    ) -> bool:
+        for v in self.tabla_eventos_visibles:
+            if (not club_id or str(v["club_id"]) == str(club_id)) and (
+                v["id_externo"] == id_externo_o_interno
+                or v["id_interno"] == id_externo_o_interno
+            ):
+                return True
+        return False
+
+    def publish_evento(
+        self,
+        club_id: str | None,
+        id_externo_o_interno: str,
+        clase: str | None = None,
+        puntos: int | None = None,
+    ) -> str:
+        """
+        Publica un evento para que pase a estar visible a los socios (HU-22).
+        Retorna el id_interno del evento publicado.
+        """
+        if self.is_already_published(club_id, id_externo_o_interno):
+            raise EventoYaPublicadoError("El evento ya se encuentra publicado.")
+
+        pending_idx = None
+        pending_item = None
+        for i, p in enumerate(self.tabla_eventos_pendientes):
+            if (not club_id or str(p["club_id"]) == str(club_id)) and (
+                p["id_externo"] == id_externo_o_interno
+                or p["id_interno"] == id_externo_o_interno
+            ):
+                pending_idx = i
+                pending_item = p
+                break
+
+        ahora = datetime.now(UTC)
+
+        if pending_item is not None and pending_idx is not None:
+            self.tabla_eventos_pendientes.pop(pending_idx)
+            registro_visible = {
+                "id_interno": pending_item["id_interno"],
+                "club_id": str(pending_item["club_id"]),
+                "id_externo": pending_item["id_externo"],
+                "titulo": pending_item["titulo"],
+                "fecha_hora": pending_item["fecha_hora"],
+                "lugar": pending_item["lugar"],
+                "tipo": pending_item["tipo"],
+                "descripcion": pending_item.get("descripcion"),
+                "clase": clase,
+                "puntos": puntos,
+                "estado": "visible",
+                "estado_ciclo": "visible",
+                "publicado_en": ahora,
+                "actualizado_en": ahora,
+            }
+            self.tabla_eventos_visibles.append(registro_visible)
+            return pending_item["id_interno"]
+
+        raise ValueError(
+            f"Evento '{id_externo_o_interno}' no encontrado para publicar en club '{club_id}'."
+        )
+
+    def find_proximos_eventos_publicados(
+        self,
+        club_id: str | None = None,
+        now: datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Consulta los próximos eventos publicados (visibles para socios) ordenados
+        cronológicamente (HU-17).
+        """
+        ahora = now or datetime.now(UTC)
+        if ahora.tzinfo is None:
+            ahora = ahora.replace(tzinfo=UTC)
+
+        resultado = []
+        for e in self.tabla_eventos_visibles:
+            if club_id and str(e.get("club_id")) != str(club_id):
+                continue
+
+            estado = e.get("estado") or e.get("estado_ciclo") or "visible"
+            if estado not in ("visible", "published"):
+                continue
+            if estado in (
+                "pendiente_definicion_importancia",
+                "Historico",
+                "historico",
+                "discarded",
+                "withdrawn",
+            ):
+                continue
+
+            fh = e["fecha_hora"]
+            if isinstance(fh, str):
+                fh = datetime.fromisoformat(fh)
+            if fh.tzinfo is None:
+                fh = fh.replace(tzinfo=UTC)
+
+            if fh > ahora:
+                resultado.append(dict(e))
+
+        def _get_sort_key(item: dict[str, Any]) -> datetime:
+            k = item["fecha_hora"]
+            if isinstance(k, str):
+                k = datetime.fromisoformat(k)
+            if k.tzinfo is None:
+                k = k.replace(tzinfo=UTC)
+            return k
+
+        resultado.sort(key=_get_sort_key)
         return resultado

@@ -1,7 +1,10 @@
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from ..models.enums import TipoEvento
 from .exceptions import AntelacionInsuficienteError, EventoFinalizadoError
+
+BUENOS_AIRES_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 
 
 def asegurar_utc(dt: datetime) -> datetime:
@@ -9,6 +12,30 @@ def asegurar_utc(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=UTC)
     return dt.astimezone(UTC)
+
+
+def a_hora_buenos_aires(dt: datetime) -> datetime:
+    """Convierte una fecha UTC al huso horario de Buenos Aires (America/Argentina/Buenos_Aires)."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(BUENOS_AIRES_TZ)
+
+
+def formatear_tipo_evento(tipo: str) -> str:
+    """
+    Formatea el tipo de evento para la vista del socio (HU-17):
+    - 'Institucional' -> 'Evento institucional/amateur'
+    - 'Partido' -> 'Partido'
+    """
+    tipo_str = str(tipo).strip()
+    if tipo_str.lower() in (
+        "institucional",
+        "evento institucional/amateur",
+        "evento institucional",
+        "amateur",
+    ):
+        return "Evento institucional/amateur"
+    return "Partido"
 
 
 def validar_antelacion_48_horas(

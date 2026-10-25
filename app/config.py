@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     initial_admin_email: str | None = "admin@club.com"
     initial_admin_name: str | None = "Admin Demo"
 
+    # Parámetros de publicación de eventos (HU-22 / Cross-cutting sección 8)
+    default_partido_clase: str = "B"
+    default_institucional_puntos: int = 20
+    min_publication_lead_hours: int = 48
+    publication_window_hours: int = 24
+
     # Compatibilidad con alias en mayúsculas
     @property
     def APP_NAME(self) -> str:

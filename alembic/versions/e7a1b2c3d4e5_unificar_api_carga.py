@@ -7,8 +7,7 @@ Create Date: 2026-10-21 00:10:00.000000
 """
 
 from collections.abc import Sequence
-import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
+
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -482,11 +481,17 @@ def downgrade() -> None:
     op.execute("DROP FUNCTION IF EXISTS trg_sync_socio_to_member;")
     op.execute("DROP TRIGGER IF EXISTS trg_socios_actualizado_en ON socios;")
     op.execute("DROP FUNCTION IF EXISTS trg_socios_update_timestamp;")
-    op.execute("DROP TRIGGER IF EXISTS trg_vw_eventos_cambios_insert ON vw_eventos_cambios_pendientes;")
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_vw_eventos_cambios_insert ON vw_eventos_cambios_pendientes;"
+    )
     op.execute("DROP FUNCTION IF EXISTS trg_insert_vw_eventos_cambios;")
-    op.execute("DROP TRIGGER IF EXISTS trg_vw_eventos_pendientes_update ON vw_eventos_pendientes_verificacion;")
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_vw_eventos_pendientes_update ON vw_eventos_pendientes_verificacion;"
+    )
     op.execute("DROP FUNCTION IF EXISTS trg_update_vw_eventos_pendientes;")
-    op.execute("DROP TRIGGER IF EXISTS trg_vw_eventos_pendientes_insert ON vw_eventos_pendientes_verificacion;")
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_vw_eventos_pendientes_insert ON vw_eventos_pendientes_verificacion;"
+    )
     op.execute("DROP FUNCTION IF EXISTS trg_insert_vw_eventos_pendientes;")
 
     op.execute("DROP VIEW IF EXISTS vw_socios_cargas_rechazos;")

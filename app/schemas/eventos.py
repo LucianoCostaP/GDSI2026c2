@@ -3,7 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..models.enums import TipoEvento
+from ..models.enums import ClasePartido, TipoEvento
 
 
 class EventoCreateRequest(BaseModel):
@@ -115,3 +115,122 @@ class BatchResponse(BaseModel):
     exitosos: list[BatchSuccessItem]
     omitidos: list[BatchOmittedItem] = []
     fallidos: list[BatchFailedItem] = []
+
+
+# ==============================================================================
+# ESQUEMAS PARA HU-17: CONSULTA DE PRÓXIMOS EVENTOS (SOCIO)
+# ==============================================================================
+
+
+class ProximoEventoItem(BaseModel):
+    id: str = Field(..., description="Identificador único del evento (id_interno)")
+    id_interno: str = Field(..., description="Identificador interno del evento")
+    id_externo: str = Field(..., description="Identificador provisto por el club")
+    titulo: str = Field(..., description="Título del evento")
+    fecha_hora: datetime = Field(
+        ..., description="Fecha y hora de inicio en UTC (ISO 8601)"
+    )
+    fecha: str = Field(
+        ...,
+        description="Fecha formateada en horario local de Buenos Aires (YYYY-MM-DD)",
+    )
+    hora: str = Field(
+        ..., description="Hora formateada en horario local de Buenos Aires (HH:MM)"
+    )
+    lugar: str = Field(..., description="Lugar / estadio del evento")
+    tipo: str = Field(
+        ...,
+        description="Tipo de evento: 'Partido' o 'Evento institucional/amateur'",
+    )
+    descripcion: str | None = Field(None, description="Descripción opcional del evento")
+    slot_url: str = Field(
+        ...,
+        description="Enlace para consultar el turno propio de reserva para este evento (HU-39)",
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProximosEventosResponse(BaseModel):
+    total: int = Field(0, description="Cantidad total de próximos eventos publicados")
+    eventos: list[ProximoEventoItem] = Field(
+        default_factory=list,
+        description="Lista de eventos ordenados cronológicamente (el más próximo primero)",
+    )
+    mensaje: str | None = Field(
+        None,
+        description="Mensaje informativo cuando no hay eventos próximos publicados (HU-17)",
+    )
+
+
+# ==============================================================================
+# ESQUEMAS PARA HU-22: DEFINICIÓN DE IMPORTANCIA Y PUBLICACIÓN DE EVENTOS (ADMIN)
+# ==============================================================================
+
+
+class ClaseInfoResponse(BaseModel):
+    clase: ClasePartido = Field(..., description="Clase A, B o C")
+    factor: float = Field(..., description="Factor de ponderación de asistencia")
+    demanda: str = Field(
+        ..., description="Nivel de demanda esperada ('alta', 'regular', 'baja')"
+    )
+    es_default: bool = Field(
+        ..., description="Indica si es la clase predeterminada del sistema"
+    )
+    descripcion: str = Field(..., description="Descripción del significado y factor")
+
+
+class EventoPendientePublicacionResponse(BaseModel):
+    id_interno: str = Field(..., description="Identificador interno del evento")
+    id_externo: str = Field(..., description="Identificador provisto por el club")
+    titulo: str = Field(..., description="Título del evento")
+    fecha_hora: datetime = Field(..., description="Fecha y hora de inicio (UTC)")
+    lugar: str = Field(..., description="Lugar / sede del evento")
+    tipo: str = Field(..., description="Tipo de evento: 'Partido' o 'Institucional'")
+    descripcion: str | None = Field(None, description="Descripción opcional")
+    creado_en: datetime = Field(
+        ..., description="Momento de importación / recepción del evento"
+    )
+    deadline_publicacion: datetime = Field(
+        ..., description="Fecha límite de publicación automática"
+    )
+    segundos_restantes_deadline: int = Field(
+        ..., description="Segundos restantes para alcanzar el deadline"
+    )
+    plazo_expirado: bool = Field(
+        ..., description="Indica si el deadline ya fue alcanzado o superado"
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PublicarEventoRequest(BaseModel):
+    clase: ClasePartido | None = Field(
+        None,
+        description="Clase para Partidos ('A', 'B' o 'C'). No aplicable a eventos institucionales.",
+    )
+    puntos: int | None = Field(
+        None,
+        ge=1,
+        le=100,
+        description="Puntos enteros de 1 a 100 para Eventos Institucionales. No aplicable a Partidos.",
+    )
+
+
+class PublicarEventoResponse(BaseModel):
+    mensaje: str = "Evento publicado exitosamente."
+    id_interno: str
+    tipo: str
+    clase: str | None = None
+    puntos: int | None = None
+    publicado_en: datetime
+    publicado_por: str = "admin"
+    es_default: bool = False
+
+
+class AutoPublishResponse(BaseModel):
+    mensaje: str = "Proceso de publicación automática completado."
+    procesados: int
+    publicados: int
+    omitidos: int
+    eventos_publicados: list[str]

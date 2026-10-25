@@ -25,6 +25,19 @@ class ClasePartido(str, Enum):
     C = "C"
 
 
+FACTORES_CLASE_PARTIDO: dict[ClasePartido, float] = {
+    ClasePartido.A: 1.0,
+    ClasePartido.B: 1.3,
+    ClasePartido.C: 1.8,
+}
+
+DEMANDA_CLASE_PARTIDO: dict[ClasePartido, str] = {
+    ClasePartido.A: "alta",
+    ClasePartido.B: "regular",
+    ClasePartido.C: "baja",
+}
+
+
 class EstadoCicloEvento(str, Enum):
     PENDIENTE = "pendiente_definicion_importancia"
     VISIBLE = "visible"

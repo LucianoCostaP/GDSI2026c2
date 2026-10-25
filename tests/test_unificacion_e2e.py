@@ -37,11 +37,22 @@ def test_flujo_unificado_socio_carga_y_login_member():
         if member:
             user = db.query(User).filter(User.member_id == member.member_id).first()
             if user:
-                db.execute(text("DELETE FROM audit_log WHERE actor_user_id = :uid"), {"uid": user.id})
-                db.execute(text("DELETE FROM sessions WHERE user_id = :uid"), {"uid": user.id})
+                db.execute(
+                    text("DELETE FROM audit_log WHERE actor_user_id = :uid"),
+                    {"uid": user.id},
+                )
+                db.execute(
+                    text("DELETE FROM sessions WHERE user_id = :uid"), {"uid": user.id}
+                )
                 db.execute(text("DELETE FROM users WHERE id = :uid"), {"uid": user.id})
-            db.execute(text("DELETE FROM access_codes WHERE member_id = :mid"), {"mid": member.member_id})
-            db.execute(text("DELETE FROM members WHERE member_id = :mid"), {"mid": member.member_id})
+            db.execute(
+                text("DELETE FROM access_codes WHERE member_id = :mid"),
+                {"mid": member.member_id},
+            )
+            db.execute(
+                text("DELETE FROM members WHERE member_id = :mid"),
+                {"mid": member.member_id},
+            )
         db.commit()
 
     with TestClient(app) as client:
@@ -144,11 +155,22 @@ def test_flujo_unificado_socio_carga_y_login_member():
         if member:
             user = db.query(User).filter(User.member_id == member.member_id).first()
             if user:
-                db.execute(text("DELETE FROM audit_log WHERE actor_user_id = :uid"), {"uid": user.id})
-                db.execute(text("DELETE FROM sessions WHERE user_id = :uid"), {"uid": user.id})
+                db.execute(
+                    text("DELETE FROM audit_log WHERE actor_user_id = :uid"),
+                    {"uid": user.id},
+                )
+                db.execute(
+                    text("DELETE FROM sessions WHERE user_id = :uid"), {"uid": user.id}
+                )
                 db.execute(text("DELETE FROM users WHERE id = :uid"), {"uid": user.id})
-            db.execute(text("DELETE FROM access_codes WHERE member_id = :mid"), {"mid": member.member_id})
-            db.execute(text("DELETE FROM members WHERE member_id = :mid"), {"mid": member.member_id})
+            db.execute(
+                text("DELETE FROM access_codes WHERE member_id = :mid"),
+                {"mid": member.member_id},
+            )
+            db.execute(
+                text("DELETE FROM members WHERE member_id = :mid"),
+                {"mid": member.member_id},
+            )
         db.commit()
 
     app.dependency_overrides.clear()

@@ -124,9 +124,10 @@ def listar_socios(
     if activo is not None:
         query = query.filter(Socio.activo == activo)
 
-    return (
+    results = (
         query.order_by(Socio.fecha_alta.asc(), Socio.dni.asc())
         .offset(offset)
         .limit(limit)
         .all()
     )
+    return [SocioResponse.model_validate(s) for s in results]

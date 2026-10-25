@@ -1,6 +1,7 @@
 from collections.abc import Generator as TypingGenerator
 from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import Any
 from uuid import UUID
 
 import psycopg
@@ -10,7 +11,10 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import settings
 
-engine = create_engine(settings.database_url, pool_pre_ping=True)
+connect_args = {"connect_timeout": 2} if "postgresql" in settings.database_url else {}
+engine = create_engine(
+    settings.database_url, pool_pre_ping=True, connect_args=connect_args
+)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 
@@ -44,7 +48,9 @@ class DatabaseManager:
         )
 
     @contextmanager
-    def get_connection(self) -> TypingGenerator[psycopg.Connection, None, None]:
+    def get_connection(
+        self,
+    ) -> TypingGenerator[psycopg.Connection[dict[str, Any]], None, None]:
         """Provee una conexión con autocommit deshabilitado para transacciones controladas."""
         conn = psycopg.connect(self.connection_url, row_factory=dict_row)
         try:
@@ -59,7 +65,7 @@ class DatabaseManager:
     @contextmanager
     def get_tenant_session(
         self, club_id: str
-    ) -> TypingGenerator[psycopg.Connection, None, None]:
+    ) -> TypingGenerator[psycopg.Connection[dict[str, Any]], None, None]:
         """
         Provee una conexión configurando la variable de sesión 'app.current_club_id'.
         Esto activa inmediatamente el filtrado de las vistas PostgreSQL.
