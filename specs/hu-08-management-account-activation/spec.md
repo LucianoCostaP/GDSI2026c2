@@ -19,7 +19,7 @@ As an invited Admin, I want to activate my account from the invitation link, so 
 
 **Acceptance Scenarios**:
 
-1. **Given** a valid invitation link, **When** the invitee opens it, **Then** their identity is confirmed through the email of the invitation (no DNI or member number required) and the page shows the invited email partially masked.
+1. **Given** a valid invitation link, **When** the invitee opens it, **Then** their identity is confirmed through the email of the invitation (no DNI or member number required) and the page shows the invited email masked (format in cross-cutting section 3, for example `j***@gmail.com`).
 2. **Given** the identity was confirmed, **When** activation completes, **Then** the account passes from `pending activation` to `active`, the invitation becomes `used`, and the user is sent to the management login (HU-06).
 3. **Given** a link that was already used, has expired or was replaced, **When** the invitee opens it, **Then** the system informs this and tells them to request a new invitation from an Admin.
 
@@ -55,7 +55,7 @@ As an invited Admin, I want to activate my account from the invitation link, so 
 
 ## Assumptions
 
-- Possession of the link proves control of the email; no additional factor at activation (the first login still needs a code, HU-06). Consequence: a mistyped email gives access to whoever receives it, which HU-07 mitigates with double entry and revocation.
+- Possession of the link proves control of the email; no additional factor at activation (the first login still needs a code, HU-06). Consequence: a mistyped email gives access to whoever receives it, which HU-07 mitigates with the double entry of the email and the 48-hour expiry (there is no revocation).
 
 ## Revision Notes (v2)
 

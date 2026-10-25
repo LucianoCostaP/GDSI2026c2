@@ -5,13 +5,13 @@
 **Status**: Draft
 **Backlog Reference**: HU-28 (Estimate: 5, Priority: Media, MVP: Yes)
 **Shared rules**: [scoring model](../_shared/scoring-model.md), [cross-cutting](../_shared/cross-cutting.md)
-**Input**: "As an Admin of the club, I want to adjust the weights of the variables in the base scoring formula, so that I define which Member behaviors are prioritized when the ranking is calculated."
+**Input**: "As an Admin of the club, I want to adjust the parameters defined by the scoring model within their limits, so that I define which Socio behaviors are prioritized when the ranking is calculated."
 
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Adjust Scoring Parameters (Priority: P2)
 
-As an Admin of the club, I want to adjust the weights of the variables in the base scoring formula, so that I define which Member behaviors are prioritized when the ranking is calculated.
+As an Admin of the club, I want to adjust the weights of the variables in the base scoring formula, so that I define which Socio behaviors are prioritized when the ranking is calculated.
 
 **Why this priority**: Lets the club decide its priorities without changing the algorithm structure.
 
@@ -26,7 +26,7 @@ As an Admin of the club, I want to adjust the weights of the variables in the ba
 5. **Given** a value outside its limits, **When** saving, **Then** it is rejected with a message naming the parameter and its limits.
 6. **Given** changed values, **When** the Admin tries to save, **Then** a confirmation message states these values will become the official rules in force.
 7. **Given** the Admin confirms, **When** the save completes, **Then** a new rules version is in force immediately, with no extra approval or publication step.
-8. **Given** new rules in force, **When** the ranking is viewed, **Then** it is unchanged until the calculation (HU-25) is run, and the Member screens show the notice defined in HU-13.
+8. **Given** new rules in force, **When** the ranking is viewed, **Then** it is unchanged until the calculation (HU-25) is run, and the Socio screens show the notice defined in HU-13.
 9. **Given** a change, **When** it is saved, **Then** the rules version history records who, when, and previous and new values.
 10. **Given** the current time is within 14 days before the season start (or after it), **When** the Admin tries to change values, **Then** the change is rejected with the cut-off date.
 11. **Given** two Admins editing at once, **When** the second saves from an outdated version, **Then** the save is refused and they must reload.
@@ -71,7 +71,7 @@ As an Admin of the club, I want to adjust the weights of the variables in the ba
 
 ## Assumptions
 
-- The base formula is the scoring model in `scoring-model.md`, delivered pre-defined (HU-27 is outside the MVP). The limits in that file were confirmed by the club.
+- The base formula is the scoring model in `scoring-model.md`, published by the Admin as the base formula (HU-27); this story needs a published base formula. The limits in that file were confirmed by the club.
 - The season start date is a system setting seeded by the team; there is no screen for it in the MVP.
 - Tests inject the current date to exercise the cut-off.
 

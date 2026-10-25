@@ -10,26 +10,30 @@ Rules that apply to every spec. Individual specs reference this file instead of 
 
 ## 2. Roles and permissions
 
-There are two roles: **Member** (a club member) and **Admin** (manages the system). Earlier versions of these specs split management into Dirigente and Administrador; both are now the single Admin role, with the union of their permissions.
+There are two roles: **Socio** (a club member) and **Admin** (manages the system). Earlier versions of these specs split management into Dirigente and Administrador; both are now the single Admin role, with the union of their permissions.
 
-| Capability | Member | Admin |
+| Capability | Socio | Admin |
 |---|---|---|
 | Activate account by DNI / member number (HU-01) | Yes | No |
 | Log in (HU-05 / HU-06) | HU-05 | HU-06 |
+| View own profile (HU-10) | Yes | Yes |
 | Create / activate Admin accounts (HU-07 / HU-08) | No | Create: Yes. Activate: invitee |
-| Import events, publish, load attendance and activities (HU-21, 22, 24) | No | Yes |
-| Refresh, reprogram, withdraw and restore events (HU-23) | No | Yes |
-| Run club data synchronization on demand and see its status (HU-N2) | No | Yes |
+| Review events received from the club, discard, confirm historical events, publish (HU-21, 22) | No | Yes |
+| Approve attendance replacements, upload CSV files, see load results (HU-24) | No | Yes |
+| Review club updates, withdraw and restore events (HU-23, outside the MVP) | No | Yes |
+| See the roster receptions from the club and their rejections (HU-43) | No | Yes |
+| Publish the base scoring formula (HU-27) | No | Yes |
 | Run ranking calculation (HU-25) | No | Yes |
 | Segmentation and schedule (HU-36, HU-37) | No | Yes |
 | Adjust scoring parameters (HU-28) | No | Yes |
-| Simulate rules change (HU-29) | No | Yes |
+| Simulate rules change and its equity analysis (HU-29, HU-30) | No | Yes |
 | View ranking explanation, own score, breakdown, simulator (HU-13, 14, 16, 18) | Yes | No |
 | View upcoming events, own slot (HU-17, HU-39) | Yes | No |
 | Log out (HU-11) | Yes | Yes |
 
 - Every protected action is authorized on the server by role. Hiding a button is not enough.
-- A person who is both Member and Admin has **separate accounts** per door. "Member access" never grants management access and "Admin access" never accepts DNI or member number.
+- **The club** is not a user role: it is an integration client. With its Bearer token it can only send and query its own data through the integration API (data-contract section 5: HU-43, HU-21, HU-23, HU-24). It has no session and no screen.
+- A person who is both Socio and Admin has **separate accounts** per door. "Socio access" never grants management access and "Admin access" never accepts DNI or member number.
 
 ## 3. Authentication parameters (defaults)
 
@@ -44,6 +48,9 @@ There are two roles: **Member** (a club member) and **Admin** (manages the syste
 | Session | idle timeout 30 minutes, absolute 12 hours, server-side revocation on logout |
 | Management invitation | single-use token, valid 48 hours; after that a new invitation must be created |
 | Code delivery target | 95% of emails delivered in under 30 seconds |
+| Masked email | first character of the local part, `***`, then `@` and the full domain: `juan.perez@gmail.com` → `j***@gmail.com` (HU-05, HU-08) |
+| Email delivery failure | the user sees the error `EMAIL_DELIVERY_FAILED`; an access code that could not be sent is discarded and a new one can be requested right away (the resend cooldown counts only codes actually sent); an invitation that could not be sent undoes the account creation (HU-07) |
+| Club integration token | random, at least 128 bits, one per club, stored hashed, never logged; rotated by the team |
 
 - Responses never include personal data other than what the user typed.
 - Unknown identifiers in login (HU-05, HU-06) get a generic message that does not reveal whether the identifier exists.
@@ -52,15 +59,17 @@ There are two roles: **Member** (a club member) and **Admin** (manages the syste
 
 | Entity | States |
 |---|---|
-| Event | `pending importance definition` → `published`; `historical` (past event imported for scoring history, never published); `discarded` (pending event the club no longer lists); `withdrawn` (published event that will not take place, restorable while its start has not passed) |
-| Member account | `not activated`, `activated` |
+| Event | `pending importance definition` → `published`; `historical` (past event sent for scoring history, never published; accepts attendance once its class or points are confirmed); `discarded` (pending event the Admin discards, for example because the club cancelled it). HU-23 (outside the MVP) adds `withdrawn` (published event that will not take place, restorable while its start has not passed); no MVP story uses it |
+| Socio account | `not activated`, `activated` |
 | Management account | `pending activation`, `active` |
 | Invitation | `valid`, `used`, `expired`, `replaced` |
 | Ranking | `running`, `completed`, `failed` |
+| Load received from the club (HU-43, HU-24) | `receiving` → `processing` → `successful` or `failed`; attendance loads for an event that already has attendance: `pending approval` → `successful` (the previous one becomes `replaced`) or `rejected` |
+| Event change sent by the club (HU-23) | `pending review` → `approved`, `rejected` or `replaced` |
 
 ## 5. Scoring consistency rules
 
-- Member-facing views (HU-14, HU-16, HU-18) are anchored to the **rules version of the latest completed ranking** and show it.
+- Socio-facing views (HU-14, HU-16, HU-18) are anchored to the **rules version of the latest completed ranking** and show it.
 - HU-13 explains the rules **in force**. If they differ from the rules of the latest ranking, it states that the ranking will reflect them after the next calculation.
 - HU-29 compares against the latest completed ranking.
 
@@ -68,21 +77,22 @@ There are two roles: **Member** (a club member) and **Admin** (manages the syste
 
 | Area | Target |
 |---|---|
-| Ranking calculation (HU-25) | completes in under 15 minutes for up to 500,000 Members, without blocking other screens |
-| Rules-change simulation (HU-29) | result in under 3 seconds (95th percentile) up to 50,000 Members and under 10 seconds up to 500,000 |
-| Volume | up to 500,000 Members, typically far fewer. Admin lists are paginated. Wave membership is derived from ranking positions, never copied per Member |
-| Read-only Member screens | response under 2 seconds (95th percentile) |
+| Ranking calculation (HU-25) | completes in under 15 minutes for up to 500,000 Socios, without blocking other screens |
+| Initial roster reception (HU-43) | up to 500,000 Socios processed in under one hour; discrepancies below 0.1% |
+| Rules-change simulation (HU-29) | result in under 3 seconds (95th percentile) up to 50,000 Socios and under 10 seconds up to 500,000 |
+| Volume | up to 500,000 Socios, typically far fewer. Admin lists are paginated. Wave membership is derived from ranking positions, never copied per Socio |
+| Read-only Socio screens | response under 2 seconds (95th percentile) |
 | Accessibility | WCAG 2.1 AA: high contrast, large touch targets, keyboard navigation, readable at 200% zoom |
-| Audit | every change of events, rules, accounts, attendance loads and ranking runs records who, when and the previous and new values |
+| Audit | every change of events, rules, accounts, loads received from the club, attendance loads and ranking runs records who (Admin, club or system), when and the previous and new values |
 | Language | UI in Spanish (Argentina); specs in English |
 
 ## 7. Bootstrap (technical tasks, not stories)
 
 - Seed the first Admin account.
-- Configure the credentials of the club API (HU-N2) as a secret.
-- Seed rules version 1 with the defaults in `scoring-model.md`.
-- Seed settings: default event class, default institutional event points, season start date, wave percentile step, minimum wave step, minimum publication lead, synchronization staleness limit.
-- Deliver the application shell with the global navigation menu that HU-11 relies on, and the Member and management home screens.
+- Issue the club's integration token (stored hashed) and hand it to the club through a secure channel.
+- Ship the base formula of `scoring-model.md` with its defaults, ready for the Admin to publish it as rules version 1 (HU-27).
+- Seed settings: default event class, default institutional event points, season start date, wave percentile step, minimum wave step, minimum publication lead, roster staleness limit.
+- Deliver the application shell with the global navigation menu that HU-11 relies on, and the Socio and management home screens.
 
 ## 8. Settings registry
 
@@ -93,8 +103,8 @@ There are two roles: **Member** (a club member) and **Admin** (manages the syste
 | Season start date | none (must be configured) | HU-28 |
 | Wave percentile step | 20 (waves at 20%, 40%, 60%, 80%, 100%); must divide 100 | HU-36 |
 | Minimum publication lead | 48 hours before the event start | HU-21, HU-22 |
-| Window to adjust class or points after a reprogramming | 24 hours | HU-23 |
+| Window to adjust class or points after a reprogramming | 24 hours | HU-23 (outside the MVP) |
 | Minimum minutes between wave openings | 5 | HU-37 |
-| Row error tolerance in file loads | 5% | HU-24 |
-| Data staleness limit | 24 hours | HU-25, HU-36 |
+| Row error tolerance in CSV files uploaded by the Admin (records sent by the club have no tolerance: they are rejected one by one) | 5% | HU-24 |
+| Data staleness limit (age of the latest successful roster load) | 24 hours | HU-43, HU-25, HU-36 |
 | Code, session and invitation values | section 3 | HU-01, 05, 06, 07, 08, 11 |

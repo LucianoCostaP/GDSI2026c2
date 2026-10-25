@@ -3,7 +3,7 @@
 **Feature Branch**: `hu-06-dirigente-admin-login`
 **Created**: 2026-10-11 | **Revised**: 2026-10-12 (v2)
 **Status**: Draft
-**Backlog Reference**: HU-06 (Estimate: 1, Priority: Alta, MVP: Yes)
+**Backlog Reference**: HU-06 (Estimate: 3, Priority: Alta, MVP: Yes)
 **Shared rules**: [cross-cutting](../_shared/cross-cutting.md)
 **Input**: "As an Admin, I want to log in with an access code sent to the email the club has registered, so that I can access my management features."
 
@@ -32,8 +32,9 @@ As an Admin, I want to log in with an access code sent to the email the club has
 
 - **Email only**: DNI and member number MUST NOT be accepted.
 - **Pending accounts**: an account `pending activation` (HU-08) cannot log in and gets the generic message.
-- **Dual identity**: a person who is also a Member uses each door separately; no account is shared.
+- **Dual identity**: a person who is also a Socio uses each door separately; no account is shared.
 - **Code rules**: same as HU-05 (expiry, single use, attempts, cooldown, lockout).
+- **Email delivery failure**: if the email cannot be sent, the system shows "No pudimos enviar el código. Probá de nuevo en un minuto." (`EMAIL_DELIVERY_FAILED`), the code is discarded and can never be used, and a new one can be requested right away: the 60-second cooldown counts only codes that were actually sent (cross-cutting section 3).
 
 ## Requirements *(mandatory)*
 
