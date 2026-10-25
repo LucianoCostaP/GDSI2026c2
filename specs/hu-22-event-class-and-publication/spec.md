@@ -1,44 +1,44 @@
-# Feature Specification: Define Event Class or Points and Publish
+# Feature Specification: Define Event Category (Class A/B/C) or Points and Publish
 
-**Feature Branch**: `hu-22-event-importance-and-publication`
-**Created**: 2026-10-11 | **Revised**: 2026-10-13 (v3)
+**Feature Branch**: `hu-22-event-class-and-publication`
+**Created**: 2026-10-11 | **Revised**: 2026-10-25 (v4)
 **Status**: Draft
 **Backlog Reference**: HU-22 (Estimate: 5, Priority: Alta, MVP: Yes)
 **Shared rules**: [scoring model](../_shared/scoring-model.md), [cross-cutting](../_shared/cross-cutting.md)
-**Input**: "As an Admin, I want to define the importance/weight of an event and publish it, so that the priority criteria for access are set and the event becomes visible to Members."
+**Input**: "As an Admin, I want to define the class of a Partido or the points of an institutional/amateur event and publish it, so that I establish how it takes part in the scoring and make it visible to Socios."
 
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Define Event Class or Points and Publish (Priority: P1)
 
-As an Admin, I want to define the importance/weight of an event and publish it, so that the priority criteria for access are set and the event becomes visible to Members.
+As an Admin, I want to define the importance/weight of an event and publish it, so that the priority criteria for access are set and the event becomes visible to Socios.
 
 **Why this priority**: Publishing makes events visible and fixes the class factor that weights attendance at a Partido in the score.
 
-**Independent Test**: Load a Partido (HU-21), choose its class and publish; verify it becomes `published` and appears in the Member list. Then load another and let its deadline pass to verify the default class and automatic publication.
+**Independent Test**: Load a Partido (HU-21), choose its class and publish; verify it becomes `published` and appears in the Socio list. Then load another and let its deadline pass to verify the default class and automatic publication.
 
 **Acceptance Scenarios**:
 
 1. **Given** events in `pending importance definition`, **When** the Admin opens the pending list, **Then** they see all of them with the time left to their publication deadline.
-2. **Given** a pending Partido, **When** the Admin chooses its class (A, B or C) and confirms publication, **Then** the event becomes `published` and visible to Members (HU-17).
+2. **Given** a pending Partido, **When** the Admin chooses its class (A, B or C) and confirms publication, **Then** the event becomes `published` and visible to Socios (HU-17).
 3. **Given** the class chooser, **When** it is shown, **Then** each class shows its meaning and its factor (A = high demand, factor 1.0; B = regular, 1.3; C = low demand, 1.8) and states that a higher factor rewards attendance at lower-demand matches.
 4. **Given** a pending Evento institucional/amateur (elections and assemblies included), **When** the Admin defines its points (a whole number from 1 to 100) and confirms publication, **Then** the event becomes `published` and those points are the ones its attendees earn.
 5. **Given** a pending event, **When** the Admin publishes manually, **Then** the action is accepted only while the event start is at least 48 hours away.
-6. **Given** a pending event, **When** its publication deadline arrives, **Then** it is published automatically: the deadline is the earlier of 24 hours after its import and 48 hours before the event start. A Partido without a chosen class gets the default class and an institutional/amateur event without points gets the default points (both system settings, proposed Clase B and 20 points). The publication is recorded as made by the system.
+6. **Given** a pending event, **When** its publication deadline arrives, **Then** it is published automatically: the deadline is the earlier of 24 hours after its reception (HU-21) and 48 hours before the event start. A Partido without a chosen class gets the default class and an institutional/amateur event without points gets the default points (both system settings, proposed Clase B and 20 points). The publication is recorded as made by the system.
 7. **Given** the Admin published before the deadline, **When** the deadline arrives, **Then** nothing happens automatically.
 8. **Given** the Admin and the scheduler act at the same moment, **When** both try to publish, **Then** exactly one publication takes effect and it is audited.
-9. **Given** a published event, **When** the Admin looks for a way to change its class or points, **Then** there is none, except during the 24-hour window that opens after a reprogramming (HU-23).
+9. **Given** a published event, **When** the Admin looks for a way to change its class or points, **Then** there is none.
 
 ---
 
 ### Edge Cases
 
-- **Deadline arithmetic**: because HU-21 requires the start to be at least 48 hours after the import, the deadline is never earlier than the import time. An event starting 60 hours after the import is published automatically 12 hours after it.
-- **Club API at the deadline**: the automatic publication does not depend on the club API. If the API cannot be reached at the deadline, the event is published as it was imported (the check of HU-21 repeats at the next refresh).
+- **Deadline arithmetic**: because HU-21 requires the start to be at least 48 hours after the reception, the deadline is never earlier than the reception time. An event starting 60 hours after its reception is published automatically 12 hours after it.
+- **No dependency on the club at the deadline**: the automatic publication uses the data already received; it never calls the club.
 - **Scheduler failure**: the publication job is idempotent, runs at least every minute and retries; a missed run publishes on the next run and is flagged in the audit, unless the 48-hour lead was lost, in which case the Admin is warned on screen.
 - **Historical and discarded events** (HU-21) are not listed here.
-- **Events flagged by HU-21** (the club no longer lists them) are not published automatically.
-- **Club data** (date, time, venue, type) is read-only here; only the class or the points are adjusted. After publication the club data is refreshed only through HU-23.
+- **Events cancelled by the club** while pending (HU-21) are not published automatically.
+- **Club data** (date, time, venue, type) is read-only here; only the class or the points are adjusted. After publication, changes sent by the club are omitted in the MVP and reviewed through HU-23 once it exists.
 - **Class applies only to Partidos; points apply only to institutional/amateur events.**
 
 ## Requirements *(mandatory)*
@@ -47,12 +47,12 @@ As an Admin, I want to define the importance/weight of an event and publish it, 
 
 - **FR-001**: System MUST list events pending publication with the time left.
 - **FR-002**: System MUST let the Admin define the class (A/B/C) of a Partido, which determines its attendance factor, and the points of an institutional/amateur event, which are the points its attendees earn.
-- **FR-003**: System MUST change the event to `published` and make it visible to Members when publication is confirmed.
+- **FR-003**: System MUST change the event to `published` and make it visible to Socios when publication is confirmed.
 - **FR-004**: System MUST allow manual publication only while the event start is at least 48 hours away.
-- **FR-005**: System MUST publish automatically at the earlier of 24 hours after its import and 48 hours before the start, applying the default class to a Partido without class and the default points to an institutional/amateur event without points.
+- **FR-005**: System MUST publish automatically at the earlier of 24 hours after its reception and 48 hours before the start, applying the default class to a Partido without class and the default points to an institutional/amateur event without points.
 - **FR-006**: System MUST make the transition to `published` atomic and exclusive (compare-and-set on the state).
 - **FR-007**: System MUST record who published (Admin or system) and whether the class was chosen or default.
-- **FR-008**: System MUST NOT allow changing the class or points after publication, except during the 24-hour window that opens after a reprogramming (HU-23).
+- **FR-008**: System MUST NOT allow changing the class or points after publication.
 
 ### Key Entities
 
@@ -70,12 +70,13 @@ As an Admin, I want to define the importance/weight of an event and publish it, 
 
 ## Assumptions
 
-- "Importance" is the class of a Partido (its attendance factor) or the points of an institutional/amateur event (its participation points), defined by whoever publishes the event. Both are fixed at publication.
+- The backlog's former "importance" is the class of a Partido (its attendance factor) or the points of an institutional/amateur event (its participation points), defined by whoever publishes the event. Both are fixed at publication.
 - Out of this spec because they depend on stories outside the MVP: the email on publication (HU-19) and the email notification of class changes after a reprogramming.
-- Outside the HU-23 window a wrong class cannot be fixed; the confirmation step must show the class clearly.
+- A wrong class cannot be fixed after publication; the confirmation step must show the class clearly.
 
-## Revision Notes (v3)
+## Revision Notes
 
-- Added the 48-hour publication lead and the resulting deadline; class applies only to Partidos; institutional/amateur events publish without a class.
+- v3: added the 48-hour publication lead and the resulting deadline; class applies only to Partidos; institutional/amateur events publish without a class.
 - v3.1: institutional/amateur events (elections and assemblies included) get their points when published.
 - v3.4: the base data comes from the club (HU-21); here the Admin adjusts only the class or the points.
+- v4: title and input as in the backlog; the deadline counts from the reception of the event (the club sends it); no dependency on the club at the deadline; HU-23 is outside the MVP.

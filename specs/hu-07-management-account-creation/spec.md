@@ -33,7 +33,8 @@ As an Admin, I want to create an account for another Admin, so that they can acc
 - **Email normalization**: trimmed and compared case-insensitively.
 - **Role restriction**: only Admins can create accounts.
 - **Wrong recipient**: whoever receives the link can activate the account (HU-08), so the double entry and the 48-hour expiry are the mitigation.
-- **Person who is also a Member**: allowed; accounts are independent.
+- **Person who is also a Socio**: allowed; accounts are independent.
+- **Invitation email failure**: if the invitation cannot be sent, the whole creation is undone: no account and no invitation remain, the Admin sees "No pudimos enviar la invitación. Probá de nuevo." (`EMAIL_DELIVERY_FAILED`) and can retry at once. There is no resend of an invitation that was sent: to correct it, wait for the 48-hour expiry and create the account again.
 
 ## Requirements *(mandatory)*
 
