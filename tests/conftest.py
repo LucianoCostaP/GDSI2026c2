@@ -1,6 +1,16 @@
+import os
 import re
 import uuid
 from collections.abc import Callable, Iterator
+
+# Aislamiento de base de datos para pruebas:
+# Si no está definida explícitamente, se redirige a la base de datos de test
+os.environ.setdefault("APP_ENV", "test")
+if "DATABASE_URL" not in os.environ or os.environ["DATABASE_URL"].endswith("/app"):
+    os.environ["DATABASE_URL"] = os.environ.get(
+        "TEST_DATABASE_URL",
+        "postgresql+psycopg://app:app@localhost:5432/app_test",
+    )
 
 import pytest
 from fastapi.testclient import TestClient
@@ -37,6 +47,46 @@ RACING_HEADERS = {
 }
 
 _test_sqlite_engine = None
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _setup_test_database() -> None:
+    """Asegura que la base de datos de test exista y tenga las migraciones ejecutadas."""
+    if settings.db_engine.lower() != "postgres":
+        return
+
+    # Verificar / crear la base de datos de test si no existe aún
+    db_name = settings.database_url.rsplit("/", 1)[-1].split("?")[0]
+    if db_name:
+        base_url = settings.database_url.rsplit("/", 1)[0] + "/app"
+        try:
+            import psycopg
+
+            with (
+                psycopg.connect(
+                    base_url.replace("postgresql+psycopg://", "postgresql://"),
+                    autocommit=True,
+                ) as admin_conn,
+                admin_conn.cursor() as cur,
+            ):
+                cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (db_name,))
+                if not cur.fetchone():
+                    cur.execute(f'CREATE DATABASE "{db_name}"')
+        except Exception:  # noqa: BLE001, S110
+            pass
+
+    # Aplicar migraciones de Alembic a la base de test
+    try:
+        from alembic.config import Config
+
+        from alembic import command
+
+        alembic_cfg = Config("alembic.ini")
+        alembic_cfg.set_main_option("sqlalchemy.url", settings.database_url)
+        command.upgrade(alembic_cfg, "head")
+    except Exception as exc:  # noqa: BLE001
+        print(f"Aviso al aplicar migraciones en test DB: {exc}")
+
 
 # Tablas que escriben los repositorios de clubes (psycopg directo, con commit
 # propio): quedan fuera del rollback del fixture `db` y hay que vaciarlas.
