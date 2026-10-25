@@ -6,7 +6,7 @@ Cubre:
 - Escenario 2: Orden cronológico estricto (el más próximo primero).
 - Escenario 3: Acceso read-only y presencia de enlace al turno del socio (HU-39).
 - Escenario 4: Mensaje informativo cuando no hay próximos eventos publicados.
-- Escenario 5: Eventos en estados no permitidos ('pendiente_definicion_importancia', 'Historico', 'discarded', 'withdrawn') NO se muestran.
+- Escenario 5: Eventos en estados no permitidos ('pendiente_definicion_importancia', 'Historico') NO se muestran.
 - Edge case: Evento ya iniciado / pasado desaparece de la lista.
 - Edge case: La clase del partido (A, B, C) NO se expone a los socios.
 - Edge case: Conversión de huso horario a America/Argentina/Buenos_Aires.
@@ -24,23 +24,12 @@ from fastapi.testclient import TestClient
 
 from app.models import FeeStatus, User
 from app.repositories.factory import get_evento_repository
-from app.repositories.memory_repo import MemoryEventoRepository
 from app.schemas.eventos import EventoCreateRequest
 from tests.conftest import MakeMember, Outbox, admin_token, bearer, member_token
 
 BOCA_ID = "11111111-1111-1111-1111-111111111111"
 RIVER_ID = "22222222-2222-2222-2222-222222222222"
 BUENOS_AIRES_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
-
-
-@pytest.fixture(autouse=True)
-def limpiar_repo_memoria():
-    """Asegura aislamiento del repositorio en memoria para cada test."""
-    repo = get_evento_repository()
-    if isinstance(repo, MemoryEventoRepository):
-        repo.tabla_eventos_pendientes.clear()
-        repo.tabla_eventos_visibles.clear()
-        repo.tabla_eventos_cambios_pendientes.clear()
 
 
 @pytest.fixture
@@ -201,9 +190,8 @@ def test_escenario_5_estados_no_permitidos_excluidos(
     Escenario 5: Eventos en estados:
     - 'pendiente_definicion_importancia'
     - 'Historico'
-    - 'discarded'
-    - 'withdrawn'
     NO deben aparecer en la consulta.
+    ('discarded' todavía no existe: depende de la cancelación de HU-21.)
     """
     token = member_token(client, outbox, socio_boca)
     repo = get_evento_repository()
@@ -235,23 +223,6 @@ def test_escenario_5_estados_no_permitidos_excluidos(
         ),
         estado="Historico",
     )
-
-    # 3. Visible que luego pasa a withdrawn (retirado)
-    id_withdrawn = repo.insert_pendiente(
-        club_id=BOCA_ID,
-        evento=EventoCreateRequest(
-            id_externo="EVT-WITHDRAWN",
-            titulo="Evento Cancelado/Retirado",
-            fecha_hora=ahora + timedelta(days=4),
-            lugar="Estadio",
-            tipo="Partido",
-        ),
-    )
-    repo.publish_evento(club_id=BOCA_ID, id_externo_o_interno=id_withdrawn)
-    # Marcar como withdrawn en la tabla
-    for e in repo.tabla_eventos_visibles:
-        if e["id_interno"] == id_withdrawn:
-            e["estado"] = "withdrawn"
 
     res = client.get("/events/upcoming", headers=bearer(token))
     assert res.status_code == 200

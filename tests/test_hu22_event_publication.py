@@ -28,22 +28,11 @@ from fastapi.testclient import TestClient
 
 from app.models import FeeStatus, User
 from app.repositories.factory import get_evento_repository
-from app.repositories.memory_repo import MemoryEventoRepository
 from app.schemas.eventos import EventoCreateRequest
 from tests.conftest import MakeMember, Outbox, admin_token, bearer, member_token
 
 BOCA_ID = "11111111-1111-1111-1111-111111111111"
 RIVER_ID = "22222222-2222-2222-2222-222222222222"
-
-
-@pytest.fixture(autouse=True)
-def limpiar_repo_memoria():
-    """Asegura aislamiento del repositorio en memoria para cada test."""
-    repo = get_evento_repository()
-    if isinstance(repo, MemoryEventoRepository):
-        repo.tabla_eventos_pendientes.clear()
-        repo.tabla_eventos_visibles.clear()
-        repo.tabla_eventos_cambios_pendientes.clear()
 
 
 @pytest.fixture
@@ -404,12 +393,10 @@ def test_escenario_6_publicacion_automatica_con_valores_default(
     token = admin_token(client, outbox, admin)
     repo = get_evento_repository()
 
-    creacion = datetime.now(UTC) - timedelta(
-        hours=25
-    )  # Creado hace 25h (> 24h deadline)
-    partido_start = datetime.now(UTC) + timedelta(hours=80)  # Faltan 80h (> 48h lead)
+    ahora = datetime.now(UTC)
+    partido_start = ahora + timedelta(hours=80)  # Faltan 80h (> 48h lead)
 
-    # 1. Partido pendiente vencido
+    # 1. Partido pendiente
     req_partido = EventoCreateRequest(
         id_externo="P-AUTO",
         titulo="Partido Auto",
@@ -418,12 +405,8 @@ def test_escenario_6_publicacion_automatica_con_valores_default(
         tipo="Partido",
     )
     id_partido = repo.insert_pendiente(club_id=BOCA_ID, evento=req_partido)
-    # Ajustar creado_en para simular que ingresó hace 25 horas
-    for p in repo.tabla_eventos_pendientes:
-        if p["id_interno"] == id_partido:
-            p["creado_en"] = creacion
 
-    # 2. Institucional pendiente vencido
+    # 2. Institucional pendiente
     req_inst = EventoCreateRequest(
         id_externo="I-AUTO",
         titulo="Elecciones de Comisión",
@@ -432,20 +415,26 @@ def test_escenario_6_publicacion_automatica_con_valores_default(
         tipo="Institucional",
     )
     id_inst = repo.insert_pendiente(club_id=BOCA_ID, evento=req_inst)
-    for p in repo.tabla_eventos_pendientes:
-        if p["id_interno"] == id_inst:
-            p["creado_en"] = creacion
 
-    # 3. Disparar proceso de publicación automática
-    res_auto = client.post("/admin/events/auto-publish", headers=bearer(token))
+    # 3. Disparar la publicación automática 25h después de la recepción
+    # (deadline de 24h vencido, todavía faltan 55h para el inicio)
+    reloj = (ahora + timedelta(hours=25)).isoformat()
+    res_auto = client.post(
+        "/admin/events/auto-publish",
+        headers=bearer(token),
+        params={"reloj_simulado": reloj},
+    )
     assert res_auto.status_code == 200
     data_auto = res_auto.json()
     assert data_auto["publicados"] == 2
     assert id_partido in data_auto["eventos_publicados"]
     assert id_inst in data_auto["eventos_publicados"]
 
-    # Verificar valores en repo de visibles
-    visibles = {v["id_interno"]: v for v in repo.tabla_eventos_visibles}
+    # Verificar valores publicados
+    visibles = {
+        v["id_interno"]: v
+        for v in repo.find_proximos_eventos_publicados(club_id=BOCA_ID)
+    }
     assert visibles[id_partido]["clase"] == "B"  # Default Clase B
     assert visibles[id_inst]["puntos"] == 20  # Default 20 puntos
 
@@ -594,23 +583,24 @@ def test_edge_case_lead_perdido_no_se_publica_automaticamente(
     token = admin_token(client, outbox, admin)
     repo = get_evento_repository()
 
-    # Comienza en 40 horas (lead de 48h ya perdido)
-    fh = datetime.now(UTC) + timedelta(hours=40)
+    # Recibido ahora, empieza en 70 horas
+    ahora = datetime.now(UTC)
     req = EventoCreateRequest(
         id_externo="EVT-LOST-LEAD",
         titulo="Partido Con Lead Perdido",
-        fecha_hora=fh,
+        fecha_hora=ahora + timedelta(hours=70),
         lugar="L",
         tipo="Institucional",
     )
-    id_interno = repo.insert_pendiente(club_id=BOCA_ID, evento=req)
-    # Marcar como creado hace 30 horas
-    for p in repo.tabla_eventos_pendientes:
-        if p["id_interno"] == id_interno:
-            p["creado_en"] = datetime.now(UTC) - timedelta(hours=30)
+    repo.insert_pendiente(club_id=BOCA_ID, evento=req)
 
-    # Disparar auto-publish
-    res_auto = client.post("/admin/events/auto-publish", headers=bearer(token))
+    # El scheduler recién corre 30h después: faltan 40h (lead de 48h perdido)
+    reloj = (ahora + timedelta(hours=30)).isoformat()
+    res_auto = client.post(
+        "/admin/events/auto-publish",
+        headers=bearer(token),
+        params={"reloj_simulado": reloj},
+    )
     assert res_auto.status_code == 200
     assert res_auto.json()["publicados"] == 0
     assert res_auto.json()["omitidos"] == 1

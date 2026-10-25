@@ -4,15 +4,18 @@ from collections.abc import Callable, Iterator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
+from app.config import settings
 from app.db import Base, engine, get_db
 from app.mailer import get_mailer
 from app.main import app
 from app.models import FeeStatus, Member, MemberAccountState, Role, User
 from app.rate_limit import identifier_limiter, ip_limiter
+from app.repositories.factory import get_evento_repository
+from app.repositories.memory_repo import MemoryEventoRepository
 
 Outbox = list[tuple[str, str, str]]
 MakeMember = Callable[..., Member]
@@ -35,6 +38,34 @@ RACING_HEADERS = {
 }
 
 _test_sqlite_engine = None
+
+# Tablas que escriben los repositorios de clubes (psycopg directo, con commit
+# propio): quedan fuera del rollback del fixture `db` y hay que vaciarlas.
+CLUB_DATA_TABLES = (
+    "socios_staging_completa, socios_cargas_rechazos, socios_cargas_paginas, "
+    "socios_cargas, socios, "
+    "eventos_cambios_pendientes, eventos_visibles, eventos_pendientes_verificacion"
+)
+
+
+@pytest.fixture(autouse=True)
+def clean_club_data() -> None:
+    """Aísla cada test de los datos de socios y eventos de clubes.
+
+    Conserva los clubes semilla, admins y members (los usa el entorno local).
+    """
+    repo = get_evento_repository()
+    if isinstance(repo, MemoryEventoRepository):
+        repo.tabla_eventos_pendientes.clear()
+        repo.tabla_eventos_visibles.clear()
+        repo.tabla_eventos_cambios_pendientes.clear()
+    if settings.db_engine.lower() == "postgres":
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(f"TRUNCATE TABLE {CLUB_DATA_TABLES} CASCADE;"))
+        except Exception:  # noqa: BLE001, S110
+            # Sin PostgreSQL disponible, el fixture `db` cae a SQLite.
+            pass
 
 
 @pytest.fixture
