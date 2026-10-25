@@ -1,7 +1,9 @@
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Query, status
+from sqlalchemy.orm import Session
 
+from ..database import get_db
 from ..dependencies import get_current_club
 from ..models.domain import Club
 from ..repositories.base import EventoRepository
@@ -38,8 +40,11 @@ def crear_evento_individual(
     payload: EventoCreateRequest,
     club: Club = Depends(get_current_club),
     service: EventoService = Depends(get_evento_service),
+    db: Session = Depends(get_db),
 ) -> EventoCreateResponse:
-    return service.crear_evento_individual(str(club.id), payload)
+    res = service.crear_evento_individual(str(club.id), payload)
+    db.commit()
+    return res
 
 
 # ==============================================================================
@@ -74,8 +79,11 @@ def crear_eventos_batch(
     ),
     club: Club = Depends(get_current_club),
     service: EventoService = Depends(get_evento_service),
+    db: Session = Depends(get_db),
 ) -> BatchResponse:
-    return service.crear_eventos_batch(str(club.id), payload)
+    res = service.crear_eventos_batch(str(club.id), payload)
+    db.commit()
+    return res
 
 
 # ==============================================================================
@@ -141,5 +149,8 @@ def crear_eventos_historicos_batch(
     ),
     club: Club = Depends(get_current_club),
     service: EventoService = Depends(get_evento_service),
+    db: Session = Depends(get_db),
 ) -> BatchResponse:
-    return service.crear_eventos_historicos_batch(str(club.id), payload)
+    res = service.crear_eventos_historicos_batch(str(club.id), payload)
+    db.commit()
+    return res

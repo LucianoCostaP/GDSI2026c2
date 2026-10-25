@@ -14,8 +14,7 @@ from app.mailer import get_mailer
 from app.main import app
 from app.models import FeeStatus, Member, MemberAccountState, Role, User
 from app.rate_limit import identifier_limiter, ip_limiter
-from app.repositories.factory import get_evento_repository
-from app.repositories.memory_repo import MemoryEventoRepository
+from app.repositories.factory import memory_repository
 
 Outbox = list[tuple[str, str, str]]
 MakeMember = Callable[..., Member]
@@ -54,11 +53,9 @@ def clean_club_data() -> None:
 
     Conserva los clubes semilla, admins y members (los usa el entorno local).
     """
-    repo = get_evento_repository()
-    if isinstance(repo, MemoryEventoRepository):
-        repo.tabla_eventos_pendientes.clear()
-        repo.tabla_eventos_visibles.clear()
-        repo.tabla_eventos_cambios_pendientes.clear()
+    memory_repository.tabla_eventos_pendientes.clear()
+    memory_repository.tabla_eventos_visibles.clear()
+    memory_repository.tabla_eventos_cambios_pendientes.clear()
     if settings.db_engine.lower() == "postgres":
         try:
             with engine.begin() as conn:

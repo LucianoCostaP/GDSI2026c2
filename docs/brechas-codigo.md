@@ -13,6 +13,9 @@ Las decisiones numeradas son las de `specs/README.md` ("Decisions adopted").
 | Una falla de SMTP no se traduce en el error `EMAIL_DELIVERY_FAILED` con el mensaje del spec: hoy la excepción sube sin manejar (el rollback del código y de la invitación sí ocurre, y el reintento inmediato ya funciona) | HU-01, HU-05, HU-06, HU-07, decisión 30 | `app/mailer.py`, `app/routers/member_auth.py`, `app/routers/auth.py`, `app/routers/admin_accounts.py` |
 | Los textos de los mensajes de HU-01 no están en la API: solo se devuelven los códigos (`MEMBER_NOT_FOUND`, `FEES_OVERDUE`, `ACCOUNT_ALREADY_ACTIVATED`, `NO_EMAIL_ON_FILE`); falta definir si el texto lo arma el front o el back y testearlo | HU-01, decisión 24 | `app/routers/member_auth.py` |
 | `GET /me` no devuelve los datos de socio del perfil (DNI, número de socio, estado de cuota, estado de cuenta) | HU-10 | `app/routers/auth.py`, `app/schemas.py` |
+| No hay scheduler de la publicación automática: solo corre cuando un Admin llama a `POST /admin/events/auto-publish`. Se define junto con los entornos de deploy | HU-22 FR-005, SC-001 | `app/services/evento_service.py` (`publicar_eventos_automaticos`) |
+| Una corrida tardía de la publicación automática no se marca en la auditoría, y si se perdió la antelación de 48 horas el evento queda pendiente sin aviso explícito al Admin (solo el flag `plazo_expirado`) | HU-22 (edge case "Scheduler failure") | `app/services/evento_service.py` |
+| Multi-tenencia sin decidir: el socio puede pedir `/events/upcoming?club_id=` de otro club, el club del socio cae al primer club si no se encuentra, y el Admin identifica eventos por `id_externo`, que es único solo dentro de cada club | `specs/README.md` (Open items, Tenancy) | `app/routers/member_events.py`, `app/routers/admin_events.py`, `app/repositories/postgres_repo.py` |
 | CI no mide cobertura: falta `pytest-cov` y `--cov-fail-under=80` (95 % para el scoring) | `docs/constitution.md` §2 | `pyproject.toml`, `.github/workflows/ci.yml` |
 | La protección de `main` descrita en la constitución hay que configurarla en GitHub | `docs/constitution.md` §7 | configuración del repositorio |
 
@@ -32,7 +35,6 @@ Las decisiones numeradas son las de `specs/README.md` ("Decisions adopted").
 
 | Brecha | Lo pide | Código |
 |---|---|---|
-| La regla de 48 horas solo se aplica a Partidos; también debe aplicarse a eventos institucionales/amateur | HU-21 FR-006 | `app/utils/date_utils.py` |
 | El rechazo por antelación no usa el código `INSUFFICIENT_LEAD` ni queda en un registro visible para el Admin | HU-21 escenario 7, decisión 26 | `app/services/evento_service.py` |
 | Reenviar un evento pendiente no lo actualiza (se omite o da `409`) | HU-21 escenarios 6 y 8 | `app/services/evento_service.py` |
 | No existe la cancelación de un evento pendiente | HU-21 escenario 10 | — |
@@ -43,4 +45,4 @@ Las decisiones numeradas son las de `specs/README.md` ("Decisions adopted").
 
 ## Sin implementar todavía
 
-HU-24 (asistencias y actividades), HU-22 (publicación), HU-17, HU-25 y el resto de las historias del roadmap a partir del módulo 4 no tienen código; no son brechas sino trabajo pendiente.
+HU-24 (asistencias y actividades), HU-25 y el resto de las historias del roadmap a partir del módulo 4 no tienen código; no son brechas sino trabajo pendiente.

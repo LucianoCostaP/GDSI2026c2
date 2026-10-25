@@ -78,6 +78,9 @@ El backend aplica separación estricta por roles en [`app/auth.py`](file:///c:/U
   - `tipo`: `'Partido'` | `'Institucional'`
   - `titulo`: Búsqueda por texto en título
   - `club_id`: Filtro por UUID de club
+  - `limit`: Tamaño de página (por defecto 50, máximo 500)
+  - `offset`: Cantidad de eventos a saltear (por defecto 0)
+- **Paginación**: la respuesta es la página pedida, ordenada por deadline (el más urgente primero). El total de pendientes viene en el header `X-Total-Count`.
 - **Autenticación**: Bearer Token (Admin)
 - **Respuesta (200 OK)**:
 ```json
@@ -138,7 +141,19 @@ El backend aplica separación estricta por roles en [`app/auth.py`](file:///c:/U
     "procesados": 5,
     "publicados": 2,
     "omitidos": 3,
-    "eventos_publicados": ["EVT-INT-A1B2C3D4E5F6", "EVT-INT-789XYZ"]
+    "eventos_publicados": ["EVT-INT-A1B2C3D4E5F6", "EVT-INT-789XYZ"],
+    "detalle": [
+      {
+        "mensaje": "Evento publicado exitosamente.",
+        "id_interno": "EVT-INT-A1B2C3D4E5F6",
+        "tipo": "Partido",
+        "clase": "B",
+        "puntos": null,
+        "publicado_en": "2026-11-20T12:00:00Z",
+        "publicado_por": "system",
+        "es_default": true
+      }
+    ]
   }
   ```
 
@@ -197,15 +212,18 @@ export function getEventClasses() {
 
 /**
  * HU-22: Obtiene eventos pendientes de publicación con cálculo de deadline.
- * @param {Object} [filters] - { clubId, tipo, titulo }
+ * @param {Object} [filters] - { clubId, tipo, titulo, limit, offset }
  */
 export function getPendingEvents(filters = {}) {
   const params = new URLSearchParams()
   if (filters.clubId) params.append('club_id', filters.clubId)
   if (filters.tipo) params.append('tipo', filters.tipo)
   if (filters.titulo) params.append('titulo', filters.titulo)
+  if (filters.limit) params.append('limit', filters.limit)
+  if (filters.offset) params.append('offset', filters.offset)
 
   const query = params.toString() ? `?${params.toString()}` : ''
+  // El total para el paginador viene en el header X-Total-Count
   return apiGet(`/admin/events/pending${query}`)
 }
 
@@ -403,7 +421,7 @@ export function UpcomingEventsList() {
 
   if (loading) return <p>Cargando eventos...</p>
   if (error) return <p style={{ color: '#c00' }}>{error}</p>
-  if (eventos.length === 0) return <p>{mensaje || 'No hay eventos próximos programados en este momento.'}</p>
+  if (eventos.length === 0) return <p>{mensaje || 'No hay eventos próximos publicados.'}</p>
 
   return (
     <ul style={{ listStyle: 'none', padding: 0 }}>

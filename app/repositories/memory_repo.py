@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from ..core.exceptions import EventoYaPublicadoError
+from ..core.exceptions import EventoNoEncontradoError, EventoYaPublicadoError
 from ..models.domain import ClubDomain
 from ..models.enums import TipoEvento
 from ..schemas.eventos import EventoCreateRequest
@@ -231,6 +231,8 @@ class MemoryEventoRepository(EventoRepository):
         id_externo_o_interno: str,
         clase: str | None = None,
         puntos: int | None = None,
+        publicado_por: str = "admin",
+        es_default: bool = False,
     ) -> str:
         """
         Publica un evento para que pase a estar visible a los socios (HU-22).
@@ -265,6 +267,8 @@ class MemoryEventoRepository(EventoRepository):
                 "descripcion": pending_item.get("descripcion"),
                 "clase": clase,
                 "puntos": puntos,
+                "publicado_por": publicado_por,
+                "es_default": es_default,
                 "estado": "visible",
                 "estado_ciclo": "visible",
                 "publicado_en": ahora,
@@ -273,8 +277,8 @@ class MemoryEventoRepository(EventoRepository):
             self.tabla_eventos_visibles.append(registro_visible)
             return pending_item["id_interno"]
 
-        raise ValueError(
-            f"Evento '{id_externo_o_interno}' no encontrado para publicar en club '{club_id}'."
+        raise EventoNoEncontradoError(
+            f"No se encontró un evento pendiente con identificador '{id_externo_o_interno}'."
         )
 
     def find_proximos_eventos_publicados(

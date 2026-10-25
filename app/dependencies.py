@@ -99,7 +99,7 @@ def get_current_club(
 
     # 2. Si no se encontró en DB o el motor es 'memory', buscar en el repositorio en memoria
     if not club:
-        repo = get_evento_repository()
+        repo = get_evento_repository(db)
         club_domain = repo.get_club_by_token(token)
         if club_domain:
             club = Club(

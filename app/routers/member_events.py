@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Header, Query
 from sqlalchemy.orm import Session
 
 from ..auth import CurrentMember
+from ..config import settings
 from ..core.date_utils import asegurar_utc
 from ..db import get_db
 from ..models import Member, User
@@ -60,7 +61,8 @@ def get_member_club_id(db: Session, member_user: User) -> str | None:
 
 
 def _parse_clock(val: str | None) -> datetime | None:
-    if not val:
+    # El reloj simulado es solo para pruebas: en producción manda el reloj del servidor.
+    if not val or settings.app_env == "production":
         return None
     val_str = str(val).strip().replace(" ", "+")
     return asegurar_utc(datetime.fromisoformat(val_str))
