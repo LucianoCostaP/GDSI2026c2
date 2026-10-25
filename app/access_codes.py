@@ -13,6 +13,7 @@ from sqlalchemy import ColumnElement, select, update
 from sqlalchemy.orm import Session
 
 from .config import settings
+from .core.date_utils import asegurar_utc
 from .models import AccessCode, CodePurpose
 from .security import generate_code, generate_token, hash_token, same_hash
 
@@ -54,7 +55,8 @@ def issue_code(
         .limit(1)
     )
     if locked_at is not None:
-        unlock_at = locked_at + timedelta(minutes=settings.identifier_lock_minutes)
+        locked_at_utc = asegurar_utc(locked_at)
+        unlock_at = locked_at_utc + timedelta(minutes=settings.identifier_lock_minutes)
         raise _wait((unlock_at - now).total_seconds(), "IDENTIFIER_LOCKED")
 
     last_sent = db.scalar(
@@ -64,8 +66,13 @@ def issue_code(
         .limit(1)
     )
     cooldown = timedelta(seconds=settings.access_code_resend_seconds)
-    if last_sent is not None and now < last_sent + cooldown:
-        raise _wait((last_sent + cooldown - now).total_seconds(), "RESEND_COOLDOWN")
+    if last_sent is not None:
+        last_sent_utc = asegurar_utc(last_sent)
+        if now < last_sent_utc + cooldown:
+            raise _wait(
+                (last_sent_utc + cooldown - now).total_seconds(),
+                "RESEND_COOLDOWN",
+            )
 
     db.execute(
         update(AccessCode)
@@ -111,8 +118,9 @@ def verify_code(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "TOO_MANY_FAILED_ATTEMPTS")
 
     now = datetime.now(UTC)
+    expires_at_utc = asegurar_utc(access.expires_at)
     usable = (
-        access.used_at is None and access.revoked_at is None and now < access.expires_at
+        access.used_at is None and access.revoked_at is None and now < expires_at_utc
     )
     if usable and same_hash(access.code_hash, _code_hash(challenge, code)):
         access.used_at = now

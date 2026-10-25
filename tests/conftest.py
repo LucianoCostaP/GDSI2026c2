@@ -4,9 +4,11 @@ from collections.abc import Callable, Iterator
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
-from app.db import engine, get_db
+from app.db import Base, engine, get_db
 from app.mailer import get_mailer
 from app.main import app
 from app.models import FeeStatus, Member, MemberAccountState, Role, User
@@ -32,16 +34,35 @@ RACING_HEADERS = {
     "Content-Type": "application/json",
 }
 
+_test_sqlite_engine = None
+
 
 @pytest.fixture
 def db() -> Iterator[Session]:
-    # Cada test corre dentro de una transacción que se descarta al final.
-    with engine.connect() as connection:
+    # Intenta usar la conexión configurada (PostgreSQL en CI o Docker).
+    # Si PostgreSQL no está corriendo, realiza fallback a SQLite en memoria.
+    try:
+        connection = engine.connect()
         transaction = connection.begin()
         session = Session(bind=connection, join_transaction_mode="create_savepoint")
         yield session
         session.close()
         transaction.rollback()
+        connection.close()
+    except Exception:  # noqa: BLE001
+        global _test_sqlite_engine
+        if _test_sqlite_engine is None:
+            _test_sqlite_engine = create_engine(
+                "sqlite://",
+                connect_args={"check_same_thread": False},
+                poolclass=StaticPool,
+            )
+            Base.metadata.create_all(_test_sqlite_engine)
+
+        with _test_sqlite_engine.connect() as conn:
+            session = Session(bind=conn)
+            yield session
+            session.close()
 
 
 @pytest.fixture
@@ -94,7 +115,7 @@ def make_member(db: Session) -> MakeMember:
                     role=Role.MEMBER,
                 )
             )
-        db.flush()
+        db.commit()
         return member
 
     return make
@@ -104,7 +125,7 @@ def make_member(db: Session) -> MakeMember:
 def admin(db: Session) -> User:
     user = User(name="Admin", email=f"Admin-{unique()}@Example.com", role=Role.ADMIN)
     db.add(user)
-    db.flush()
+    db.commit()
     return user
 
 

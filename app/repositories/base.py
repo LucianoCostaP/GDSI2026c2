@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import Any
 
 from ..models.domain import ClubDomain
@@ -42,3 +43,53 @@ class EventoRepository(ABC):
         titulo: str | None = None,
     ) -> list[dict[str, Any]]:
         """Consulta eventos del club filtrando por criterios opcionales."""
+
+    @abstractmethod
+    def find_eventos_pendientes(
+        self,
+        club_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Lista los eventos pendientes de definición de importancia (HU-22).
+        Excluye eventos históricos y descartados.
+        """
+
+    @abstractmethod
+    def get_evento_pendiente(
+        self,
+        club_id: str | None,
+        id_externo_o_interno: str,
+    ) -> dict[str, Any] | None:
+        """Obtiene un evento pendiente por su id_externo o id_interno."""
+
+    @abstractmethod
+    def is_already_published(
+        self,
+        club_id: str | None,
+        id_externo_o_interno: str,
+    ) -> bool:
+        """Verifica si un evento ya fue publicado."""
+
+    @abstractmethod
+    def publish_evento(
+        self,
+        club_id: str | None,
+        id_externo_o_interno: str,
+        clase: str | None = None,
+        puntos: int | None = None,
+    ) -> str:
+        """
+        Publica un evento para que pase al estado 'visible'/'published' (HU-22).
+        Retorna el id_interno del evento publicado.
+        """
+
+    @abstractmethod
+    def find_proximos_eventos_publicados(
+        self,
+        club_id: str | None = None,
+        now: datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Consulta los próximos eventos publicados (visibles para socios) ordenados
+        cronológicamente (HU-17).
+        """
