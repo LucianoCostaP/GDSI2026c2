@@ -47,6 +47,7 @@ from .enums import (
     TipoEvento,
     TipoParticipacion,
 )
+from .rules import FormulaLock, FormulaLockState, RulesVersion, RulesVersionState
 
 __all__ = [
     "AccessCode",
@@ -74,11 +75,15 @@ __all__ = [
     "EventoVisible",
     "EventoVisibleDB",
     "FeeStatus",
+    "FormulaLock",
+    "FormulaLockState",
     "LinkToken",
     "Member",
     "MemberAccountState",
     "OrigenCarga",
     "Role",
+    "RulesVersion",
+    "RulesVersionState",
     "Socio",
     "SocioCarga",
     "SocioCargaPagina",

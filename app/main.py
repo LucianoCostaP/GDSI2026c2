@@ -19,6 +19,7 @@ from .db import SessionLocal, engine
 from .routers import (
     admin_accounts,
     admin_events,
+    admin_formulas,
     admin_participacion,
     auth,
     eventos,
@@ -95,6 +96,7 @@ app.include_router(member_auth.router)
 
 app.include_router(admin_accounts.router)
 app.include_router(admin_events.router)
+app.include_router(admin_formulas.router)
 app.include_router(admin_participacion.router)
 app.include_router(member_events.router)
 

@@ -68,9 +68,47 @@ The product ships a **formula catalog** (cross-cutting section 7). The Admin of 
 - **RulesVersion**: club, number, formula id and version, parameter values (decimal), in force since, published by, previous version, state `in force` or `superseded`. Shared with HU-28.
 - **FormulaLock**: club, state (`unlocked` or `locked`), reason, changed by, changed at.
 
-## Messages and codes *(pending)*
+## Messages and codes
 
-Texts and codes for these situations are defined while implementing and added here in the same PR (README, decision 40): formula not published (block), formula locked, limit violated, constraint violated (sum), confirmation statement, successful publication, stale state (reload), same formula already in force, lock and unlock confirmations, lock state conflicts, forbidden, unauthenticated.
+Defined while implementing (README, decision 40). Errors answer `{"detail": {"code", "message", ...}}` unless noted; the texts are in Spanish and come from the server.
+
+| Situation | HTTP | Code | Message |
+|---|---|---|---|
+| Formula not published (block for HU-25 and HU-28) | 409 | `FORMULA_NOT_PUBLISHED` | El club todavía no publicó la fórmula del puntaje. Publicala desde la sección Fórmula. |
+| Formula locked (publication, HU-28) | 409 | `FORMULA_LOCKED` | La fórmula está bloqueada desde el {dd/mm/aaaa hh:mm} por {nombre}. Motivo: {motivo}. Also returns `reason`, `locked_by`, `locked_at`. |
+| Values rejected on publication | 422 | `INVALID_VALUES` | Hay valores que no se pueden publicar. Corregilos y volvé a intentar. Also returns `violations` (below). |
+| Missing parameter | — | `PARAMETER_MISSING` | Falta el valor de «{parámetro}». |
+| Not a number | — | `PARAMETER_NOT_A_NUMBER` | El valor de «{parámetro}» tiene que ser un número. |
+| Limit violated | — | `PARAMETER_OUT_OF_LIMITS` | «{parámetro}» tiene que estar entre {mínimo} y {máximo} {unidad}. |
+| Constraint violated (sum) | — | `SUM_CONSTRAINT_VIOLATED` | {Pesos…} tienen que sumar {total}; hoy suman {suma}. |
+| Unknown parameter | — | `PARAMETER_UNKNOWN` | «{clave}» no es un parámetro de esta fórmula. |
+| Confirmation missing | 422 | `CONFIRMATION_REQUIRED` | Confirmá que estos valores pasan a ser las reglas oficiales del club. |
+| Confirmation statement (shown before confirming) | — | — | Estos valores pasan a ser las reglas oficiales del club y rigen de inmediato. Los socios van a ver la explicación de abajo. |
+| Successful publication | 201 | — | Publicaste las reglas versión {n}: ya están vigentes en el club. |
+| Stale state (reload) | 409 | `STALE_RULES` | Las reglas del club cambiaron mientras mirabas esta pantalla. Recargá para ver las reglas vigentes y volvé a intentar. |
+| Same formula and version already in force | 409 | `SAME_FORMULA_IN_FORCE` | Esta fórmula y esta versión ya están vigentes. Para cambiar sus valores usá el ajuste de parámetros. |
+| Formula not in the catalog | 404 | `FORMULA_NOT_FOUND` | Esa fórmula no está en el catálogo. |
+| Lock or unlock without reason | 422 | `REASON_REQUIRED` | Indicá el motivo. |
+| Lock when already locked | 409 | `ALREADY_LOCKED` | La fórmula ya está bloqueada. |
+| Unlock when not locked | 409 | `NOT_LOCKED` | La fórmula no está bloqueada. |
+| Lock and unlock confirmations | 200 | — | The front shows «Bloqueaste la fórmula.» and «Desbloqueaste la fórmula.» |
+| Forbidden (Socio) | 403 | `FORBIDDEN` | (existing code) |
+| Admin without club | 403 | `ADMIN_WITHOUT_CLUB` | (existing code) |
+| Unauthenticated | 401 | `NOT_AUTHENTICATED` | (existing code) |
+
+`violations` is a list of `{code, parameter, message}`; the preview returns the same list with `valid: false` and `explanation: null`.
+
+### API
+
+All under the Admin's session; the club comes from the account (decision 34).
+
+- `GET /admin/formulas`: catalog, rules in force (with parameters and explanation) and lock state.
+- `GET /admin/formulas/{id}/{version}`: structure of the formula, prefilled `values`, `rules_version_in_force` (to send back when publishing) and `confirmation_statement`.
+- `POST /admin/formulas/{id}/{version}/preview`: `{values}` → `{valid, violations, explanation}`. Saves nothing.
+- `POST /admin/formulas/{id}/{version}/publish`: `{values, expected_rules_version, confirmed}` → 201.
+- `POST /admin/formulas/lock` and `/unlock`: `{reason}` (up to 500 characters).
+
+Prefill rule (scenario 8): a value in force is reused when the parameter exists in the new formula with the same unit and the value is inside the new limits; otherwise the default is used.
 
 ## Success Criteria *(mandatory)*
 
