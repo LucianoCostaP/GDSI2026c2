@@ -15,7 +15,7 @@ As an Admin of the club, I want to adjust the weights of the variables in the ba
 
 **Why this priority**: Lets the club decide its priorities without changing the algorithm structure.
 
-**Independent Test**: As an Admin, change one weight, confirm the warning, and verify the new rules version is in force immediately, logged in the history, and the ranking unchanged until HU-25 runs.
+**Independent Test**: As an Admin, change one weight, confirm the warning, and verify the new rules version is in force immediately, audited, and the ranking unchanged until HU-25 runs.
 
 **Acceptance Scenarios**:
 
@@ -27,7 +27,7 @@ As an Admin of the club, I want to adjust the weights of the variables in the ba
 6. **Given** changed values, **When** the Admin tries to save, **Then** a confirmation message states these values will become the official rules in force.
 7. **Given** the Admin confirms, **When** the save completes, **Then** a new rules version is in force immediately, with no extra approval or publication step.
 8. **Given** new rules in force, **When** the ranking is viewed, **Then** it is unchanged until the calculation (HU-25) is run, and the Socio screens show the notice defined in HU-13.
-9. **Given** a change, **When** it is saved, **Then** the rules version history records who, when, and previous and new values.
+9. **Given** a change, **When** it is saved, **Then** the audit records who, when, and previous and new values. There is no version history screen in the MVP.
 10. **Given** the current time is within 14 days before the season start (or after it), **When** the Admin tries to change values, **Then** the change is rejected with the cut-off date.
 11. **Given** two Admins editing at once, **When** the second saves from an outdated version, **Then** the save is refused and they must reload.
 12. **Given** the club has no published formula (HU-27) or the formula is locked (HU-27, scenario 11), **When** an Admin tries to change values, **Then** the change is rejected with the reason; the lock is independent from the season cut-off and both must allow the change.
@@ -38,7 +38,7 @@ As an Admin of the club, I want to adjust the weights of the variables in the ba
 
 - **Season cut-off**: changes are allowed only until 14 days before the season start (Buenos Aires time). The window reopens when the next season start date is configured.
 - **First version**: rules version 1 is not seeded: the Admin creates it when publishing the base formula (HU-27). HU-28 creates the following versions of the formula in force.
-- **Per club**: rules versions, history and lock belong to the club of the Admin; the club is taken from the account.
+- **Per club**: rules versions and lock belong to the club of the Admin; the club is taken from the account.
 - **No effect on the ranking** until HU-25 runs.
 
 ## Requirements *(mandatory)*
@@ -52,11 +52,11 @@ As an Admin of the club, I want to adjust the weights of the variables in the ba
 - **FR-005**: System MUST ask for confirmation, stating these values become the official rules, before saving.
 - **FR-006**: System MUST put confirmed values in force immediately as a new rules version.
 - **FR-007**: System MUST NOT change the ranking until the calculation (HU-25) is run.
-- **FR-008**: System MUST record every change in the rules version history (who, when, previous and new values).
+- **FR-008**: System MUST audit every change (who, when, previous and new values) and store each rules version unchanged; a history view is outside the MVP.
 - **FR-009**: System MUST reject changes later than 14 days before the season start.
 - **FR-010**: System MUST prevent concurrent overwrites (version check).
 - **FR-011**: System MUST reject changes while the formula is locked or when no formula is published (HU-27).
-- **FR-012**: System MUST validate with decimal arithmetic and the same code as HU-27, and keep versions and history per club.
+- **FR-012**: System MUST validate with decimal arithmetic and the same code as HU-27, and keep versions per club.
 
 ### Key Entities
 
@@ -68,7 +68,7 @@ As an Admin of the club, I want to adjust the weights of the variables in the ba
 
 ### Measurable Outcomes
 
-- **SC-001**: 100% of confirmed changes are in force immediately and appear in the history with author and values.
+- **SC-001**: 100% of confirmed changes are in force immediately and appear in the audit with author and values.
 - **SC-002**: 0 changes are accepted after the season cut-off or outside the limits.
 - **SC-003**: 0 ranking changes happen without running HU-25.
 - **SC-004**: 0 saved versions have pillar weights that do not add up to 1.00.

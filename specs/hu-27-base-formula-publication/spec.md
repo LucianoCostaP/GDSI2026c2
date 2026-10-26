@@ -28,11 +28,11 @@ The product ships a **formula catalog** (cross-cutting section 7). The Admin of 
 7. **Given** no published formula in the club, **When** an Admin tries to adjust parameters (HU-28) or calculate the ranking (HU-25), **Then** the action is blocked with the reason, and the Socios of the club see the "no rules yet" message in HU-13.
 8. **Given** a rules version in force, **When** the Admin publishes a different formula of the catalog or a newer version of the same one, **Then** a new rules version starts from it, prefilled with the values in force for the parameters that exist in both with compatible limits and with the defaults for the rest. The ranking does not change until HU-25 runs and HU-13 shows its notice.
 9. **Given** a rules version in force, **When** the Admin tries to publish the same formula at the same version, **Then** it is rejected: changing values of the formula in force is HU-28.
-10. **Given** a publication, **When** it completes, **Then** the rules version history records the version number, the formula and its version, who published, when, and the values; the history is visible to the Admin. After publishing, the Admin sees the rules in force read-only and the explanation Socios see (HU-13); no edit control is offered until HU-28 exists.
+10. **Given** a publication, **When** it completes, **Then** the rules version is stored unchanged with its number, the formula and its version, who published, when and the values, and the publication is audited. There is no version history screen in the MVP. After publishing, the Admin sees the rules in force read-only and the explanation Socios see (HU-13); no edit control is offered until HU-28 exists.
 11. **Given** an Admin, **When** they lock the formula giving a reason, **Then** while it is locked publishing a formula (HU-27) and adjusting parameters (HU-28) are rejected with a message saying that the formula is locked, since when, by whom and why. Any Admin of the club can unlock it, also giving a reason; the lock and the unlock are audited. The lock does not affect viewing, HU-25 or HU-13.
 12. **Given** an Admin who opened the publication form, **When** the formula is locked or the rules in force changed in the meantime and they confirm, **Then** the publication is refused and they must reload.
 13. **Given** a logged-in Socio, **When** they look for these actions, **Then** they are not available and the server rejects the request; without session the request is rejected as unauthenticated.
-14. **Given** two clubs, **When** an Admin of one publishes, locks or reads rules, **Then** only the rules, lock and history of their own club are involved; the club comes from the Admin's account, never from a request parameter.
+14. **Given** two clubs, **When** an Admin of one publishes, locks or reads rules, **Then** only the rules and lock of their own club are involved; the club comes from the Admin's account, never from a request parameter.
 
 ---
 
@@ -55,11 +55,11 @@ The product ships a **formula catalog** (cross-cutting section 7). The Admin of 
 - **FR-004**: System MUST offer a preview of the HU-13 explanation rendered with the values entered, without saving anything.
 - **FR-005**: System MUST ask for confirmation, stating that the values become the official rules, and then create the new rules version in force atomically.
 - **FR-006**: System MUST NOT allow adding or removing variables, or creating formulas, from the screen.
-- **FR-007**: System MUST record every publication in the rules version history (version, formula and its version, author, date, values).
+- **FR-007**: System MUST store every published rules version unchanged (version, formula and its version, author, date, values), because rankings and the notice of HU-13 refer to it, and audit the publication. A history view is outside the MVP.
 - **FR-008**: System MUST block HU-25 and HU-28 for a club until a formula is published.
 - **FR-009**: System MUST let an Admin lock and unlock the formula with a reason, and while it is locked MUST reject the publication (HU-27) and the adjustment of parameters (HU-28).
 - **FR-010**: System MUST prevent concurrent overwrites (version check) and refuse a confirmation made over a stale state.
-- **FR-011**: System MUST keep rules, lock and history separate per club and take the club from the authenticated account.
+- **FR-011**: System MUST keep rules and lock separate per club and take the club from the authenticated account.
 - **FR-012**: System MUST restrict these actions to Admins, enforced on the server, and audit them.
 
 ### Key Entities
@@ -77,7 +77,7 @@ Texts and codes for these situations are defined while implementing and added he
 ### Measurable Outcomes
 
 - **SC-001**: 0 rankings are calculated for a club without a published formula.
-- **SC-002**: 100% of publications and locks appear in the history or audit with author, date and values.
+- **SC-002**: 100% of publications and locks appear in the audit with author, date and values.
 - **SC-003**: 0 publications or parameter changes are accepted while the formula is locked.
 - **SC-004**: 0 publications are accepted with values outside the limits or breaking a constraint.
 - **SC-005**: 0 requests read or change the rules of a club other than the one of the authenticated account.

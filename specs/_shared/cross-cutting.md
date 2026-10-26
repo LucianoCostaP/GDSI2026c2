@@ -115,7 +115,7 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 
 ## 9. Tenancy
 
-- The system serves several clubs. **Rules (formula, rules versions, history, lock) belong to a club**, and so do the rankings calculated from them.
+- The system serves several clubs. **Rules (formula, rules versions, lock) belong to a club**, and so do the rankings calculated from them.
 - Every Admin and every Socio belongs to one club. The club is taken from the authenticated account or from the club's integration token, **never from a request parameter** (query, body or header chosen by the caller).
 - A user can only read and change data of their own club; a request for another club's data is rejected.
 - The specs keep the single-club wording; read "the club" as "the club of the user".

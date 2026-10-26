@@ -77,13 +77,14 @@
 32. **Started events leave the upcoming list for both types** (HU-17); no event stays visible until the end of its day.
 33. **No MVP spec depends on HU-23**: the state `withdrawn` and the effects of withdrawals and reprogramming on HU-17, HU-22, HU-36, HU-37 and HU-39 live only in HU-23 (outside the MVP). The constitution (DoR, DoD, thresholds, branches, commits, protection of `main`) is versioned in `docs/constitution.md`.
 
-34. **Rules are per club; tenancy is closed.** The system serves several clubs; each Admin and each Socio belongs to one club; the formula, rules versions, history, lock and rankings belong to the club. The club comes from the account or token, never from a request parameter (cross-cutting section 9).
+34. **Rules are per club; tenancy is closed.** The system serves several clubs; each Admin and each Socio belongs to one club; the formula, rules versions, lock and rankings belong to the club. The club comes from the account or token, never from a request parameter (cross-cutting section 9).
 35. **Formula catalog.** The product ships a catalog of formulas (descriptor plus pure calculation); the Admin of a club publishes one of them with initial values (HU-27). More formulas are added with product releases, never from a screen (scoring model, section 7).
 36. **The explanation is generated automatically** from the published formula and the values in force (HU-13), with a preview for the Admin before confirming (HU-27). There is no separate approval step.
 37. **Formula lock.** An Admin can lock and unlock the publication of a formula, giving a reason; while locked, HU-27 and HU-28 changes are rejected. It is independent from the 14-day season cut-off of HU-28 (HU-27 scenario 11).
 38. **Rules version 1 is created by the Admin** when publishing the formula; it is not seeded. This corrects HU-28 and the roadmap.
 39. **Decimal arithmetic** for parameter values, limits, the sum rule and rounding (scoring model, rule 8).
 40. **Messages and codes of HU-27 and HU-13 are defined during implementation** and added to the specs in the same PR. This is an exception to the Definition of Ready; it needs an amendment of `docs/constitution.md` section 3 (2 approvals).
+41. **Version history is outside the MVP.** There is no history of rules versions (HU-27, HU-28) and no history of previous rankings (HU-25). Each rules version is still stored unchanged, and each ranking records the one it used, so HU-13's notice and the Socio views anchored to the latest ranking keep working. The audit keeps who, when and the previous and new values. HU-25, the ranking run itself, stays in the MVP.
 
 ## Defaults set by this revision (change them in one place)
 
