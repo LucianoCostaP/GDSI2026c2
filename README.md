@@ -58,9 +58,9 @@ Lo que **no** hace falta instalar a mano:
    ```
    Si la base no tiene ningún admin, crear el primero (entra por "Admin access" con un código que llega a Mailpit):
    ```bash
-   INITIAL_ADMIN_EMAIL=tu@mail.com INITIAL_ADMIN_NAME="Tu Nombre" uv run python -m app.bootstrap
+   INITIAL_ADMIN_EMAIL=tu@mail.com INITIAL_ADMIN_NAME="Tu Nombre" INITIAL_ADMIN_CLUB_CODE=CABJ uv run python -m app.bootstrap
    ```
-   En Render se corre solo en cada arranque, con las variables `INITIAL_ADMIN_EMAIL` e `INITIAL_ADMIN_NAME`.
+   En Render se corre solo en cada arranque, con las variables `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_NAME` e `INITIAL_ADMIN_CLUB_CODE` (código del club del primer admin; los demás admins heredan el club de quien los invita).
    Para tener socios de prueba en la tabla `members` (member ID `123456` a `567890`, DNI `30111222` a `30555666`; el `456789` tiene las cuotas en mora y el `567890` no tiene email):
    ```bash
    uv run python -m app.seed

@@ -42,7 +42,10 @@ async def lifespan(app: FastAPI):
         try:
             with SessionLocal() as db:
                 create_initial_admin(
-                    db, settings.initial_admin_email, settings.initial_admin_name
+                    db,
+                    settings.initial_admin_email,
+                    settings.initial_admin_name,
+                    settings.initial_admin_club_code,
                 )
 
         except Exception:  # noqa: BLE001, S110

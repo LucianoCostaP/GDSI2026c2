@@ -1,3 +1,4 @@
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
@@ -76,6 +77,17 @@ def get_current_admin(user: CurrentUser) -> User:
 
 
 CurrentAdmin = Annotated[User, Depends(get_current_admin)]
+
+
+def get_current_admin_club_id(admin: CurrentAdmin) -> uuid.UUID:
+    """Club del Admin autenticado. Es la única fuente del club en los endpoints del Admin:
+    estos no leen `club_id` ni `X-Club-ID`, aunque lleguen (decisión 34)."""
+    if admin.club_id is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "ADMIN_WITHOUT_CLUB")
+    return admin.club_id
+
+
+CurrentAdminClub = Annotated[uuid.UUID, Depends(get_current_admin_club_id)]
 
 
 def get_current_member(user: CurrentUser) -> User:

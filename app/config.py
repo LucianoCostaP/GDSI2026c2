@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     # Primer admin (tarea de arranque): se crea al iniciar si todavía no hay ningún admin.
     initial_admin_email: str | None = "admin@club.com"
     initial_admin_name: str | None = "Admin Demo"
+    # Club del primer admin, por su código (por ejemplo "CABJ"). Sin código, se usa el único
+    # club que haya; si hay varios, hay que indicarlo.
+    initial_admin_club_code: str | None = "CABJ"
 
     # Parámetros de publicación de eventos (HU-22 / Cross-cutting sección 8)
     default_partido_clase: str = "B"

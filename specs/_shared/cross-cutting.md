@@ -91,7 +91,7 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 
 ## 7. Bootstrap (technical tasks, not stories)
 
-- Seed the first Admin account.
+- Seed the first Admin account, assigned to the club it manages (the club is chosen at startup, by its code, and is required).
 - Issue the club's integration token (stored hashed) and hand it to the club through a secure channel.
 - Ship the formula catalog (first entry: `scoring-model.md` with its defaults and its explanation template, see its section 7), ready for the Admin of each club to publish a formula and create its rules version 1 (HU-27). Nothing is seeded as a rules version.
 - Seed settings: default event class, default institutional event points, season start date, wave percentile step, minimum wave step, minimum publication lead, roster staleness limit.
@@ -116,6 +116,7 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 ## 9. Tenancy
 
 - The system serves several clubs. **Rules (formula, rules versions, lock) belong to a club**, and so do the rankings calculated from them.
-- Every Admin and every Socio belongs to one club. The club is taken from the authenticated account or from the club's integration token, **never from a request parameter** (query, body or header chosen by the caller).
+- Every Admin and every Socio belongs to one club. The club is taken from the authenticated account or from the club's integration token, **never from a request parameter** (query, body or header chosen by the caller); endpoints that take the club from the account ignore such parameters if they arrive.
+- The account of an Admin stores its club. An Admin created by another Admin (HU-07) belongs to the club of who creates it, and an email already used by an account of another club cannot be invited. An Admin account without a club is rejected on every club-scoped action.
 - A user can only read and change data of their own club; a request for another club's data is rejected.
 - The specs keep the single-club wording; read "the club" as "the club of the user".

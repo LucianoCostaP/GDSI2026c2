@@ -29,6 +29,10 @@ from app.repositories.factory import memory_repository
 Outbox = list[tuple[str, str, str]]
 MakeMember = Callable[..., Member]
 
+# Clubes que siembra la migración e7a1b2c3d4e5.
+BOCA_ID = uuid.UUID("11111111-1111-1111-1111-111111111111")
+RIVER_ID = uuid.UUID("22222222-2222-2222-2222-222222222222")
+
 BOCA_TOKEN = "token_boca_abc123"
 RIVER_TOKEN = "token_river_def456"
 RACING_TOKEN = "token_racing_ghi789"
@@ -201,12 +205,29 @@ def make_member(db: Session) -> MakeMember:
     return make
 
 
+MakeAdmin = Callable[..., User]
+
+
 @pytest.fixture
-def admin(db: Session) -> User:
-    user = User(name="Admin", email=f"Admin-{unique()}@Example.com", role=Role.ADMIN)
-    db.add(user)
-    db.commit()
-    return user
+def make_admin(db: Session) -> MakeAdmin:
+    def make(club_id: uuid.UUID | None = BOCA_ID) -> User:
+        user = User(
+            name="Admin",
+            email=f"Admin-{unique()}@Example.com",
+            role=Role.ADMIN,
+            club_id=club_id,
+        )
+        db.add(user)
+        db.commit()
+        return user
+
+    return make
+
+
+@pytest.fixture
+def admin(make_admin: MakeAdmin) -> User:
+    """Admin del club Boca."""
+    return make_admin(BOCA_ID)
 
 
 def last_code(outbox: Outbox) -> str:
