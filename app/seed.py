@@ -11,7 +11,6 @@ Incluye:
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-
 from typing import Any
 
 from sqlalchemy.dialects.postgresql import insert
