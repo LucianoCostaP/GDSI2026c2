@@ -21,13 +21,20 @@ Cubre:
   - Rol Admin -> 200 OK.
 """
 
+import threading
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from app.models import FeeStatus, User
+from app.config import settings
+from app.core.exceptions import EventoYaPublicadoError
+from app.db import SessionLocal
+from app.models import AuditLog, FeeStatus, User
 from app.repositories.factory import get_evento_repository
+from app.repositories.postgres_repo import PostgresEventoRepository
 from app.schemas.eventos import EventoCreateRequest
 from tests.conftest import MakeMember, Outbox, admin_token, bearer, member_token
 
@@ -38,6 +45,16 @@ RIVER_ID = "22222222-2222-2222-2222-222222222222"
 @pytest.fixture
 def socio_boca(make_member: MakeMember) -> tuple[User, str]:
     return make_member(activated=True, fee_status=FeeStatus.UP_TO_DATE)
+
+
+def auditoria_de(db: Session, id_interno: str) -> list[AuditLog]:
+    return list(
+        db.scalars(
+            select(AuditLog).where(
+                AuditLog.entity == "event", AuditLog.entity_id == id_interno
+            )
+        )
+    )
 
 
 # ==============================================================================
@@ -123,7 +140,7 @@ def test_escenario_3_selector_de_clases(
 # ESCENARIO 1: LISTADO DE EVENTOS PENDIENTES Y DEADLINES (FR-001)
 # ==============================================================================
 def test_escenario_1_listado_pendientes_con_tiempo_restante(
-    client: TestClient, outbox: Outbox, admin: User
+    db: Session, client: TestClient, outbox: Outbox, admin: User
 ):
     """
     Escenario 1:
@@ -131,7 +148,7 @@ def test_escenario_1_listado_pendientes_con_tiempo_restante(
     restante para su deadline de publicación.
     """
     token = admin_token(client, outbox, admin)
-    repo = get_evento_repository()
+    repo = get_evento_repository(db)
 
     ahora = datetime.now(UTC)
     # Evento a disputarse en 72 horas (creado ahora)
@@ -160,12 +177,53 @@ def test_escenario_1_listado_pendientes_con_tiempo_restante(
     assert 86300 <= ev["segundos_restantes_deadline"] <= 86400
 
 
+def test_listado_pendientes_paginado(
+    db: Session, client: TestClient, outbox: Outbox, admin: User
+):
+    """Cross-cutting §6: las listas del Admin están paginadas (limit/offset y X-Total-Count)."""
+    token = admin_token(client, outbox, admin)
+    repo = get_evento_repository(db)
+    ahora = datetime.now(UTC)
+    # Inicio a 50h, 60h y 70h: deadlines a 2h, 12h y 22h (orden de la lista)
+    for i, horas in enumerate((70, 50, 60)):
+        repo.insert_pendiente(
+            club_id=BOCA_ID,
+            evento=EventoCreateRequest(
+                id_externo=f"EVT-PAG-{i}",
+                titulo=f"Partido {horas}h",
+                fecha_hora=ahora + timedelta(hours=horas),
+                lugar="L",
+                tipo="Partido",
+            ),
+        )
+
+    pagina_1 = client.get(
+        "/admin/events/pending", params={"limit": 2}, headers=bearer(token)
+    )
+    assert pagina_1.status_code == 200
+    assert pagina_1.headers["X-Total-Count"] == "3"
+    assert [e["titulo"] for e in pagina_1.json()] == ["Partido 50h", "Partido 60h"]
+
+    pagina_2 = client.get(
+        "/admin/events/pending",
+        params={"limit": 2, "offset": 2},
+        headers=bearer(token),
+    )
+    assert pagina_2.headers["X-Total-Count"] == "3"
+    assert [e["titulo"] for e in pagina_2.json()] == ["Partido 70h"]
+
+    fuera_de_rango = client.get(
+        "/admin/events/pending", params={"limit": 501}, headers=bearer(token)
+    )
+    assert fuera_de_rango.status_code == 422
+
+
 def test_escenario_1_eventos_historicos_no_se_listan_como_pendientes(
-    client: TestClient, outbox: Outbox, admin: User
+    db: Session, client: TestClient, outbox: Outbox, admin: User
 ):
     """Los eventos históricos o descartados no deben aparecer en la lista de pendientes."""
     token = admin_token(client, outbox, admin)
-    repo = get_evento_repository()
+    repo = get_evento_repository(db)
 
     # Evento histórico
     req = EventoCreateRequest(
@@ -189,7 +247,7 @@ def test_escenario_1_eventos_historicos_no_se_listan_como_pendientes(
 # ESCENARIOS 2, 4: PUBLICACIÓN MANUAL (PARTIDO E INSTITUCIONAL) Y HU-17 (FR-002, FR-003)
 # ==============================================================================
 def test_escenario_2_publicacion_manual_partido_con_clase_visible_en_hu17(
-    client: TestClient, outbox: Outbox, admin: User, socio_boca
+    db: Session, client: TestClient, outbox: Outbox, admin: User, socio_boca
 ):
     """
     Escenario 2:
@@ -198,7 +256,7 @@ def test_escenario_2_publicacion_manual_partido_con_clase_visible_en_hu17(
     """
     token_admin = admin_token(client, outbox, admin)
     token_socio = member_token(client, outbox, socio_boca)
-    repo = get_evento_repository()
+    repo = get_evento_repository(db)
 
     # 1. Crear evento pendiente a 96 horas en el futuro
     req = EventoCreateRequest(
@@ -227,6 +285,23 @@ def test_escenario_2_publicacion_manual_partido_con_clase_visible_en_hu17(
     assert data_pub["publicado_por"] == "admin"
     assert not data_pub["es_default"]
 
+    # FR-007: queda guardado quién publicó y que la clase fue elegida
+    (publicado,) = repo.find_proximos_eventos_publicados(club_id=BOCA_ID)
+    assert publicado["publicado_por"] == "admin"
+    assert publicado["es_default"] is False
+
+    # Auditoría (cross-cutting §6): quién y los valores anteriores y nuevos
+    (registro,) = auditoria_de(db, id_interno)
+    assert registro.action == "event.published"
+    assert registro.actor_user_id == admin.id
+    assert registro.details["published_by"] == "admin"
+    assert registro.details["before"] == {"estado": "pendiente_definicion_importancia"}
+    assert registro.details["after"] == {
+        "estado": "publicado",
+        "clase": "A",
+        "puntos": None,
+    }
+
     # 3. El socio ahora SÍ lo ve en HU-17
     res_socio_despues = client.get("/events/upcoming", headers=bearer(token_socio))
     assert res_socio_despues.json()["total"] == 1
@@ -238,7 +313,7 @@ def test_escenario_2_publicacion_manual_partido_con_clase_visible_en_hu17(
 
 
 def test_escenario_4_publicacion_manual_institucional_con_puntos(
-    client: TestClient, outbox: Outbox, admin: User, socio_boca
+    db: Session, client: TestClient, outbox: Outbox, admin: User, socio_boca
 ):
     """
     Escenario 4:
@@ -247,7 +322,7 @@ def test_escenario_4_publicacion_manual_institucional_con_puntos(
     """
     token_admin = admin_token(client, outbox, admin)
     token_socio = member_token(client, outbox, socio_boca)
-    repo = get_evento_repository()
+    repo = get_evento_repository(db)
 
     req = EventoCreateRequest(
         id_externo="EVT-INST-01",
@@ -275,7 +350,7 @@ def test_escenario_4_publicacion_manual_institucional_con_puntos(
 
 
 def test_validaciones_exclusividad_clase_y_puntos(
-    client: TestClient, outbox: Outbox, admin: User
+    db: Session, client: TestClient, outbox: Outbox, admin: User
 ):
     """
     Reglas de exclusividad:
@@ -285,7 +360,7 @@ def test_validaciones_exclusividad_clase_y_puntos(
     - Institucional DEBE llevar puntos 1..100 (422).
     """
     token = admin_token(client, outbox, admin)
-    repo = get_evento_repository()
+    repo = get_evento_repository(db)
     fh = datetime.now(UTC) + timedelta(hours=72)
 
     # 1. Partido con puntos -> error 422
@@ -347,7 +422,7 @@ def test_validaciones_exclusividad_clase_y_puntos(
 # ESCENARIO 5: ANTELACIÓN MÍNIMA DE 48 HORAS (FR-004, SC-004)
 # ==============================================================================
 def test_escenario_5_antelacion_minima_48h_para_publicacion_manual(
-    client: TestClient, outbox: Outbox, admin: User
+    db: Session, client: TestClient, outbox: Outbox, admin: User
 ):
     """
     Escenario 5:
@@ -355,7 +430,7 @@ def test_escenario_5_antelacion_minima_48h_para_publicacion_manual(
     Si faltan menos (ej. 30h), es rechazada con 422.
     """
     token = admin_token(client, outbox, admin)
-    repo = get_evento_repository()
+    repo = get_evento_repository(db)
 
     # Evento con fecha a 30 horas del presente
     fh = datetime.now(UTC) + timedelta(hours=30)
@@ -381,7 +456,7 @@ def test_escenario_5_antelacion_minima_48h_para_publicacion_manual(
 # ESCENARIOS 6, 7: PUBLICACIÓN AUTOMÁTICA POR DEADLINE (FR-005, SC-001, SC-002)
 # ==============================================================================
 def test_escenario_6_publicacion_automatica_con_valores_default(
-    client: TestClient, outbox: Outbox, admin: User
+    db: Session, client: TestClient, outbox: Outbox, admin: User
 ):
     """
     Escenario 6:
@@ -391,7 +466,7 @@ def test_escenario_6_publicacion_automatica_con_valores_default(
     - Se registra como hecho por el sistema ('system', es_default=True).
     """
     token = admin_token(client, outbox, admin)
-    repo = get_evento_repository()
+    repo = get_evento_repository(db)
 
     ahora = datetime.now(UTC)
     partido_start = ahora + timedelta(hours=80)  # Faltan 80h (> 48h lead)
@@ -438,16 +513,30 @@ def test_escenario_6_publicacion_automatica_con_valores_default(
     assert visibles[id_partido]["clase"] == "B"  # Default Clase B
     assert visibles[id_inst]["puntos"] == 20  # Default 20 puntos
 
+    # FR-007: publicado por el sistema con los valores por defecto
+    for id_evt in (id_partido, id_inst):
+        assert visibles[id_evt]["publicado_por"] == "system"
+        assert visibles[id_evt]["es_default"] is True
+
+    # Auditoría: sin usuario (lo hizo el sistema) y con el valor aplicado
+    (registro,) = auditoria_de(db, id_partido)
+    assert registro.actor_user_id is None
+    assert registro.details["published_by"] == "system"
+    assert registro.details["es_default"] is True
+    assert registro.details["after"]["clase"] == "B"
+    (registro_inst,) = auditoria_de(db, id_inst)
+    assert registro_inst.details["after"]["puntos"] == 20
+
 
 def test_escenario_7_evento_publicado_antes_del_deadline_no_se_republica(
-    client: TestClient, outbox: Outbox, admin: User
+    db: Session, client: TestClient, outbox: Outbox, admin: User
 ):
     """
     Escenario 7:
     Si el Admin publicó antes del deadline, al llegar el deadline no ocurre nada automáticamente.
     """
     token = admin_token(client, outbox, admin)
-    repo = get_evento_repository()
+    repo = get_evento_repository(db)
 
     fh = datetime.now(UTC) + timedelta(hours=72)
     req = EventoCreateRequest(
@@ -481,7 +570,7 @@ def test_escenario_7_evento_publicado_antes_del_deadline_no_se_republica(
 # ESCENARIOS 8, 9: ATOMICIDAD E INMUTABILIDAD TRAS PUBLICACIÓN (FR-006, FR-008, SC-003)
 # ==============================================================================
 def test_escenario_8_y_9_no_se_puede_publicar_dos_veces_409_conflict(
-    client: TestClient, outbox: Outbox, admin: User
+    db: Session, client: TestClient, outbox: Outbox, admin: User
 ):
     """
     Escenarios 8 y 9:
@@ -489,7 +578,7 @@ def test_escenario_8_y_9_no_se_puede_publicar_dos_veces_409_conflict(
     - No se puede cambiar la clase o puntos tras haber sido publicado (409 Conflict).
     """
     token = admin_token(client, outbox, admin)
-    repo = get_evento_repository()
+    repo = get_evento_repository(db)
 
     fh = datetime.now(UTC) + timedelta(hours=80)
     req = EventoCreateRequest(
@@ -518,12 +607,119 @@ def test_escenario_8_y_9_no_se_puede_publicar_dos_veces_409_conflict(
     assert res2.status_code == 409
     assert "ya ha sido publicado previamente" in res2.json()["detail"]["message"]
 
+    # FR-008: la clase no cambió y hay una sola publicación auditada
+    (publicado,) = repo.find_proximos_eventos_publicados(club_id=BOCA_ID)
+    assert publicado["clase"] == "A"
+    assert len(auditoria_de(db, id_interno)) == 1
+
+
+@pytest.mark.skipif(
+    settings.db_engine.lower() != "postgres",
+    reason="La carrera entre transacciones solo existe en PostgreSQL",
+)
+def test_escenario_8_publicaciones_simultaneas_solo_una_tiene_efecto():
+    """
+    Escenario 8 (FR-006, SC-003): dos publicaciones del mismo evento en
+    transacciones simultáneas. La segunda espera el bloqueo de la fila, no
+    encuentra el evento pendiente y no publica nada ni pisa la clase.
+    """
+    with SessionLocal() as s0:
+        id_interno = PostgresEventoRepository(s0).insert_pendiente(
+            club_id=BOCA_ID,
+            evento=EventoCreateRequest(
+                id_externo="EVT-CARRERA",
+                titulo="Partido en carrera",
+                fecha_hora=datetime.now(UTC) + timedelta(hours=80),
+                lugar="L",
+                tipo="Partido",
+            ),
+        )
+        s0.commit()
+
+    resultado: list[object] = []
+
+    def segunda_publicacion() -> None:
+        with SessionLocal() as s2:
+            try:
+                PostgresEventoRepository(s2).publish_evento(
+                    club_id=None, id_externo_o_interno=id_interno, clase="C"
+                )
+                s2.commit()
+                resultado.append("publicado")
+            except EventoYaPublicadoError as err:
+                resultado.append(err)
+
+    with SessionLocal() as s1:
+        # La primera toma la fila y todavía no confirma
+        PostgresEventoRepository(s1).publish_evento(
+            club_id=None, id_externo_o_interno=id_interno, clase="A"
+        )
+        hilo = threading.Thread(target=segunda_publicacion)
+        hilo.start()
+        hilo.join(timeout=0.5)
+        assert hilo.is_alive(), "la segunda publicación debería esperar el bloqueo"
+        s1.commit()
+    hilo.join(timeout=5)
+
+    assert len(resultado) == 1
+    assert isinstance(resultado[0], EventoYaPublicadoError)
+    with SessionLocal() as s3:
+        (publicado,) = [
+            e
+            for e in PostgresEventoRepository(s3).find_proximos_eventos_publicados(
+                club_id=BOCA_ID
+            )
+            if e["id_interno"] == id_interno
+        ]
+    assert publicado["clase"] == "A"
+
+
+def test_reloj_simulado_se_ignora_en_produccion(
+    db: Session,
+    client: TestClient,
+    outbox: Outbox,
+    admin: User,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """En producción manda el reloj del servidor: el reloj simulado no adelanta el deadline."""
+    token = admin_token(client, outbox, admin)
+    repo = get_evento_repository(db)
+    ahora = datetime.now(UTC)
+    repo.insert_pendiente(
+        club_id=BOCA_ID,
+        evento=EventoCreateRequest(
+            id_externo="EVT-PROD-CLOCK",
+            titulo="Partido",
+            fecha_hora=ahora + timedelta(hours=80),
+            lugar="L",
+            tipo="Partido",
+        ),
+    )
+    reloj = (ahora + timedelta(hours=25)).isoformat()
+
+    monkeypatch.setattr(settings, "app_env", "production")
+    res = client.post(
+        "/admin/events/auto-publish",
+        headers=bearer(token),
+        params={"reloj_simulado": reloj},
+    )
+    assert res.status_code == 200
+    assert res.json()["publicados"] == 0
+
+    monkeypatch.setattr(settings, "app_env", "local")
+    res = client.post(
+        "/admin/events/auto-publish",
+        headers=bearer(token),
+        params={"reloj_simulado": reloj},
+    )
+    assert res.json()["publicados"] == 1
+
 
 # ==============================================================================
 # EDGE CASES: ARITMÉTICA DE DEADLINE Y LEAD PERDIDO
 # ==============================================================================
 def test_edge_case_aritmetica_deadline_60h_start_es_12h_deadline(
-    client: TestClient, outbox: Outbox, admin: User
+    db: Session, client: TestClient, outbox: Outbox, admin: User
 ):
     """
     Edge case de la especificación:
@@ -533,7 +729,7 @@ def test_edge_case_aritmetica_deadline_60h_start_es_12h_deadline(
     Por ende, se publica automáticamente a las 12 horas de importado.
     """
     token = admin_token(client, outbox, admin)
-    repo = get_evento_repository()
+    repo = get_evento_repository(db)
 
     creacion = datetime.now(UTC)
     # Comienza en 60 horas
@@ -572,7 +768,7 @@ def test_edge_case_aritmetica_deadline_60h_start_es_12h_deadline(
 
 
 def test_edge_case_lead_perdido_no_se_publica_automaticamente(
-    client: TestClient, outbox: Outbox, admin: User
+    db: Session, client: TestClient, outbox: Outbox, admin: User
 ):
     """
     Edge case:
@@ -581,7 +777,7 @@ def test_edge_case_lead_perdido_no_se_publica_automaticamente(
     con menos de 48h (SC-004: 0 eventos publicados con menos de 48h).
     """
     token = admin_token(client, outbox, admin)
-    repo = get_evento_repository()
+    repo = get_evento_repository(db)
 
     # Recibido ahora, empieza en 70 horas
     ahora = datetime.now(UTC)

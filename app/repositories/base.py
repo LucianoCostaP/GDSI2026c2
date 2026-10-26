@@ -77,9 +77,13 @@ class EventoRepository(ABC):
         id_externo_o_interno: str,
         clase: str | None = None,
         puntos: int | None = None,
+        publicado_por: str = "admin",
+        es_default: bool = False,
     ) -> str:
         """
         Publica un evento para que pase al estado 'visible'/'published' (HU-22).
+        La transición es exclusiva (FR-006): si el evento ya no está pendiente
+        lanza EventoYaPublicadoError o EventoNoEncontradoError.
         Retorna el id_interno del evento publicado.
         """
 

@@ -234,3 +234,4 @@ class AutoPublishResponse(BaseModel):
     publicados: int
     omitidos: int
     eventos_publicados: list[str]
+    detalle: list[PublicarEventoResponse] = []

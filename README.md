@@ -79,7 +79,7 @@ No hace falta un `.env`: los valores por defecto de `app/config.py` coinciden co
 
 **Tests y chequeos** (los mismos que corre la integración continua):
 ```bash
-uv run ruff check . && uv run ruff format --check . && uv run mypy app && uv run pytest
+uv run ruff check . && uv run ruff format --check . && uv run mypy app && uv run alembic check && uv run pytest
 ```
 
 **Para apagar todo:** Ctrl+C en la terminal del back y `docker compose down`. Los datos de la base se conservan.

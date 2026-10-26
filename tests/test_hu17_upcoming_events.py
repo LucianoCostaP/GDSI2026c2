@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
 from app.models import FeeStatus, User
 from app.repositories.factory import get_evento_repository
@@ -64,12 +65,11 @@ def test_escenario_4_lista_vacia_muestra_mensaje_informativo(
     data = res.json()
     assert data["total"] == 0
     assert data["eventos"] == []
-    assert data["mensaje"] is not None
-    assert "No hay eventos próximos" in data["mensaje"]
+    assert data["mensaje"] == "No hay eventos próximos publicados."
 
 
 def test_test_independiente_y_escenario_1_publicado_vs_no_publicado(
-    client: TestClient, outbox: Outbox, socio_boca
+    db: Session, client: TestClient, outbox: Outbox, socio_boca
 ):
     """
     Test independiente y Escenario 1:
@@ -79,7 +79,7 @@ def test_test_independiente_y_escenario_1_publicado_vs_no_publicado(
     - El socio consulta y ahora SÍ lo ve con fecha, hora, sede y tipo.
     """
     token = member_token(client, outbox, socio_boca)
-    repo = get_evento_repository()
+    repo = get_evento_repository(db)
 
     # 1. Crear evento pendiente (futuro: en 3 días a las 20:00 UTC)
     fecha_futura = datetime.now(UTC) + timedelta(days=3)
@@ -126,13 +126,13 @@ def test_test_independiente_y_escenario_1_publicado_vs_no_publicado(
 
 
 def test_escenario_2_orden_cronologico_estricto(
-    client: TestClient, outbox: Outbox, socio_boca
+    db: Session, client: TestClient, outbox: Outbox, socio_boca
 ):
     """
     Escenario 2: Múltiples eventos deben ordenarse cronológicamente (el más próximo primero).
     """
     token = member_token(client, outbox, socio_boca)
-    repo = get_evento_repository()
+    repo = get_evento_repository(db)
 
     ahora = datetime.now(UTC)
     # Insertamos en orden no cronológico: día 5, día 2, día 10
@@ -184,7 +184,7 @@ def test_escenario_2_orden_cronologico_estricto(
 
 
 def test_escenario_5_estados_no_permitidos_excluidos(
-    client: TestClient, outbox: Outbox, socio_boca
+    db: Session, client: TestClient, outbox: Outbox, socio_boca
 ):
     """
     Escenario 5: Eventos en estados:
@@ -194,7 +194,7 @@ def test_escenario_5_estados_no_permitidos_excluidos(
     ('discarded' todavía no existe: depende de la cancelación de HU-21.)
     """
     token = member_token(client, outbox, socio_boca)
-    repo = get_evento_repository()
+    repo = get_evento_repository(db)
     ahora = datetime.now(UTC)
 
     # 1. Pendiente
@@ -231,14 +231,14 @@ def test_escenario_5_estados_no_permitidos_excluidos(
 
 
 def test_edge_case_evento_iniciado_desaparece_de_la_lista(
-    client: TestClient, outbox: Outbox, socio_boca
+    db: Session, client: TestClient, outbox: Outbox, socio_boca
 ):
     """
     Edge case: Un evento que ya inició (start time <= now) deja de mostrarse en la lista.
     Se prueba inyectando reloj del servidor / tiempo simulado.
     """
     token = member_token(client, outbox, socio_boca)
-    repo = get_evento_repository()
+    repo = get_evento_repository(db)
 
     # Evento fijado para 2026-11-20T18:00:00Z
     fecha_evento = datetime(2026, 11, 20, 18, 0, 0, tzinfo=UTC)
@@ -271,13 +271,15 @@ def test_edge_case_evento_iniciado_desaparece_de_la_lista(
     assert res_despues.json()["total"] == 0
 
 
-def test_formato_hora_buenos_aires(client: TestClient, outbox: Outbox, socio_boca):
+def test_formato_hora_buenos_aires(
+    db: Session, client: TestClient, outbox: Outbox, socio_boca
+):
     """
     Verifica que la fecha y hora mostradas al socio se conviertan al huso de Buenos Aires (UTC-3).
     2026-12-01T21:30:00Z en UTC equivale a 2026-12-01 18:30 en Buenos Aires.
     """
     token = member_token(client, outbox, socio_boca)
-    repo = get_evento_repository()
+    repo = get_evento_repository(db)
 
     fecha_utc = datetime(2026, 12, 1, 21, 30, 0, tzinfo=UTC)
     req = EventoCreateRequest(

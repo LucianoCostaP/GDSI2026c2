@@ -1,11 +1,12 @@
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Query, status
+from fastapi import APIRouter, Depends, Header, Query, Response, status
 from sqlalchemy.orm import Session
 
 from ..audit import record
 from ..auth import CurrentAdmin
+from ..config import settings
 from ..db import get_db
 from ..repositories.base import EventoRepository
 from ..repositories.factory import get_evento_repository
@@ -28,7 +29,8 @@ def get_evento_service(
 
 
 def _parse_clock(raw: str | None) -> datetime | None:
-    if not raw:
+    # El reloj simulado es solo para pruebas: en producción manda el reloj del servidor.
+    if not raw or settings.app_env == "production":
         return None
     raw_clean = raw.strip().replace(" ", "+")
     try:
@@ -36,6 +38,28 @@ def _parse_clock(raw: str | None) -> datetime | None:
         return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
     except ValueError:
         return None
+
+
+def _auditar_publicacion(
+    db: Session, publicado: PublicarEventoResponse, *, actor_id: int | None
+) -> None:
+    """Registra quién publicó (Admin o sistema) y los valores aplicados."""
+    record(
+        db,
+        "event.published",
+        actor_id=actor_id,
+        entity="event",
+        entity_id=publicado.id_interno,
+        published_by=publicado.publicado_por,
+        es_default=publicado.es_default,
+        tipo=publicado.tipo,
+        before={"estado": "pendiente_definicion_importancia"},
+        after={
+            "estado": "publicado",
+            "clase": publicado.clase,
+            "puntos": publicado.puntos,
+        },
+    )
 
 
 # ==============================================================================
@@ -85,6 +109,7 @@ def obtener_clases_partido(
 )
 def listar_eventos_pendientes(
     admin: CurrentAdmin,
+    response: Response,
     club_id: str | None = Query(None, description="Filtrar por club específico"),
     tipo: str | None = Query(
         None, description="Filtrar por tipo de evento (Partido/Institucional)"
@@ -93,12 +118,17 @@ def listar_eventos_pendientes(
     reloj_simulado: str | None = Query(
         None, description="Reloj simulado para pruebas (formato ISO)"
     ),
+    limit: int = Query(50, ge=1, le=500, description="Tamaño de página"),
+    offset: int = Query(0, ge=0, description="Cantidad de eventos a saltear"),
     service: EventoService = Depends(get_evento_service),
 ) -> list[EventoPendientePublicacionResponse]:
+    # Listas del Admin paginadas (cross-cutting §6): el total va en X-Total-Count.
     sim_now = _parse_clock(reloj_simulado)
-    return service.listar_eventos_pendientes_publicacion(
+    pendientes = service.listar_eventos_pendientes_publicacion(
         club_id=club_id, now=sim_now, tipo=tipo, titulo=titulo
     )
+    response.headers["X-Total-Count"] = str(len(pendientes))
+    return pendientes[offset : offset + limit]
 
 
 # ==============================================================================
@@ -143,19 +173,8 @@ def publicar_evento_manual(
         now=sim_now,
     )
 
-    # Registro de auditoría
-    record(
-        db,
-        "publish_event",
-        actor_id=admin.id,
-        entity="event",
-        entity_id=res.id_interno,
-        tipo=res.tipo,
-        clase=res.clase,
-        puntos=res.puntos,
-        published_by="admin",
-        es_default=False,
-    )
+    # La publicación y su auditoría se confirman juntas (FR-007, cross-cutting §6).
+    _auditar_publicacion(db, res, actor_id=admin.id)
     db.commit()
 
     return res
@@ -195,17 +214,8 @@ def ejecutar_publicacion_automatica(
     sim_now = _parse_clock(reloj_simulado)
     res = service.publicar_eventos_automaticos(club_id=club_id, now=sim_now)
 
-    for id_evt in res.eventos_publicados:
-        record(
-            db,
-            "auto_publish_event",
-            actor_id=None,
-            entity="event",
-            entity_id=id_evt,
-            published_by="system",
-            es_default=True,
-        )
-    if res.publicados > 0:
-        db.commit()
+    for publicado in res.detalle:
+        _auditar_publicacion(db, publicado, actor_id=None)
+    db.commit()
 
     return res

@@ -43,6 +43,9 @@ from ..schemas.eventos import (
     PublicarEventoResponse,
 )
 
+# HU-17 FR-004 y decisión 24: texto exacto, los tests lo comparan por igualdad.
+MENSAJE_SIN_EVENTOS_PROXIMOS = "No hay eventos próximos publicados."
+
 
 class EventoService:
     def __init__(self, repo: EventoRepository):
@@ -134,18 +137,17 @@ class EventoService:
                 )
                 continue
 
-            if ev.tipo == TipoEvento.PARTIDO:
-                try:
-                    validar_antelacion_48_horas(
-                        fecha_hora=ev.fecha_hora, tipo=ev.tipo, es_historico=False
+            try:
+                validar_antelacion_48_horas(
+                    fecha_hora=ev.fecha_hora, tipo=ev.tipo, es_historico=False
+                )
+            except AntelacionInsuficienteError as err:
+                fallidos.append(
+                    BatchFailedItem(
+                        id_externo=ev.id_externo, error=err.message, codigo=422
                     )
-                except AntelacionInsuficienteError as err:
-                    fallidos.append(
-                        BatchFailedItem(
-                            id_externo=ev.id_externo, error=err.message, codigo=422
-                        )
-                    )
-                    continue
+                )
+                continue
 
             if ev.id_externo in ids_externos_en_lote or self.repo.exists_externo(
                 club_id, ev.id_externo
@@ -159,12 +161,23 @@ class EventoService:
                 )
                 continue
 
-            id_interno = self.repo.insert_pendiente(
-                club_id=club_id,
-                evento=ev,
-                estado="pendiente_definicion_importancia",
-                es_historico=False,
-            )
+            try:
+                id_interno = self.repo.insert_pendiente(
+                    club_id=club_id,
+                    evento=ev,
+                    estado="pendiente_definicion_importancia",
+                    es_historico=False,
+                )
+            except EventoDuplicadoError:
+                # Registrado por otro request entre el chequeo y el insert
+                omitidos.append(
+                    BatchOmittedItem(
+                        id_externo=ev.id_externo,
+                        motivo="Ya existe un evento registrado con ese id_externo (omitido de forma segura).",
+                        estado="omitido",
+                    )
+                )
+                continue
             ids_externos_en_lote.add(ev.id_externo)
             creados.append(
                 BatchSuccessItem(
@@ -240,9 +253,20 @@ class EventoService:
                 )
                 continue
 
-            id_interno = self.repo.insert_pendiente(
-                club_id=club_id, evento=ev, estado="Historico", es_historico=True
-            )
+            try:
+                id_interno = self.repo.insert_pendiente(
+                    club_id=club_id, evento=ev, estado="Historico", es_historico=True
+                )
+            except EventoDuplicadoError:
+                # Registrado por otro request entre el chequeo y el insert
+                omitidos.append(
+                    BatchOmittedItem(
+                        id_externo=ev.id_externo,
+                        motivo="Evento histórico ya registrado previamente (omitido de forma segura).",
+                        estado="omitido",
+                    )
+                )
+                continue
             ids_externos_en_lote.add(ev.id_externo)
             creados.append(
                 BatchSuccessItem(
@@ -455,12 +479,14 @@ class EventoService:
                 )
             puntos_val = request.puntos
 
-        # 5. Publicación atómica en repositorio
+        # 5. Publicación atómica en repositorio (compare-and-set, FR-006)
         id_interno = self.repo.publish_evento(
             club_id=target_club_id,
-            id_externo_o_interno=id_externo_o_interno,
+            id_externo_o_interno=str(evento["id_interno"]),
             clase=clase_val,
             puntos=puntos_val,
+            publicado_por="admin",
+            es_default=False,
         )
 
         return PublicarEventoResponse(
@@ -490,7 +516,7 @@ class EventoService:
         pendientes = self.repo.find_eventos_pendientes(club_id=club_id)
 
         procesados = 0
-        publicados: list[str] = []
+        publicados: list[PublicarEventoResponse] = []
         omitidos = 0
 
         for p in pendientes:
@@ -534,18 +560,32 @@ class EventoService:
                     id_externo_o_interno=str(p["id_interno"]),
                     clase=clase_val,
                     puntos=puntos_val,
+                    publicado_por="system",
+                    es_default=True,
                 )
-                publicados.append(id_pub)
-            except EventoYaPublicadoError:
+            except (EventoYaPublicadoError, EventoNoEncontradoError):
                 # Publicado concurrentemente por un admin u otro proceso
                 omitidos += 1
+                continue
+            publicados.append(
+                PublicarEventoResponse(
+                    id_interno=id_pub,
+                    tipo=tipo_str,
+                    clase=clase_val,
+                    puntos=puntos_val,
+                    publicado_en=ahora_utc,
+                    publicado_por="system",
+                    es_default=True,
+                )
+            )
 
         return AutoPublishResponse(
             mensaje="Proceso de publicación automática completado.",
             procesados=procesados,
             publicados=len(publicados),
             omitidos=omitidos,
-            eventos_publicados=publicados,
+            eventos_publicados=[p.id_interno for p in publicados],
+            detalle=publicados,
         )
 
     def publicar_evento(
@@ -620,7 +660,7 @@ class EventoService:
 
         mensaje = None
         if not items:
-            mensaje = "No hay eventos próximos programados en este momento."
+            mensaje = MENSAJE_SIN_EVENTOS_PROXIMOS
 
         return ProximosEventosResponse(
             total=len(items),

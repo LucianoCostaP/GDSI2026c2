@@ -42,9 +42,9 @@ def validar_antelacion_48_horas(
     fecha_hora: datetime, tipo: TipoEvento, es_historico: bool = False
 ) -> None:
     """
-    Regla de negocio:
-    Si el evento es de tipo 'Partido', la fecha_hora debe ser al menos 48 horas
-    posterior al momento de la petición.
+    Regla de negocio (HU-21 FR-006):
+    Un evento próximo, Partido o institucional, debe empezar al menos 48 horas
+    después de recibido. Si no, HU-22 nunca podría publicarlo.
 
     Excepciones:
     - Si el JSON trae 'es_historico': True.
@@ -53,15 +53,14 @@ def validar_antelacion_48_horas(
     if es_historico or tipo == TipoEvento.HISTORICO:
         return
 
-    if tipo == TipoEvento.PARTIDO:
-        ahora_utc = datetime.now(UTC)
-        fecha_utc = asegurar_utc(fecha_hora)
-        limite_minimo = ahora_utc + timedelta(hours=48)
+    ahora_utc = datetime.now(UTC)
+    fecha_utc = asegurar_utc(fecha_hora)
+    limite_minimo = ahora_utc + timedelta(hours=48)
 
-        if fecha_utc < limite_minimo:
-            raise AntelacionInsuficienteError(
-                "No cumple con la antelación mínima de 48 horas."
-            )
+    if fecha_utc < limite_minimo:
+        raise AntelacionInsuficienteError(
+            "No cumple con la antelación mínima de 48 horas."
+        )
 
 
 def validar_evento_no_finalizado(fecha_hora: datetime) -> None:

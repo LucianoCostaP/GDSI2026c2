@@ -21,6 +21,14 @@ Cubre:
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
+from app.config import settings
+from app.db import SessionLocal
+from app.repositories.postgres_repo import PostgresEventoRepository
+from app.schemas.eventos import EventoCreateRequest
+from app.services.evento_service import EventoService
+
 
 def test_auth_missing_header(client):
     """Verifica que peticiones sin Authorization devuelvan 401 Unauthorized."""
@@ -76,6 +84,46 @@ def test_regla_48_horas_partido_rechazado(client, headers_boca):
     res = client.post("/api/v1/eventos", json=payload, headers=headers_boca)
     assert res.status_code == 422
     assert "No cumple con la antelación mínima de 48 horas" in res.json()["error"]
+
+
+def test_regla_48_horas_institucional_rechazado(client, headers_boca):
+    """HU-21 FR-006: la regla de 48 horas aplica también a eventos institucionales."""
+    payload = {
+        "id_externo": "EVT-ASAMBLEA-URGENTE",
+        "titulo": "Asamblea Extraordinaria",
+        "fecha_hora": (datetime.now(UTC) + timedelta(hours=24)).isoformat(),
+        "lugar": "Sede Social",
+        "tipo": "Institucional",
+    }
+    res = client.post("/api/v1/eventos", json=payload, headers=headers_boca)
+    assert res.status_code == 422
+    assert "No cumple con la antelación mínima de 48 horas" in res.json()["error"]
+
+
+def test_regla_48_horas_institucional_en_batch(client, headers_boca):
+    """En un batch, el institucional con menos de 48 horas falla y el resto se crea."""
+    lugar = {"titulo": "Evento", "lugar": "Sede Social", "tipo": "Institucional"}
+    res = client.post(
+        "/api/v1/eventos/batch",
+        json=[
+            {
+                "id_externo": "EVT-INST-CORTO",
+                "fecha_hora": (datetime.now(UTC) + timedelta(hours=24)).isoformat(),
+                **lugar,
+            },
+            {
+                "id_externo": "EVT-INST-OK",
+                "fecha_hora": (datetime.now(UTC) + timedelta(days=5)).isoformat(),
+                **lugar,
+            },
+        ],
+        headers=headers_boca,
+    )
+    assert res.status_code == 207
+    data = res.json()
+    assert [c["id_externo"] for c in data["creados"]] == ["EVT-INST-OK"]
+    assert [f["id_externo"] for f in data["fallidos"]] == ["EVT-INST-CORTO"]
+    assert data["fallidos"][0]["codigo"] == 422
 
 
 def test_regla_48_horas_excepcion_es_historico(client, headers_boca):
@@ -404,3 +452,49 @@ def test_put_eliminado_fuera_del_mvp(client, headers_boca):
         json={"titulo": "Intento de actualización"},
     )
     assert res.status_code in (404, 405)
+
+
+@pytest.mark.skipif(
+    settings.db_engine.lower() != "postgres",
+    reason="La restricción única que provoca la carrera solo existe en PostgreSQL",
+)
+def test_batch_carrera_por_id_externo_no_pierde_los_demas_eventos(monkeypatch):
+    """
+    Contrato de la API de clubes: la falla de un ítem no deshace los demás.
+    Si otro request registra el mismo id_externo entre el chequeo de duplicado
+    y el insert, ese evento se omite y el resto del batch se guarda.
+    """
+    boca_id = "11111111-1111-1111-1111-111111111111"
+    fecha = datetime.now(UTC) + timedelta(days=10)
+    evento = {"titulo": "Partido", "fecha_hora": fecha.isoformat(), "lugar": "L"}
+
+    with SessionLocal() as db:
+        repo = PostgresEventoRepository(db)
+        repo.insert_pendiente(
+            club_id=boca_id,
+            evento=EventoCreateRequest(id_externo="EVT-RACE", tipo="Partido", **evento),
+        )
+        db.commit()
+
+    with SessionLocal() as db:
+        repo = PostgresEventoRepository(db)
+        # El chequeo previo no ve el evento: simula que llegó en paralelo
+        monkeypatch.setattr(repo, "exists_externo", lambda *_: False)
+        res = EventoService(repo).crear_eventos_batch(
+            boca_id,
+            [
+                {"id_externo": "EVT-OK-1", "tipo": "Partido", **evento},
+                {"id_externo": "EVT-RACE", "tipo": "Partido", **evento},
+                {"id_externo": "EVT-OK-2", "tipo": "Institucional", **evento},
+            ],
+        )
+        db.commit()
+
+    assert [c.id_externo for c in res.creados] == ["EVT-OK-1", "EVT-OK-2"]
+    assert [o.id_externo for o in res.omitidos] == ["EVT-RACE"]
+    with SessionLocal() as db:
+        guardados = {
+            e["id_externo"]
+            for e in PostgresEventoRepository(db).find_eventos(club_id=boca_id)
+        }
+    assert guardados == {"EVT-RACE", "EVT-OK-1", "EVT-OK-2"}
