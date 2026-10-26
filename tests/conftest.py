@@ -91,6 +91,8 @@ def _setup_test_database() -> None:
 # Tablas que escriben los repositorios de clubes (psycopg directo, con commit
 # propio): quedan fuera del rollback del fixture `db` y hay que vaciarlas.
 CLUB_DATA_TABLES = (
+    "asistencias_staging, cargas_participacion_rechazos, asistencias, "
+    "actividades_recurrentes, cargas_participacion, "
     "socios_staging_completa, socios_cargas_rechazos, socios_cargas_paginas, "
     "socios_cargas, socios, "
     "eventos_cambios_pendientes, eventos_visibles, eventos_pendientes_verificacion"
