@@ -1,6 +1,6 @@
 # Scoring Model v1 (Base Formula)
 
-**Status**: Adopted. This is the base formula referenced by HU-13, HU-14, HU-16, HU-18, HU-25, HU-27, HU-28, HU-29 and HU-30. The structure below is fixed in the product and the Admin publishes it as the base formula (HU-27); after that only the parameters in section 4 are editable (by the Admin, HU-28).
+**Status**: Adopted. This is the **first entry of the formula catalog** (id `scoring-model`, version 1) and the base formula referenced by HU-13, HU-14, HU-16, HU-18, HU-25, HU-27, HU-28, HU-29 and HU-30. Its structure is fixed in the product; the Admin of each club publishes a formula of the catalog (HU-27); after that only its parameters (section 4 for this formula) are editable (HU-28). Section 7 explains how the catalog grows.
 
 ## 1. Global score
 
@@ -91,9 +91,9 @@ A Socio with no previous baja gets the bonus. `t ≥ Tmax` → 0.
 
 ## 4. Configurable parameters
 
-All parameters in this table are editable by an Admin (HU-28), subject to the limits shown. Limits were confirmed by the club.
+All parameters in this table are editable by an Admin (HU-28), subject to the limits shown. The limits are **confirmed by the club** (the column header "Proposed" is kept only for history). The initial values are chosen at publication (HU-27) within the same limits.
 
-| Parameter | Symbol | Default | Proposed limits |
+| Parameter | Symbol | Default | Limits (confirmed) |
 |---|---|---|---|
 | Pillar weights | wA / wP / wT | 0.60 / 0.20 / 0.20 | each 0.00–1.00, sum = 1.00 |
 | Distance weight inside attendance | αA | 0.20 | 0.00–1.00 |
@@ -116,6 +116,8 @@ All parameters in this table are editable by an Admin (HU-28), subject to the li
 5. **Tiebreak**: equal totals are ordered by greater seniority, then greater age, then lower document number (HU-25).
 6. **Versioning**: every change of parameters creates a new rules version (HU-28). Every ranking records the rules version it used.
 7. **Eligibility**: only Socios with fees up to date at the calculation time appear in the ranking. Attendance and participation history is kept for every Socio whatever their fee status, so a Socio who pays up returns to the ranking with their accumulated record (inside the windows). Nothing is deleted when fees lapse.
+8. **Decimal arithmetic**: parameter values, limits, the sum rule and the rounding of components use decimals (`Decimal`), never binary floating point. Only the curve functions (`exp`) may use floating point, and their result is rounded as in rule 1.
+9. **Scope of the rules**: rules 1, 5, 6, 7 and 8 are common to every formula of the catalog. Rules 2, 3 and 4 (cap adjustment and the named components) describe this formula; another formula defines its own components in its descriptor, keeps the total inside [0, 100], rounds to two decimals and stores its components and its inputs snapshot.
 
 ## 6. Worked example (defaults)
 
@@ -138,3 +140,14 @@ Socio at 1200 km. Window: 20 official matches (4 Clase A, 10 B, 6 C); attended 3
 | Bonus nuevo socio | 0.00 |
 | Ajuste por tope | 0.00 |
 | **Total** | **59.55** |
+
+## 7. Formula catalog
+
+The product ships a **catalog** of formulas. Each entry is a *descriptor* plus its calculation:
+
+- **Descriptor**: id, name, version, description, variables, parameters (key, symbol, name, unit, default, limits), constants, derived values (for example `b`), constraints (for example `wA + wP + wT = 1.00`) and the **explanation template** in Spanish with placeholders for the parameters (HU-13).
+- **Calculation**: one pure, deterministic implementation per formula, used by HU-25, HU-18, HU-29 and HU-30 (constitution, principle 1), with unit tests against a reference dataset.
+- **Adding a formula** is a product release: new descriptor, its calculation if its structure is new, its tests and its explanation template reviewed by the club. The Admin cannot create or edit formulas from the screen.
+- **Validation in tests**: every default lies within its limits, every range is valid and every template placeholder is a parameter of the formula.
+- **Publication** (HU-27): the Admin of a club chooses an entry of the catalog and publishes it with initial values; that creates a rules version of the club. The rules of each club are independent.
+- **This file** describes the entry `scoring-model` version 1, the only one in the MVP.

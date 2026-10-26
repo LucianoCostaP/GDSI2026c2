@@ -22,7 +22,7 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 | Approve attendance replacements, upload CSV files, see load results (HU-24) | No | Yes |
 | Review club updates, withdraw and restore events (HU-23, outside the MVP) | No | Yes |
 | See the roster receptions from the club and their rejections (HU-43) | No | Yes |
-| Publish the base scoring formula (HU-27) | No | Yes |
+| Publish a formula of the catalog as the base formula, lock and unlock it (HU-27) | No | Yes |
 | Run ranking calculation (HU-25) | No | Yes |
 | Segmentation and schedule (HU-36, HU-37) | No | Yes |
 | Adjust scoring parameters (HU-28) | No | Yes |
@@ -32,6 +32,7 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 | Log out (HU-11) | Yes | Yes |
 
 - Every protected action is authorized on the server by role. Hiding a button is not enough.
+- Each Admin and each Socio belongs to **one club** (section 9).
 - **The club** is not a user role: it is an integration client. With its Bearer token it can only send and query its own data through the integration API (data-contract section 5: HU-43, HU-21, HU-23, HU-24). It has no session and no screen.
 - A person who is both Socio and Admin has **separate accounts** per door. "Socio access" never grants management access and "Admin access" never accepts DNI or member number.
 
@@ -64,13 +65,15 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 | Management account | `pending activation`, `active` |
 | Invitation | `valid`, `used`, `expired`, `replaced` |
 | Ranking | `running`, `completed`, `failed` |
+| Rules version (HU-27, HU-28) | `in force`, `superseded` |
+| Formula lock (HU-27) | `unlocked`, `locked` |
 | Load received from the club (HU-43, HU-24) | `receiving` → `processing` → `successful` or `failed`; attendance loads for an event that already has attendance: `pending approval` → `successful` (the previous one becomes `replaced`) or `rejected` |
 | Event change sent by the club (HU-23) | `pending review` → `approved`, `rejected` or `replaced` |
 
 ## 5. Scoring consistency rules
 
 - Socio-facing views (HU-14, HU-16, HU-18) are anchored to the **rules version of the latest completed ranking** and show it.
-- HU-13 explains the rules **in force**. If they differ from the rules of the latest ranking, it states that the ranking will reflect them after the next calculation.
+- HU-13 explains the rules **in force**. If they differ from the rules of the latest completed ranking, it states that the ranking will reflect them after the next calculation; with no completed ranking there is no notice. With no published formula it shows a friendly "no rules yet" message. The Admin's preview in HU-27 renders the same explanation.
 - HU-29 compares against the latest completed ranking.
 
 ## 6. Non-functional requirements (defaults)
@@ -83,14 +86,14 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 | Volume | up to 500,000 Socios, typically far fewer. Admin lists are paginated. Wave membership is derived from ranking positions, never copied per Socio |
 | Read-only Socio screens | response under 2 seconds (95th percentile) |
 | Accessibility | WCAG 2.1 AA: high contrast, large touch targets, keyboard navigation, readable at 200% zoom |
-| Audit | every change of events, rules, accounts, loads received from the club, attendance loads and ranking runs records who (Admin, club or system), when and the previous and new values |
+| Audit | every change of events, rules, formula publications and locks, accounts, loads received from the club, attendance loads and ranking runs records who (Admin, club or system), when and the previous and new values |
 | Language | UI in Spanish (Argentina); specs in English |
 
 ## 7. Bootstrap (technical tasks, not stories)
 
 - Seed the first Admin account.
 - Issue the club's integration token (stored hashed) and hand it to the club through a secure channel.
-- Ship the base formula of `scoring-model.md` with its defaults, ready for the Admin to publish it as rules version 1 (HU-27).
+- Ship the formula catalog (first entry: `scoring-model.md` with its defaults and its explanation template, see its section 7), ready for the Admin of each club to publish a formula and create its rules version 1 (HU-27). Nothing is seeded as a rules version.
 - Seed settings: default event class, default institutional event points, season start date, wave percentile step, minimum wave step, minimum publication lead, roster staleness limit.
 - Deliver the application shell with the global navigation menu that HU-11 relies on, and the Socio and management home screens.
 
@@ -107,4 +110,12 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 | Minimum minutes between wave openings | 5 | HU-37 |
 | Row error tolerance in CSV files uploaded by the Admin (records sent by the club have no tolerance: they are rejected one by one) | 5% | HU-24 |
 | Data staleness limit (age of the latest successful roster load) | 24 hours | HU-43, HU-25, HU-36 |
+| Formula lock of a club at creation | unlocked | HU-27, HU-28 |
 | Code, session and invitation values | section 3 | HU-01, 05, 06, 07, 08, 11 |
+
+## 9. Tenancy
+
+- The system serves several clubs. **Rules (formula, rules versions, history, lock) belong to a club**, and so do the rankings calculated from them.
+- Every Admin and every Socio belongs to one club. The club is taken from the authenticated account or from the club's integration token, **never from a request parameter** (query, body or header chosen by the caller).
+- A user can only read and change data of their own club; a request for another club's data is rejected.
+- The specs keep the single-club wording; read "the club" as "the club of the user".
