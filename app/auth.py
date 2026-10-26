@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .config import settings
+from .core.date_utils import asegurar_utc
 from .db import get_db
 from .models import Role, User, UserSession
 from .security import generate_token, hash_token
@@ -27,10 +28,10 @@ def create_session(db: Session, user: User) -> str:
 
 
 def is_expired(session: UserSession, now: datetime) -> bool:
-    idle_limit = session.last_seen_at + timedelta(minutes=settings.session_idle_minutes)
-    absolute_limit = session.created_at + timedelta(
-        hours=settings.session_absolute_hours
-    )
+    last_seen = asegurar_utc(session.last_seen_at)
+    created = asegurar_utc(session.created_at)
+    idle_limit = last_seen + timedelta(minutes=settings.session_idle_minutes)
+    absolute_limit = created + timedelta(hours=settings.session_absolute_hours)
     return now >= idle_limit or now >= absolute_limit
 
 
@@ -75,3 +76,12 @@ def get_current_admin(user: CurrentUser) -> User:
 
 
 CurrentAdmin = Annotated[User, Depends(get_current_admin)]
+
+
+def get_current_member(user: CurrentUser) -> User:
+    if user.role != Role.MEMBER:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "FORBIDDEN")
+    return user
+
+
+CurrentMember = Annotated[User, Depends(get_current_member)]
