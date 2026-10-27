@@ -35,7 +35,7 @@ Los specs funcionales dicen **qué** hace el sistema y por qué. Este documento 
 - [ ] Aplicar en el backlog los cambios pendientes que lista `specs/README.md` ("Backlog changes still required"): rol único Admin, HU-24 y HU-23 como envíos del club, y las correcciones de redacción.
 - [ ] Corregir en la matriz del PDF la leyenda de `dsat`: es el punto de inflexión, no un techo para 95–100 %.
 - [ ] **Re-estimar** HU-01, HU-05, HU-11, HU-13, HU-18, HU-24, HU-25, HU-27 y HU-28 (el alcance creció: catálogo de fórmulas, vista previa, bloqueo y reglas por club); revisar HU-36 (probablemente baja).
-- [ ] **Enmendar la constitución** (sección 3, DoR) para la excepción de la decisión 40: los textos y códigos de HU-27 y HU-13 se escriben al implementar.
+- [x] **Enmendar la constitución** (sección 3, DoR; versión 1.1.0, pendiente de las 2 aprobaciones del PR) para la excepción de la decisión 40: los textos y códigos de HU-27 y HU-13 se escriben al implementar.
 - [ ] **Replanificar los sprints:** el alcance creció (HU-10, HU-27, HU-30, HU-43, modelo completo de scoring, tareas de arranque).
 
 ### Fase 1. Acuerdos externos (en paralelo, empezar ya)

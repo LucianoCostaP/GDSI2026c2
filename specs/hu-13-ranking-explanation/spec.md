@@ -1,7 +1,7 @@
 # Feature Specification: View Explanation of How the Ranking Works
 
 **Feature Branch**: `hu-13-ranking-explanation`
-**Created**: 2026-10-11 | **Revised**: 2026-10-26 (v4)
+**Created**: 2026-10-11 | **Revised**: 2026-10-27 (v5)
 **Status**: Draft
 **Backlog Reference**: HU-13 (Estimate: 1, Priority: Media, MVP: Yes). Re-estimate: generated text, empty states and entry point.
 **Shared rules**: [scoring model](../_shared/scoring-model.md), [cross-cutting](../_shared/cross-cutting.md)
@@ -61,9 +61,34 @@ The explanation is **generated automatically** from the formula published by the
 
 - **RankingExplanation**: the explanation template of the formula, the common block and the values of the rules version in force; generated, not stored.
 
-## Messages and codes *(pending)*
+## Messages and codes
 
-The Spanish texts (explanation templates, common block, "no rules yet" message, notice of scenario 5, navigation labels) are written while implementing and added here in the same PR (README, decision 40). The club reviews the copy.
+Defined while implementing (README, decision 40). The texts are in Spanish and come from the server. The club reviews the copy.
+
+| Situation | HTTP | Code | Message |
+|---|---|---|---|
+| No published formula in the club (scenario 6; not an error) | 200 | `status: "none"` | Todavía no hay reglas de puntaje publicadas. Cuando el club las publique, vas a poder verlas acá. |
+| Rules in force differ from the latest completed ranking (scenario 5) | 200 | `notice.code = RULES_AHEAD_OF_RANKING` | Estas reglas se van a reflejar en el ranking después del próximo cálculo. |
+| Explanation title (the front also uses it as the home shortcut label) | — | — | ¿Cómo se calcula mi puntaje? |
+| Label in the top navigation bar | — | — | Cómo se calcula |
+| Loading, front only | — | — | Cargando la explicación… |
+| Load error, front only | — | — | No pudimos cargar la explicación. Probá de nuevo en un rato. |
+| Socio account without club | 403 | `MEMBER_WITHOUT_CLUB` | The front shows: Tu cuenta no tiene un club asignado. Consultá con el club. |
+| Forbidden (Admin) | 403 | `FORBIDDEN` | (existing code) |
+| Unauthenticated | 401 | `NOT_AUTHENTICATED` | (existing code) |
+
+The explanation texts (formula block per formula, common block) live in the formula descriptor and in `app/scoring/explanation.py`; they are reviewed together with the formula (scoring model, section 7). The numbers a template writes by hand (class factors, points per month, 365 days) are checked by a test against the constants of the descriptor.
+
+### API
+
+Under the Socio's session; the club comes from the account (decision 34). One route, no aliases, no `club_id` or `X-Club-ID` (if they arrive they are ignored).
+
+- `GET /member/scoring/explanation` → 200 `{status, message, rules_version, formula, explanation, notice}`.
+  - `status`: `published` or `none`. With `none`, `message` has the text above and `rules_version`, `formula`, `explanation` and `notice` are `null`.
+  - `explanation`: the same object the Admin gets in HU-27 (`{title, blocks: [{id: "formula" | "common", sections: [{heading, paragraphs}]}]}`), built by the same function (FR-008).
+  - `notice`: `null` or `{code, message}`. Without a completed ranking it is always `null` (scenario 7).
+  - The response carries `Cache-Control: no-store`. It never includes who published the rules or the formula lock, and the lock does not affect it.
+- Until HU-25 exists there is no completed ranking: `ranking_service.latest_completed_ranking_rules_number` answers `None`. HU-25 replaces it and adds the integration test of scenario 5.
 
 ## Success Criteria *(mandatory)*
 
@@ -83,4 +108,5 @@ The Spanish texts (explanation templates, common block, "no rules yet" message, 
 
 - v2: content defined by the scoring model and generated from the rules in force; added the notice for rules versus the latest ranking.
 - v3: added the statement about fee status and kept history.
+- v5: messages, codes and API defined with the implementation (decision 40); `MEMBER_WITHOUT_CLUB`; the response never exposes Admin data; `no-store`.
 - v4: works with any formula of the catalog (formula block plus common block); added the empty states, the entry points, per-club rules and the preview shared with HU-27.

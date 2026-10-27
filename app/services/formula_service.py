@@ -27,10 +27,21 @@ from ..scoring.catalog import CATALOG, FormulaDescriptor, Parameter, get_descrip
 from ..scoring.explanation import render_explanation
 from ..scoring.formatting import decimal_to_str
 from ..scoring.validation import Violation, parse_decimal, validate_values
+from .ranking_service import latest_completed_ranking_rules_number
 
 CONFIRMATION_STATEMENT = (
     "Estos valores pasan a ser las reglas oficiales del club y rigen de inmediato. "
     "Los socios van a ver la explicación de abajo."
+)
+
+
+# HU-13: textos para el socio (los define esta implementación y están volcados en el spec).
+NO_RULES_MESSAGE = (
+    "Todavía no hay reglas de puntaje publicadas. "
+    "Cuando el club las publique, vas a poder verlas acá."
+)
+RULES_AHEAD_OF_RANKING_NOTICE = (
+    "Estas reglas se van a reflejar en el ranking después del próximo cálculo."
 )
 
 
@@ -200,12 +211,59 @@ def prefill_values(
     return values
 
 
+def explanation_of(rules: RulesVersion) -> tuple[FormulaDescriptor, dict[str, Any]]:
+    """Única forma de generar la explicación de unas reglas guardadas (HU-13, FR-008): la usan
+    la vista del Admin (HU-27) y la del Socio, así no pueden diferir."""
+    descriptor = get_descriptor(rules.formula_id, rules.formula_version)
+    assert descriptor is not None
+    return descriptor, render_explanation(descriptor, _rules_values(rules)).to_dict()
+
+
+def member_explanation(db: Session, club_id: uuid.UUID) -> dict[str, Any]:
+    """HU-13: la explicación de las reglas vigentes del club del Socio.
+
+    Sin reglas publicadas no es un error (escenario 6): responde 200 con un mensaje amable. No
+    expone quién publicó ni el bloqueo, y el bloqueo no la afecta."""
+    rules = get_in_force(db, club_id)
+    if rules is None:
+        return {
+            "status": "none",
+            "message": NO_RULES_MESSAGE,
+            "rules_version": None,
+            "formula": None,
+            "explanation": None,
+            "notice": None,
+        }
+    descriptor, explanation = explanation_of(rules)
+    ranking_rules = latest_completed_ranking_rules_number(db, club_id)
+    # Sin ranking completado no hay aviso (escenario 7).
+    ahead = ranking_rules is not None and ranking_rules != rules.number
+    return {
+        "status": "published",
+        "message": None,
+        "rules_version": rules.number,
+        "formula": {
+            "id": descriptor.id,
+            "version": descriptor.version,
+            "name": descriptor.name,
+        },
+        "explanation": explanation,
+        "notice": (
+            {
+                "code": "RULES_AHEAD_OF_RANKING",
+                "message": RULES_AHEAD_OF_RANKING_NOTICE,
+            }
+            if ahead
+            else None
+        ),
+    }
+
+
 def overview(db: Session, club_id: uuid.UUID) -> dict[str, Any]:
     rules = get_in_force(db, club_id)
     in_force: dict[str, Any] | None = None
     if rules is not None:
-        descriptor = get_descriptor(rules.formula_id, rules.formula_version)
-        assert descriptor is not None
+        descriptor, explanation = explanation_of(rules)
         values = _rules_values(rules)
         in_force = {
             "number": rules.number,
@@ -217,7 +275,7 @@ def overview(db: Session, club_id: uuid.UUID) -> dict[str, Any]:
             "parameters": [
                 _parameter_out(p, values[p.key]) for p in descriptor.parameters
             ],
-            "explanation": render_explanation(descriptor, values).to_dict(),
+            "explanation": explanation,
         }
     return {
         "catalog": [
@@ -430,6 +488,7 @@ __all__ = [
     "detail",
     "get_in_force",
     "lock_formula",
+    "member_explanation",
     "overview",
     "parse_decimal",
     "preview",

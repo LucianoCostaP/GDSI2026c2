@@ -94,7 +94,7 @@ Default class B for Partidos not classified in time and 20 default points for in
 
 - **Socio type for HU-30**: the backlog suggests segmenting by "tipo de socio", but the club does not send that field. It needs the club to add it to the roster (HU-43).
 - **HU-16, HU-18, HU-29 and HU-30 with other formulas**: they are written for the components of the scoring model v1. When a second formula enters the catalog they must read their components from its descriptor. Not needed in the MVP, which ships one formula.
-- **Constitution amendment** for decision 40 (DoR exception).
+- **Constitution amendment** for decision 40 (DoR exception): written in `docs/constitution.md` 1.1.0; it still needs the 2 approvals of its PR.
 
 ## Interpretations to confirm (not blocking)
 
