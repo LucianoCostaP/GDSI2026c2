@@ -177,6 +177,7 @@ def make_member(db: Session) -> MakeMember:
         email: str | None = "",
         dni: str | None = None,
         member_id: str | None = None,
+        club_id: uuid.UUID | None = BOCA_ID,
     ) -> Member:
         suffix = unique()
         member = Member(
@@ -188,6 +189,7 @@ def make_member(db: Session) -> MakeMember:
             account_state=MemberAccountState.ACTIVATED
             if activated
             else MemberAccountState.NOT_ACTIVATED,
+            club_id=club_id,
         )
         db.add(member)
         if activated:
@@ -197,6 +199,7 @@ def make_member(db: Session) -> MakeMember:
                     name=member.name,
                     email=member.email,
                     role=Role.MEMBER,
+                    club_id=club_id,
                 )
             )
         db.commit()

@@ -97,3 +97,15 @@ def get_current_member(user: CurrentUser) -> User:
 
 
 CurrentMember = Annotated[User, Depends(get_current_member)]
+
+
+def get_current_member_club_id(member: CurrentMember) -> uuid.UUID:
+    """Club del Socio autenticado. Es la única fuente del club en los endpoints del Socio:
+    estos no leen `club_id` ni `X-Club-ID`, aunque lleguen (decisión 34). No se adivina el
+    club: una cuenta sin club se rechaza."""
+    if member.club_id is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "MEMBER_WITHOUT_CLUB")
+    return member.club_id
+
+
+CurrentMemberClub = Annotated[uuid.UUID, Depends(get_current_member_club_id)]

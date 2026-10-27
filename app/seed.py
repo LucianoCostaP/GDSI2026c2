@@ -97,8 +97,10 @@ def main() -> None:
         club_id = club_boca.id
 
         # 2. Cargar tabla members (Auth / HU-01)
-        insert_members = insert(Member).values(MEMBERS)
-        club_data = ("dni", "email", "name", "fee_status")
+        insert_members = insert(Member).values(
+            [{**m, "club_id": club_id} for m in MEMBERS]
+        )
+        club_data = ("dni", "email", "name", "fee_status", "club_id")
         db.execute(
             insert_members.on_conflict_do_update(
                 index_elements=[Member.member_id],

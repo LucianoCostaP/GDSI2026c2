@@ -118,5 +118,6 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 - The system serves several clubs. **Rules (formula, rules versions, lock) belong to a club**, and so do the rankings calculated from them.
 - Every Admin and every Socio belongs to one club. The club is taken from the authenticated account or from the club's integration token, **never from a request parameter** (query, body or header chosen by the caller); endpoints that take the club from the account ignore such parameters if they arrive.
 - The account of an Admin stores its club. An Admin created by another Admin (HU-07) belongs to the club of who creates it, and an email already used by an account of another club cannot be invited. An Admin account without a club is rejected on every club-scoped action.
+- The account of a Socio stores its club too: it comes from the Socio loaded by the club (HU-43) and is copied to the account when it is activated. A Socio account without a club is rejected on every club-scoped action; the club is never guessed.
 - A user can only read and change data of their own club; a request for another club's data is rejected.
 - The specs keep the single-club wording; read "the club" as "the club of the user".

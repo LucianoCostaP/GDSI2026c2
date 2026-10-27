@@ -55,6 +55,12 @@ class Member(Base):
         pg_enum(MemberAccountState, "member_account_state"),
         default=MemberAccountState.NOT_ACTIVATED,
     )
+    # Club al que pertenece el socio (decisión 34): lo define quien carga los socios y se copia
+    # a `users.club_id` al activar la cuenta. Sin club, el socio no puede usar los endpoints
+    # que dependen del club (`MEMBER_WITHOUT_CLUB`).
+    club_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("clubes.id"), index=True
+    )
 
 
 class User(Base):
@@ -80,8 +86,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(320))
     role: Mapped[Role] = mapped_column(pg_enum(Role, "user_role"))
     # Club al que pertenece la cuenta (decisión 34). Es de donde sale el club de los
-    # endpoints del Admin: nunca de un parámetro del pedido. Toda cuenta de admin lo tiene;
-    # el de las cuentas de socio todavía no se completa.
+    # endpoints del Admin y del Socio: nunca de un parámetro del pedido. Toda cuenta de admin
+    # lo tiene; la de un socio lo recibe de `members.club_id` al activarse.
     club_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("clubes.id"), index=True
     )
