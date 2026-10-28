@@ -30,6 +30,7 @@ from tests.conftest import (
 FORMULA = "/admin/formulas/scoring-model/1"
 ADJUST = "/admin/formulas/adjust"
 DEFAULTS = {p.key: str(p.default) for p in SCORING_MODEL_V1.parameters}
+CHANGED_VALUES = dict(DEFAULTS, w_a="0.50", w_p="0.30", w_t="0.20")
 
 
 def headers_for(client: TestClient, outbox: Outbox, user: User) -> dict[str, str]:
@@ -79,7 +80,7 @@ def adjust(
     return client.post(
         ADJUST,
         json={
-            "values": DEFAULTS if values is None else values,
+            "values": CHANGED_VALUES if values is None else values,
             "expected_rules_version": expected,
             "confirmed": confirmed,
         },
@@ -130,6 +131,16 @@ def test_adjust_parameters_success_creates_new_version(
     assert v2.previous_version_id == v1.id
     assert v2.values["w_a"] == "0.5"
     assert v2.values["d_sat"] == "1500"
+
+
+def test_adjust_rejects_identical_values(client: TestClient, boca) -> None:
+    publish(client, boca)
+
+    # Intentar ajustar con exactamente los mismos valores vigentes
+    response = adjust(client, boca, values=DEFAULTS, expected=1)
+    assert response.status_code == 422
+    assert code_of(response) == "NO_CHANGES_DETECTED"
+    assert "No modificaste ningún parámetro" in response.json()["detail"]["message"]
 
 
 def test_cannot_add_or_remove_parameters(client: TestClient, boca) -> None:

@@ -514,6 +514,15 @@ def adjust_parameters(
             "Hay valores que no se pueden publicar. Corregilos y volvé a intentar.",
             violations=violations_out(result.violations),
         )
+
+    current_values = _rules_values(current)
+    if all(result.values.get(k) == current_values.get(k) for k in current_values):
+        raise error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "NO_CHANGES_DETECTED",
+            "No modificaste ningún parámetro. Para ajustar las reglas cambiá al menos un valor.",
+        )
+
     if not confirmed:
         raise error(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
