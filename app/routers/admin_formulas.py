@@ -28,6 +28,11 @@ class PublishRequest(ValuesRequest):
     confirmed: bool = False
 
 
+class AdjustRequest(ValuesRequest):
+    expected_rules_version: int
+    confirmed: bool = False
+
+
 class LockRequest(BaseModel):
     reason: str = Field(max_length=500)
 
@@ -49,6 +54,23 @@ def unlock_formula(
     body: LockRequest, admin: CurrentAdmin, club_id: CurrentAdminClub, db: Db
 ) -> dict[str, Any]:
     return formula_service.unlock_formula(db, admin, club_id, body.reason)
+
+
+@router.post("/adjust")
+def adjust_parameters(
+    body: AdjustRequest,
+    admin: CurrentAdmin,
+    club_id: CurrentAdminClub,
+    db: Db,
+) -> dict[str, Any]:
+    return formula_service.adjust_parameters(
+        db,
+        admin,
+        club_id,
+        body.values,
+        body.expected_rules_version,
+        body.confirmed,
+    )
 
 
 @router.get("/{formula_id}/{version}")

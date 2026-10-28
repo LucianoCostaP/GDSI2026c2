@@ -5,6 +5,7 @@ Las reglas en vigor y el bloqueo son por club. HU-25 y HU-28 usan `require_rules
 """
 
 import uuid
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -13,6 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..audit import record
+from ..config import settings
 from ..core.date_utils import a_hora_buenos_aires
 from ..models import (
     Club,
@@ -109,6 +111,51 @@ def require_rules_in_force(db: Session, club_id: uuid.UUID) -> RulesVersion:
             "Publicala desde la sección Fórmula.",
         )
     return rules
+
+
+def check_season_cutoff(now: datetime | None = None) -> tuple[bool, date | None]:
+    """HU-28: 14 días antes del inicio de la temporada (y después) no se permiten ajustes."""
+    if settings.season_start_date is None:
+        return False, None
+    cutoff_date = settings.season_start_date - timedelta(days=14)
+    moment = now if now is not None else utcnow()
+    now_ba = a_hora_buenos_aires(moment)
+    return now_ba.date() >= cutoff_date, cutoff_date
+
+
+def season_cutoff_info(now: datetime | None = None) -> dict[str, Any]:
+    reached, cutoff = check_season_cutoff(now)
+    return {
+        "reached": reached,
+        "cutoff_date": cutoff.isoformat() if cutoff else None,
+        "season_start_date": (
+            settings.season_start_date.isoformat()
+            if settings.season_start_date
+            else None
+        ),
+        "message": (
+            f"El plazo para modificar parámetros cerró el {cutoff.strftime('%d/%m/%Y')} "
+            f"(14 días antes del inicio de temporada)."
+            if (reached and cutoff)
+            else None
+        ),
+    }
+
+
+def require_season_window(now: datetime | None = None) -> None:
+    """HU-28: rechaza modificaciones si ya pasó el plazo límite de temporada."""
+    reached, cutoff = check_season_cutoff(now)
+    if reached:
+        assert cutoff is not None
+        assert settings.season_start_date is not None
+        raise error(
+            status.HTTP_409_CONFLICT,
+            "SEASON_CUTOFF_REACHED",
+            f"El plazo para modificar parámetros cerró el {cutoff.strftime('%d/%m/%Y')} "
+            f"(14 días antes del inicio de temporada).",
+            cutoff_date=cutoff.isoformat(),
+            season_start_date=settings.season_start_date.isoformat(),
+        )
 
 
 def _descriptor_or_404(formula_id: str, version: int) -> FormulaDescriptor:
@@ -289,6 +336,7 @@ def overview(db: Session, club_id: uuid.UUID) -> dict[str, Any]:
         ],
         "in_force": in_force,
         "lock": _lock_out(db, get_lock(db, club_id)),
+        "season_cutoff": season_cutoff_info(),
     }
 
 
@@ -309,6 +357,7 @@ def detail(
         and (rules.formula_id, rules.formula_version)
         == (descriptor.id, descriptor.version),
         "lock": _lock_out(db, get_lock(db, club_id)),
+        "season_cutoff": season_cutoff_info(),
         "confirmation_statement": CONFIRMATION_STATEMENT,
     }
 
@@ -427,6 +476,91 @@ def publish(
     }
 
 
+def adjust_parameters(
+    db: Session,
+    admin: User,
+    club_id: uuid.UUID,
+    raw: dict[str, Any],
+    expected_rules_version: int,
+    confirmed: bool,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """HU-28: Ajusta los parámetros de la fórmula en vigor del club.
+
+    Crea una nueva versión de reglas que rige de inmediato (FR-006).
+    Audita los valores anteriores y los nuevos (FR-008).
+    El ranking no se recalcula acá: queda intacto hasta que corra HU-25 (FR-007).
+    """
+    db.get_one(Club, club_id, with_for_update=True)
+
+    current = require_rules_in_force(db, club_id)
+    require_unlocked(db, club_id)
+    require_season_window(now)
+
+    if current.number != expected_rules_version:
+        raise error(
+            status.HTTP_409_CONFLICT,
+            "STALE_RULES",
+            "Las reglas del club cambiaron mientras mirabas esta pantalla. "
+            "Recargá para ver las reglas vigentes y volvé a intentar.",
+        )
+
+    descriptor = _descriptor_or_404(current.formula_id, current.formula_version)
+    result = validate_values(descriptor, raw)
+    if not result.valid:
+        raise error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "INVALID_VALUES",
+            "Hay valores que no se pueden publicar. Corregilos y volvé a intentar.",
+            violations=violations_out(result.violations),
+        )
+    if not confirmed:
+        raise error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "CONFIRMATION_REQUIRED",
+            "Confirmá que estos valores pasan a ser las reglas oficiales del club.",
+        )
+
+    new_number = current.number + 1
+    current.state = RulesVersionState.SUPERSEDED
+    db.flush()
+
+    stored = {key: decimal_to_str(value) for key, value in result.values.items()}
+    new_rules = RulesVersion(
+        club_id=club_id,
+        number=new_number,
+        formula_id=descriptor.id,
+        formula_version=descriptor.version,
+        values=stored,
+        state=RulesVersionState.IN_FORCE,
+        published_by_id=admin.id,
+        published_at=now if now is not None else utcnow(),
+        previous_version_id=current.id,
+    )
+    db.add(new_rules)
+    db.flush()
+    record(
+        db,
+        "formula.parameters_adjusted",
+        actor_id=admin.id,
+        entity="rules_version",
+        entity_id=new_rules.id,
+        club_id=str(club_id),
+        number=new_number,
+        formula_id=descriptor.id,
+        formula_version=descriptor.version,
+        values=stored,
+        previous_number=current.number,
+        previous_values=current.values,
+    )
+    db.commit()
+    return {
+        "number": new_number,
+        "message": f"Ajustaste los parámetros: rigen las reglas versión {new_number}.",
+        **overview(db, club_id),
+    }
+
+
 def _change_lock(
     db: Session, admin: User, club_id: uuid.UUID, reason: str, *, lock: bool
 ) -> dict[str, Any]:
@@ -485,6 +619,8 @@ def unlock_formula(
 
 __all__ = [
     "CONFIRMATION_STATEMENT",
+    "adjust_parameters",
+    "check_season_cutoff",
     "detail",
     "get_in_force",
     "lock_formula",
@@ -494,6 +630,8 @@ __all__ = [
     "preview",
     "publish",
     "require_rules_in_force",
+    "require_season_window",
     "require_unlocked",
+    "season_cutoff_info",
     "unlock_formula",
 ]
