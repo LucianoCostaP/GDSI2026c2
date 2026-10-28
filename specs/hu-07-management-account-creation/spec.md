@@ -47,7 +47,8 @@ As an Admin, I want to create an account for another Admin, so that they can acc
 - **FR-005**: System MUST keep the account `pending activation` until the invitee completes HU-08.
 - **FR-006**: System MUST restrict this action to Admins, enforced on the server.
 - **FR-007**: System MUST allow re-creating an email whose pending invitation expired, replacing the old invitation.
-- **FR-008**: System MUST audit every creation and replacement (who, when, email).
+- **FR-008**: System MUST audit every creation and replacement (who, when, email, club).
+- **FR-009**: System MUST create the account in the club of the Admin who creates it (cross-cutting section 9), and MUST reject, as an existing account, an email already used by an account of another club.
 
 ### Key Entities
 

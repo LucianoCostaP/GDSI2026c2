@@ -65,3 +65,28 @@ class AccionIncremental(str, Enum):
     ALTA = "alta"
     MODIFICACION = "modificacion"
     BAJA = "baja"
+
+
+class TipoParticipacion(str, Enum):
+    ASISTENCIA = "asistencia"
+    ACTIVIDADES = "actividades"
+
+
+class OrigenCarga(str, Enum):
+    CLUB = "club"
+    FILE = "file"
+
+
+class TipoActividadRecurrente(str, Enum):
+    DEPORTE_FEDERADO = "deporte_federado"
+    SUBCOMISION = "subcomision"
+
+
+class EstadoCargaParticipacion(str, Enum):
+    RECEIVING = "receiving"
+    PROCESSING = "processing"
+    PENDING_APPROVAL = "pending_approval"
+    SUCCESSFUL = "successful"
+    REPLACED = "replaced"
+    REJECTED = "rejected"
+    FAILED = "failed"

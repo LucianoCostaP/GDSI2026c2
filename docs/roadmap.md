@@ -34,7 +34,8 @@ Los specs funcionales dicen **qué** hace el sistema y por qué. Este documento 
 - [x] En **HU-36**, quitar la capacidad y describir las oleadas por percentil.
 - [ ] Aplicar en el backlog los cambios pendientes que lista `specs/README.md` ("Backlog changes still required"): rol único Admin, HU-24 y HU-23 como envíos del club, y las correcciones de redacción.
 - [ ] Corregir en la matriz del PDF la leyenda de `dsat`: es el punto de inflexión, no un techo para 95–100 %.
-- [ ] **Re-estimar** HU-01, HU-05, HU-11, HU-18, HU-24, HU-25 y HU-28 (el alcance creció); revisar HU-36 (probablemente baja).
+- [ ] **Re-estimar** HU-01, HU-05, HU-11, HU-13, HU-18, HU-24, HU-25, HU-27 y HU-28 (el alcance creció: catálogo de fórmulas, vista previa, bloqueo y reglas por club); revisar HU-36 (probablemente baja).
+- [x] **Enmendar la constitución** (sección 3, DoR; versión 1.1.0, pendiente de las 2 aprobaciones del PR) para la excepción de la decisión 40: los textos y códigos de HU-27 y HU-13 se escriben al implementar.
 - [ ] **Replanificar los sprints:** el alcance creció (HU-10, HU-27, HU-30, HU-43, modelo completo de scoring, tareas de arranque).
 
 ### Fase 1. Acuerdos externos (en paralelo, empezar ya)
@@ -57,7 +58,7 @@ Los specs funcionales dicen **qué** hace el sistema y por qué. Este documento 
 Son las tareas de la sección 7 de las reglas transversales de los specs:
 
 - [ ] Repositorio, integración continua y entregas, base de datos con migraciones.
-- [ ] Primer Admin, versión 1 de reglas con los valores por defecto y ajustes del sistema.
+- [ ] Primer Admin y ajustes del sistema. La versión 1 de reglas **no se siembra**: la crea el Admin de cada club al publicar una fórmula del catálogo (HU-27).
 - [ ] Token de integración del club (guardado con hash) y entrega segura al club.
 - [ ] Menú global y pantallas de inicio por rol.
 - [ ] **Reloj inyectable**, desde el primer día: HU-22, HU-28 y HU-39 no se pueden probar sin él.
@@ -74,12 +75,12 @@ Un **módulo** es un grupo de historias relacionadas que se construyen juntas, d
 | 3 | Acceso de socios | HU-05, HU-01 | Un socio se activa por correo y entra | Módulos 1 y 2 |
 | 4 | Eventos | HU-21, HU-22 y HU-17 | El club envía eventos, el Admin los publica y el socio los ve | Módulos 2 y 3 |
 | 5 | Carga de datos | HU-24 | El club envía asistencias y actividades (o el Admin sube un CSV); el Admin aprueba los reemplazos | Módulos 2 y 4 |
-| 6 | Scoring y ranking | modelo de scoring, HU-25 | Ranking calculado con puntajes y posiciones (el cuello de botella) | Módulos 2, 4 y 5 |
-| 7 | Vistas del socio | HU-14, HU-16, HU-13 | El socio ve su puntaje, su posición y el desglose | Módulos 3 y 6 |
-| 8 | Reglas y simuladores | HU-27, HU-28, HU-29, HU-30, HU-18 | El Admin publica la fórmula base, ajusta y simula reglas con su análisis de equidad; el socio simula su asistencia | Módulos 1, 4 y 6 |
+| 6 | Scoring y ranking | catálogo de fórmulas, HU-27, modelo de scoring, HU-25 | Ranking calculado con puntajes y posiciones (el cuello de botella) | Módulos 2, 4 y 5 |
+| 7 | Vistas del socio | HU-14, HU-16, HU-13 | El socio ve su puntaje, su posición y el desglose, y cómo se calcula | Módulos 3 y 6 (HU-13 solo necesita HU-27; el aviso del último ranking usa HU-25 si existe) |
+| 8 | Reglas y simuladores | HU-28, HU-29, HU-30, HU-18 | El Admin ajusta y simula reglas con su análisis de equidad; el socio simula su asistencia | Módulos 1, 4 y 6 |
 | 9 | Oleadas | HU-36, HU-37, HU-39 | Oleadas por percentil, cronograma y turno de cada socio | Módulos 3, 4 y 6 |
 
-Los módulos 7, 8 y 9 pueden avanzar en paralelo una vez listo el 6. HU-27 (fórmula base publicada) es requisito de HU-25: conviene adelantarla al módulo 6. HU-23 queda fuera del MVP.
+Los módulos 7, 8 y 9 pueden avanzar en paralelo una vez listo el 6. HU-27 (fórmula base publicada desde el catálogo, con bloqueo y vista previa) es requisito de HU-25, HU-28 y HU-13, y por eso está en el módulo 6. Dentro del módulo, HU-27 va primero y HU-13 puede construirse apenas HU-27 esté lista. HU-23 queda fuera del MVP.
 
 ### Fase 5. Pruebas y demo
 

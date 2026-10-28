@@ -371,6 +371,185 @@ class EventoCambioPendienteDB(Base):
 
 
 # ==============================================================================
+# MODELOS HU-24: ASISTENCIAS Y ACTIVIDADES RECURRENTES
+# ==============================================================================
+
+
+class CargaParticipacionDB(Base):
+    """Registro maestro de cada carga de asistencia o actividades recurrentes."""
+
+    __tablename__ = "cargas_participacion"
+    __table_args__ = (
+        Index("idx_cargas_part_club_tipo", "club_id", "tipo"),
+        Index("idx_cargas_part_club_ext", "club_id", "carga_id_externo"),
+        Index("idx_cargas_part_club_evento", "club_id", "evento_id_externo"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    club_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("clubes.id", ondelete="CASCADE"), nullable=False
+    )
+    tipo: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # 'asistencia' / 'actividades'
+    origen: Mapped[str] = mapped_column(String(10), nullable=False)  # 'club' / 'file'
+    carga_id_externo: Mapped[str] = mapped_column(String(100), nullable=False)
+    evento_id_externo: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    estado: Mapped[str] = mapped_column(
+        String(30), server_default="receiving", nullable=False
+    )
+    total_paginas: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    paginas_recibidas: Mapped[int] = mapped_column(
+        Integer, server_default="0", nullable=False
+    )
+    total_registros: Mapped[int] = mapped_column(
+        Integer, server_default="0", nullable=False
+    )
+    registros_incorporados: Mapped[int] = mapped_column(
+        Integer, server_default="0", nullable=False
+    )
+    registros_actualizados: Mapped[int] = mapped_column(
+        Integer, server_default="0", nullable=False
+    )
+    registros_rechazados: Mapped[int] = mapped_column(
+        Integer, server_default="0", nullable=False
+    )
+    payload_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    desde: Mapped[date | None] = mapped_column(Date, nullable=True)
+    hasta: Mapped[date | None] = mapped_column(Date, nullable=True)
+    usuario_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    aprobado_por_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    motivo_fallo: Mapped[str | None] = mapped_column(Text, nullable=True)
+    creado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    actualizado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class AsistenciaStagingDB(Base):
+    """Almacenamiento temporal para páginas de asistencia antes de aplicarse o aprobarse."""
+
+    __tablename__ = "asistencias_staging"
+    __table_args__ = (
+        Index("idx_asistencias_staging_carga_pag", "carga_id", "pagina"),
+        Index("idx_asistencias_staging_carga_dni", "carga_id", "dni"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    carga_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("cargas_participacion.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    pagina: Mapped[int] = mapped_column(Integer, nullable=False)
+    dni: Mapped[str] = mapped_column(String(32), nullable=False)
+    numero_socio: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    creado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class AsistenciaDB(Base):
+    """Registro definitivo de asistencia a un evento específico del club."""
+
+    __tablename__ = "asistencias"
+    __table_args__ = (
+        UniqueConstraint(
+            "club_id", "evento_id_externo", "dni", name="uq_asistencias_club_evento_dni"
+        ),
+        Index("idx_asistencias_club_evento", "club_id", "evento_id_externo"),
+        Index("idx_asistencias_club_dni", "club_id", "dni"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    club_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("clubes.id", ondelete="CASCADE"), nullable=False
+    )
+    evento_id_externo: Mapped[str] = mapped_column(String(64), nullable=False)
+    dni: Mapped[str] = mapped_column(String(32), nullable=False)
+    numero_socio: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    carga_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("cargas_participacion.id"), nullable=False
+    )
+    creado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ActividadRecurrenteDB(Base):
+    """Registro de participación en actividades recurrentes (deporte federado o subcomisión)."""
+
+    __tablename__ = "actividades_recurrentes"
+    __table_args__ = (
+        UniqueConstraint(
+            "club_id",
+            "dni",
+            "tipo",
+            "fecha_desde",
+            name="uq_actividades_club_dni_tipo_desde",
+        ),
+        Index("idx_actividades_club_dni", "club_id", "dni"),
+        Index("idx_actividades_club_tipo", "club_id", "tipo"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    club_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("clubes.id", ondelete="CASCADE"), nullable=False
+    )
+    dni: Mapped[str] = mapped_column(String(32), nullable=False)
+    tipo: Mapped[str] = mapped_column(String(32), nullable=False)
+    fecha_desde: Mapped[date] = mapped_column(Date, nullable=False)
+    fecha_hasta: Mapped[date] = mapped_column(Date, nullable=False)
+    carga_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("cargas_participacion.id"), nullable=False
+    )
+    creado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    actualizado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class CargaParticipacionRechazoDB(Base):
+    """Detalle de registros rechazados en una carga de asistencia o actividades."""
+
+    __tablename__ = "cargas_participacion_rechazos"
+    __table_args__ = (Index("idx_cargas_part_rechazos_carga", "carga_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    carga_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("cargas_participacion.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    dni: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    campo: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    codigo: Mapped[str] = mapped_column(String(64), nullable=False)
+    motivo: Mapped[str] = mapped_column(Text, nullable=False)
+    fila: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    creado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+# ==============================================================================
 # MODELOS DE DOMINIO LIVIANOS (DATACLASSES)
 # ==============================================================================
 

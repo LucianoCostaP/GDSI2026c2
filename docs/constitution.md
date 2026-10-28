@@ -1,6 +1,6 @@
 # Constitución – Pasión de 10
 
-**Versión**: 1.0.0 | **Vigente desde**: 2026-10-25
+**Versión**: 1.1.0 | **Vigente desde**: 2026-10-27
 
 Reglas que todo cambio del repositorio debe cumplir. Si un PR no cumple alguna, no se fusiona. Los umbrales son números para que se puedan verificar en la revisión o en CI.
 
@@ -42,6 +42,8 @@ Una HU puede empezar cuando:
 - Sus dependencias (otras HU o módulos del roadmap) están terminadas o tienen un mock acordado.
 - El contrato de su API (OpenAPI del módulo o sección del contrato de datos) está definido.
 - Hay datos de prueba para sus escenarios.
+
+**Excepción (decisión 40 de `specs/README.md`)**: HU-27 y HU-13 pueden empezar sin el texto ni el código de sus mensajes. Los definen al implementar y los vuelcan a su spec en el mismo PR, y ese PR no se fusiona sin ellos. El contrato de su API sí tiene que estar definido (sección API del spec).
 
 ## 4. Definition of Done (DoD)
 
@@ -88,4 +90,5 @@ Configurada en GitHub (Settings → Branches):
 
 ## Historial
 
+- 1.1.0 (2026-10-27): excepción de la DoR para HU-27 y HU-13 (decisión 40). Requiere las 2 aprobaciones de la sección 8 al fusionarse.
 - 1.0.0 (2026-10-25): versión inicial, a partir de los principios de `docs/roadmap.md` y la revisión de `CORRECCIONES_SPECS.txt`.

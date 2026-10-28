@@ -18,3 +18,5 @@ services:
         sync: false
       - key: INITIAL_ADMIN_NAME
         sync: false
+      - key: INITIAL_ADMIN_CLUB_CODE
+        sync: false

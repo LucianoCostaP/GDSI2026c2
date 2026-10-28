@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = "postgresql+psycopg://app:app@localhost:5432/app"
+    test_database_url: str = "postgresql+psycopg://app:app@localhost:5432/app_test"
     db_engine: str = "postgres"
     front_origin: str = "http://localhost:5173"
     app_env: str = "local"
@@ -34,6 +35,9 @@ class Settings(BaseSettings):
     # Primer admin (tarea de arranque): se crea al iniciar si todavía no hay ningún admin.
     initial_admin_email: str | None = "admin@club.com"
     initial_admin_name: str | None = "Admin Demo"
+    # Club del primer admin, por su código (por ejemplo "CABJ"). Sin código, se usa el único
+    # club que haya; si hay varios, hay que indicarlo.
+    initial_admin_club_code: str | None = "CABJ"
 
     # Parámetros de publicación de eventos (HU-22 / Cross-cutting sección 8)
     default_partido_clase: str = "B"
@@ -61,6 +65,10 @@ class Settings(BaseSettings):
     @property
     def DATABASE_URL(self) -> str:
         return self.database_url
+
+    @property
+    def TEST_DATABASE_URL(self) -> str:
+        return self.test_database_url
 
     @property
     def HOST(self) -> str:

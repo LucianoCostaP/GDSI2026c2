@@ -1,6 +1,6 @@
-# MVP Specs Index (v4.1)
+# MVP Specs Index (v4.2)
 
-25 specs: the 24 stories the backlog marks as MVP, plus HU-23 (outside the MVP, kept as a ready spec), and 3 shared documents. Titles, estimates, priorities and MVP scope follow the backlog (`Backlog - US.csv`). v4 aligns the specs with the backlog and with the integration prototypes: **the club sends its data to an API the system exposes; the system never calls the club.** v4.1 applies the review in `CORRECCIONES_SPECS.txt` (decisions 24–33 and the table at the end).
+25 specs: the 24 stories the backlog marks as MVP, plus HU-23 (outside the MVP, kept as a ready spec), and 3 shared documents. Titles, estimates, priorities and MVP scope follow the backlog (`Backlog - US.csv`). v4 aligns the specs with the backlog and with the integration prototypes: **the club sends its data to an API the system exposes; the system never calls the club.** v4.1 applies the review in `CORRECCIONES_SPECS.txt` (decisions 24–33 and the table at the end). v4.2 reworks HU-27 and HU-13 around a formula catalog and per-club rules (decisions 34–40).
 
 ## Shared documents
 
@@ -42,7 +42,7 @@
 
 ## Decisions adopted
 
-1. The base formula is the Scoring Model v1 and is complete. The total is capped at 100 after the new-member bonus; a "cap adjustment" component keeps the breakdown equal to the total. The Admin publishes it as the base formula (HU-27) and then adjusts its parameters (HU-28).
+1. The base formula is the Scoring Model v1 and is complete. The total is capped at 100 after the new-member bonus; a "cap adjustment" component keeps the breakdown equal to the total. The Admin publishes a formula of the catalog as the base formula (HU-27) and then adjusts its parameters (HU-28).
 2. `dsat` is the **inflection point** of the Gompertz curve (36.8% at `dsat`, about 95% at 1.68 × `dsat`).
 3. The parameters editable by the Admin are the ones in the parameter matrix, with the proposed limits, now confirmed.
 4. The institutional participation pillar is in the MVP.
@@ -77,6 +77,15 @@
 32. **Started events leave the upcoming list for both types** (HU-17); no event stays visible until the end of its day.
 33. **No MVP spec depends on HU-23**: the state `withdrawn` and the effects of withdrawals and reprogramming on HU-17, HU-22, HU-36, HU-37 and HU-39 live only in HU-23 (outside the MVP). The constitution (DoR, DoD, thresholds, branches, commits, protection of `main`) is versioned in `docs/constitution.md`.
 
+34. **Rules are per club; tenancy is closed.** The system serves several clubs; each Admin and each Socio belongs to one club; the formula, rules versions, lock and rankings belong to the club. The club comes from the account or token, never from a request parameter (cross-cutting section 9).
+35. **Formula catalog.** The product ships a catalog of formulas (descriptor plus pure calculation); the Admin of a club publishes one of them with initial values (HU-27). More formulas are added with product releases, never from a screen (scoring model, section 7).
+36. **The explanation is generated automatically** from the published formula and the values in force (HU-13), with a preview for the Admin before confirming (HU-27). There is no separate approval step.
+37. **Formula lock.** An Admin can lock and unlock the publication of a formula, giving a reason; while locked, HU-27 and HU-28 changes are rejected. It is independent from the 14-day season cut-off of HU-28 (HU-27 scenario 11).
+38. **Rules version 1 is created by the Admin** when publishing the formula; it is not seeded. This corrects HU-28 and the roadmap.
+39. **Decimal arithmetic** for parameter values, limits, the sum rule and rounding (scoring model, rule 8).
+40. **Messages and codes of HU-27 and HU-13 are defined during implementation** and added to the specs in the same PR. This is an exception to the Definition of Ready; it needs an amendment of `docs/constitution.md` section 3 (2 approvals).
+41. **Version history is outside the MVP.** There is no history of rules versions (HU-27, HU-28) and no history of previous rankings (HU-25). Each rules version is still stored unchanged, and each ranking records the one it used, so HU-13's notice and the Socio views anchored to the latest ranking keep working. The audit keeps who, when and the previous and new values. HU-25, the ranking run itself, stays in the MVP.
+
 ## Defaults set by this revision (change them in one place)
 
 Default class B for Partidos not classified in time and 20 default points for institutional events without points when the automatic publication runs; row-error tolerance of 5% for CSV files; code, session and lockout parameters; time zone Buenos Aires; attendance window of previous calendar year plus current year to date; rounding to two decimals; minimum 5 minutes between wave openings; roster staleness limit of 24 hours; 60-minute expiry for paged loads; size limits of decision 27; HU-29 target of under 3 seconds up to 50,000 Socios and under 10 seconds up to 500,000.
@@ -84,9 +93,13 @@ Default class B for Partidos not classified in time and 20 default points for in
 ## Open items
 
 - **Socio type for HU-30**: the backlog suggests segmenting by "tipo de socio", but the club does not send that field. It needs the club to add it to the roster (HU-43).
-- **Tenancy**: the integration prototypes are multi-tenant (one token and one data space per club); the specs describe a single club. Decide it in the global plan.
+- **HU-16, HU-18, HU-29 and HU-30 with other formulas**: they are written for the components of the scoring model v1. When a second formula enters the catalog they must read their components from its descriptor. Not needed in the MVP, which ships one formula.
+- **Constitution amendment** for decision 40 (DoR exception): written in `docs/constitution.md` 1.1.0; it still needs the 2 approvals of its PR.
 
 ## Interpretations to confirm (not blocking)
+
+- Publishing a different formula or a newer version prefills the values in force for the parameters that exist in both with compatible limits, and the defaults for the rest (HU-27 scenario 8).
+- The lock needs a reason both to lock and to unlock, and any Admin of the club can unlock.
 
 - Attendance at elections and assemblies is loaded like any other event attendance (HU-24).
 - When nobody defines the points of an institutional event before the automatic publication, a default applies (a system setting, proposed 20).

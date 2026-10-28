@@ -136,6 +136,8 @@ def verify_activation(body: CodeVerification, db: Db) -> None:
         name=member.name or member.member_id,
         email=require_email(member),
         role=Role.MEMBER,
+        # El club del socio pasa a la cuenta: de ahí salen los endpoints del Socio (decisión 34).
+        club_id=member.club_id,
     )
     db.add(user)
     db.flush()

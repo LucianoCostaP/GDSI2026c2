@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..audit import record
-from ..auth import CurrentAdmin
+from ..auth import CurrentAdmin, CurrentAdminClub
 from ..config import settings
 from ..db import get_db
 from ..link_tokens import issue_link_token, load_link_token
@@ -57,7 +57,11 @@ def has_valid_invitation(db: Session, user: User) -> bool:
 
 @router.post("/admin/accounts", status_code=status.HTTP_201_CREATED)
 def create_admin(
-    body: CreateAdminRequest, admin: CurrentAdmin, db: Db, send: Mailer
+    body: CreateAdminRequest,
+    admin: CurrentAdmin,
+    club_id: CurrentAdminClub,
+    db: Db,
+    send: Mailer,
 ) -> AdminAccountOut:
     email = body.email.lower()
     if email != body.email_confirmation.lower():
@@ -70,7 +74,12 @@ def create_admin(
         .where(User.role == Role.ADMIN, func.lower(User.email) == email)
         .with_for_update()
     )
-    if user is not None and user.admin_state == AdminAccountState.ACTIVE:
+    # El email de un admin es único en todo el sistema: si ya lo usa una cuenta de otro club,
+    # este Admin no puede invitarlo ni tocar esa cuenta.
+    if user is not None and (
+        user.admin_state == AdminAccountState.ACTIVE
+        or user.club_id not in (None, club_id)
+    ):
         raise HTTPException(status.HTTP_409_CONFLICT, "ACCOUNT_ALREADY_EXISTS")
     if user is not None and has_valid_invitation(db, user):
         raise HTTPException(status.HTTP_409_CONFLICT, "INVITATION_PENDING")
@@ -86,6 +95,7 @@ def create_admin(
         )
         db.add(user)
         db.flush()
+    user.club_id = club_id
     previous_name, user.name = user.name, body.name
 
     token = issue_link_token(
@@ -105,6 +115,7 @@ def create_admin(
         entity="user",
         entity_id=user.id,
         email=email,
+        club_id=str(club_id),
         **(
             {"before": {"name": previous_name}, "after": {"name": user.name}}
             if replaced

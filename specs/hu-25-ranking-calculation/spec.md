@@ -22,7 +22,7 @@ As an Admin, I want to run the Socios ranking calculation, so that the scoring r
 1. **Given** an Admin logged in, **When** they trigger the calculation, **Then** the system takes a snapshot of the data and of the rules version in force and applies the scoring model (configured by the Admin, HU-28) to every Socio of the ranking population.
 2. **Given** a calculation running, **When** the Admin looks at the screen, **Then** they are informed that the process is in progress, and a second run cannot be started.
 3. **Given** the calculation finishes, **When** it succeeds, **Then** the Admin is told it completed and that the new ranking is in force since that moment.
-4. **Given** a new ranking calculated, **When** it replaces the previous one, **Then** the replacement is atomic and the previous ranking remains in the history with its rules version.
+4. **Given** a new ranking calculated, **When** it replaces the previous one, **Then** the replacement is atomic. A history of previous rankings is outside the MVP.
 5. **Given** the calculation fails, **When** the error occurs, **Then** the error is shown, the ranking is marked `failed` and the previous ranking stays in force unmodified.
 6. **Given** two or more Socios with the same total score, **When** positions are assigned, **Then** ties are broken by greater seniority, then greater age, then lower document number.
 7. **Given** the club data or the attendance data are older than the staleness limit, or a load happened after the last ranking, **When** the Admin starts the calculation, **Then** a warning is shown before the run and they can continue.
@@ -49,7 +49,7 @@ As an Admin, I want to run the Socios ranking calculation, so that the scoring r
 - **FR-002**: System MUST apply the scoring model with the rules version in force over attendance, participation, seniority, age, distance and bonus data.
 - **FR-003**: System MUST inform that the process is running.
 - **FR-004**: System MUST inform on completion and state since when the new ranking is in force (its completion time).
-- **FR-005**: System MUST keep the previous rankings in a history, with the rules version used by each.
+- **FR-005**: System MUST record in each ranking the rules version it used. A history of previous rankings is outside the MVP.
 - **FR-006**: System MUST keep the previous ranking in force and show the error if the calculation fails.
 - **FR-007**: System MUST break ties by seniority, then age, then lower document number.
 - **FR-008**: System MUST use attendance of the previous year and the accumulated current year.

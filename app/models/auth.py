@@ -1,9 +1,10 @@
 import enum
+import uuid
 from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Index, String, func, text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db import Base
@@ -54,6 +55,12 @@ class Member(Base):
         pg_enum(MemberAccountState, "member_account_state"),
         default=MemberAccountState.NOT_ACTIVATED,
     )
+    # Club al que pertenece el socio (decisión 34): lo define quien carga los socios y se copia
+    # a `users.club_id` al activar la cuenta. Sin club, el socio no puede usar los endpoints
+    # que dependen del club (`MEMBER_WITHOUT_CLUB`).
+    club_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("clubes.id"), index=True
+    )
 
 
 class User(Base):
@@ -78,6 +85,12 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(200))
     email: Mapped[str] = mapped_column(String(320))
     role: Mapped[Role] = mapped_column(pg_enum(Role, "user_role"))
+    # Club al que pertenece la cuenta (decisión 34). Es de donde sale el club de los
+    # endpoints del Admin y del Socio: nunca de un parámetro del pedido. Toda cuenta de admin
+    # lo tiene; la de un socio lo recibe de `members.club_id` al activarse.
+    club_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("clubes.id"), index=True
+    )
     # Solo pasa por `pending_activation` la cuenta de un admin (HU-07/08).
     admin_state: Mapped[AdminAccountState] = mapped_column(
         pg_enum(AdminAccountState, "admin_account_state"),
