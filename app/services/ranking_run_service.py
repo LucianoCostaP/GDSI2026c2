@@ -13,6 +13,10 @@ cuenta activada).
 Ciclo 3a: cada entrada guarda en `inputs["attendance"]` los insumos de asistencia del socio
 (ventana, partidos por clase, asistidos y distancia). Los componentes siguen en cero hasta el
 motor de scoring.
+
+Ciclo 3b: y en `inputs["institutional"]` los puntos de participación institucional (eventos
+a los que asistió y meses de actividades recurrentes de los últimos 365 días). Los componentes
+siguen en cero hasta que se conecte el motor de scoring.
 """
 
 import uuid
@@ -26,8 +30,17 @@ from ..core.date_utils import a_hora_buenos_aires
 from ..models import Ranking, RankingEntry, RankingState, Socio, User, utcnow
 from ..scoring.attendance_inputs import attendance_window_start, build_attendance_inputs
 from ..scoring.components import empty_components, total_of
+from ..scoring.institutional_inputs import (
+    build_institutional_inputs,
+    institutional_window_start,
+)
 from .formula_service import require_rules_in_force
-from .ranking_inputs import load_attended_event_ids_by_dni, load_loaded_matches
+from .ranking_inputs import (
+    load_activities_by_dni,
+    load_attended_event_ids_by_dni,
+    load_institutional_events_by_dni,
+    load_loaded_matches,
+)
 from .ranking_population import select_population
 
 def _score(socio: Socio) -> dict[str, Decimal]:
@@ -72,6 +85,17 @@ def start_run(
         db, club_id, {match.event_id for match in matches}
     )
 
+    institutional_start = institutional_window_start(ranking.calculation_date)
+    events_by_dni = load_institutional_events_by_dni(
+        db, club_id, window_start=institutional_start, until=started_at
+    )
+    activities_by_dni = load_activities_by_dni(
+        db,
+        club_id,
+        window_start=institutional_start,
+        calculation_date=ranking.calculation_date,
+    )
+
     scored: list[tuple[Socio, dict[str, Decimal], Decimal, dict[str, Any]]] = []
     for socio in socios:
         attendance = build_attendance_inputs(
@@ -81,15 +105,17 @@ def start_run(
             events=matches,
             attended_event_ids=attended_by_dni.get(socio.dni, set()),
         )
-        components = _score(socio)
-        scored.append(
-            (
-                socio,
-                components,
-                total_of(components),
-                {"attendance": attendance.as_dict()},
-            )
+        institutional = build_institutional_inputs(
+            calculation_date=ranking.calculation_date,
+            attended_events=events_by_dni.get(socio.dni, []),
+            activities=activities_by_dni.get(socio.dni, []),
         )
+        components = _score(socio)
+        snapshot = {
+            "attendance": attendance.as_dict(),
+            "institutional": institutional.as_dict(),
+        }
+        scored.append((socio, components, total_of(components), snapshot))
     # Mayor total primero; el desempate completo llega en el Ciclo 4.
     scored.sort(key=lambda item: (-item[2], item[0].dni))
 

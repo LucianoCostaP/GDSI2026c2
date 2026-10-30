@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import (
+    ActividadRecurrenteDB,
     AsistenciaDB,
     CargaParticipacionDB,
     EstadoCargaParticipacion,
@@ -142,3 +143,28 @@ def load_attendance(
             )
     db.commit()
     return carga
+
+def make_activity(
+    db: Session, socio: Socio, *, tipo: str, desde: date, hasta: date
+) -> ActividadRecurrenteDB:
+    """Registro de actividad recurrente del socio (HU-24), con su carga exitosa."""
+    carga = CargaParticipacionDB(
+        club_id=socio.club_id,
+        tipo="actividades",
+        origen="club",
+        carga_id_externo=f"carga-{uuid.uuid4().hex[:8]}",
+        estado=EstadoCargaParticipacion.SUCCESSFUL.value,
+    )
+    db.add(carga)
+    db.flush()
+    activity = ActividadRecurrenteDB(
+        club_id=socio.club_id,
+        dni=socio.dni,
+        tipo=tipo,
+        fecha_desde=desde,
+        fecha_hasta=hasta,
+        carga_id=carga.id,
+    )
+    db.add(activity)
+    db.commit()
+    return activity
