@@ -7,6 +7,8 @@ de cada entrada.
 - Antigüedad T: años cumplidos de pertenencia ininterrumpida. Se cuenta desde la fecha de alta
   y una baja previa reinicia el conteo: nunca se suma tiempo anterior a la baja.
 - Edad E: años cumplidos a la fecha de cálculo.
+- La fecha de nacimiento y la de inicio de la antigüedad también quedan en la instantánea: son
+  las que usa el desempate del ranking (`ranking_order`).
 - `t` del bono de nuevo socio: días desde la fecha de alta (no desde la baja).
 - Carencia: días entre la baja previa y el alta actual (`days_between_previous_baja_and_alta`).
 """
@@ -42,6 +44,7 @@ def days_between_previous_baja_and_alta(
 class MembershipInputs:
     """Datos crudos de pertenencia de un socio a la fecha de cálculo."""
 
+    birth_date: date
     seniority_start: date
     seniority_years: int
     age_years: int
@@ -51,6 +54,7 @@ class MembershipInputs:
     def as_dict(self) -> dict[str, Any]:
         """Forma serializable (JSON) para la instantánea de la entrada."""
         return {
+            "birth_date": self.birth_date.isoformat(),
             "seniority_start": self.seniority_start.isoformat(),
             "seniority_years": self.seniority_years,
             "age_years": self.age_years,
@@ -75,6 +79,7 @@ def build_membership_inputs(
     """
     seniority_start = alta if previous_baja is None else max(alta, previous_baja)
     return MembershipInputs(
+        birth_date=birth_date,
         seniority_start=seniority_start,
         seniority_years=completed_years(seniority_start, calculation_date),
         age_years=completed_years(birth_date, calculation_date),
