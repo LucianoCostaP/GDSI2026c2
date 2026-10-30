@@ -1,3 +1,5 @@
+from datetime import date
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -44,6 +46,9 @@ class Settings(BaseSettings):
     default_institucional_puntos: int = 20
     min_publication_lead_hours: int = 48
     publication_window_hours: int = 24
+
+    # Inicio de temporada (HU-28). Si es None, no se aplica corte de temporada.
+    season_start_date: date | None = None
 
     # Compatibilidad con alias en mayúsculas
     @property
