@@ -130,6 +130,7 @@ def test_as_dict_is_json_serializable_with_the_documented_shape() -> None:
     inputs = build()
 
     assert json.loads(json.dumps(inputs.as_dict())) == {
+        "birth_date": "1980-01-01",
         "seniority_start": "2015-03-01",
         "seniority_years": 11,
         "age_years": 46,

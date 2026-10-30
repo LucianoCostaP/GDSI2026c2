@@ -114,6 +114,8 @@ All parameters in this table are editable by an Admin (HU-28), subject to the li
 3. **Score components stored per Socio** (see HU-16): `attendance_frequency`, `attendance_distance`, `institutional`, `seniority_age`, `new_member_bonus`, `cap_adjustment`. Components are the weighted contributions (for example `wA·(1−αA)·P_frecuencia`).
 4. **Inputs snapshot**: each ranking stores, per Socio, the raw inputs (class-weighted sums, distance terms, distance `di`, participation points, T, E, t) so that HU-18, HU-29 and HU-30 can recompute or segment under other parameters without re-reading source data.
 5. **Tiebreak**: equal totals are ordered by greater seniority, then greater age, then lower document number (HU-25).
+- Totals are compared at two decimals, as stored and shown.
+- Seniority compares the exact start date of the uninterrupted membership (the earlier date wins) and age compares the exact date of birth (the earlier date wins); completed years are not used. The document number is compared as a number, not as text.
 6. **Versioning**: every change of parameters creates a new rules version (HU-28). Every ranking records the rules version it used.
 7. **Eligibility**: only Socios with fees up to date at the calculation time appear in the ranking. Attendance and participation history is kept for every Socio whatever their fee status, so a Socio who pays up returns to the ranking with their accumulated record (inside the windows). Nothing is deleted when fees lapse.
 8. **Decimal arithmetic**: parameter values, limits, the sum rule and the rounding of components use decimals (`Decimal`), never binary floating point. Only the curve functions (`exp`) may use floating point, and their result is rounded as in rule 1.

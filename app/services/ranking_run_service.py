@@ -14,6 +14,9 @@ Ciclos 3a a 3c: por cada socio se arman los insumos de asistencia, de participac
 institucional y de pertenencia (antigüedad, edad y alta); se calculan los seis componentes con
 el motor de scoring y los parámetros de la versión en vigor; y la entrada guarda componentes,
 total, posición y la instantánea de esos insumos en `inputs`.
+
+Ciclo 4: el orden y las posiciones salen de `scoring.ranking_order` (total y desempates por
+antigüedad, edad y documento), así que las posiciones son únicas y consecutivas.
 """
 
 import uuid
@@ -24,7 +27,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from ..core.date_utils import a_hora_buenos_aires
-from ..models import Ranking, RankingEntry, RankingState, Socio, User, utcnow
+from ..models import Ranking, RankingEntry, RankingState, User, utcnow
 from ..scoring.attendance_inputs import attendance_window_start, build_attendance_inputs
 from ..scoring.engine import ScoringParameters, calculate_score
 from ..scoring.institutional_inputs import (
@@ -32,6 +35,7 @@ from ..scoring.institutional_inputs import (
     institutional_window_start,
 )
 from ..scoring.membership_inputs import build_membership_inputs
+from ..scoring.ranking_order import RankingCandidate, assign_positions
 from ..scoring.snapshot import build_scoring_inputs
 from .formula_service import require_rules_in_force
 from .ranking_inputs import (
@@ -91,7 +95,8 @@ def start_run(
         calculation_date=ranking.calculation_date,
     )
 
-    scored: list[tuple[Socio, dict[str, Decimal], Decimal, dict[str, Any]]] = []
+    scored: dict[uuid.UUID, tuple[dict[str, Decimal], dict[str, Any]]] = {}
+    candidates: list[RankingCandidate] = []
     for socio in socios:
         attendance = build_attendance_inputs(
             alta=socio.fecha_alta,
@@ -119,23 +124,31 @@ def start_run(
             "institutional": institutional.as_dict(),
             "membership": membership.as_dict(),
         }
-        scored.append((socio, score.components, score.total, snapshot))
-    # Mayor total primero; el desempate completo llega en el Ciclo 4.
-    scored.sort(key=lambda item: (-item[2], item[0].dni))
+        scored[socio.id] = (score.components, snapshot)
+        candidates.append(
+            RankingCandidate(
+                socio_id=socio.id,
+                total=score.total,
+                seniority_start=membership.seniority_start,
+                birth_date=membership.birth_date,
+                dni=socio.dni,
+            )
+        )
 
-    for position, (socio, components, total, inputs) in enumerate(scored, start=1):
+    for position, candidate in assign_positions(candidates):
+        components, inputs = scored[candidate.socio_id]
         db.add(
             RankingEntry(
                 ranking_id=ranking.id,
-                socio_id=socio.id,
+                socio_id=candidate.socio_id,
                 position=position,
-                total=total,
+                total=candidate.total,
                 inputs=inputs,
                 **components,
             )
         )
 
-    ranking.population_size = len(scored)
+    ranking.population_size = len(candidates)
     ranking.mark_completed(utcnow())
     db.commit()
     return ranking

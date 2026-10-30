@@ -240,6 +240,7 @@ def test_the_membership_snapshot_has_the_documented_shape(
     ranking = run_at(db, admin)
 
     assert entry_of(db, ranking, socio).inputs["membership"] == {
+        "birth_date": "1980-01-01",
         "seniority_start": "2015-03-01",
         "seniority_years": 11,
         "age_years": 46,
