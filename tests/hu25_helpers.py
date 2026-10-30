@@ -34,11 +34,14 @@ def headers_for(client: TestClient, outbox: Outbox, user: User) -> dict[str, str
     return headers
 
 
-def publish_rules(client: TestClient, headers: dict[str, str]) -> None:
+def publish_rules(
+    client: TestClient, headers: dict[str, str], **overrides: str
+) -> None:
+    """Publica las reglas por defecto; `overrides` cambia parámetros (clave=valor en texto)."""
     response = client.post(
         PUBLISH,
         json={
-            "values": DEFAULTS,
+            "values": {**DEFAULTS, **overrides},
             "expected_rules_version": None,
             "confirmed": True,
         },

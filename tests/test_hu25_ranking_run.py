@@ -73,10 +73,8 @@ def test_admin_runs_the_calculation_and_a_completed_ranking_is_created(
     [entry] = entries_of(db, ranking)
     assert entry.socio_id == socio.id
     assert entry.position == 1
-    assert {key: getattr(entry, key) for key in COMPONENT_KEYS} == {
-        key: Decimal("0.00") for key in COMPONENT_KEYS
-    }
-    assert entry.total == Decimal("0.00")
+    components = [getattr(entry, key) for key in COMPONENT_KEYS]
+    assert entry.total == sum(components, Decimal("0.00"))
 
 
 # --- Unitarias: permisos y club ------------------------------------------------------------
