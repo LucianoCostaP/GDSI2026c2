@@ -40,6 +40,7 @@ As an Admin of the club, I want to adjust the weights of the variables in the ba
 - **First version**: rules version 1 is not seeded: the Admin creates it when publishing the base formula (HU-27). HU-28 creates the following versions of the formula in force.
 - **Per club**: rules versions and lock belong to the club of the Admin; the club is taken from the account.
 - **No effect on the ranking** until HU-25 runs.
+- **No changes**: saving values identical to the rules in force is rejected and does not create a rules version.
 
 ## Requirements *(mandatory)*
 
