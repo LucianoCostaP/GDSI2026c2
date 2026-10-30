@@ -4,22 +4,24 @@ Va aparte de `ranking_service` porque `formula_service` importa ese módulo: si 
 importara a `formula_service` (para las reglas en vigor) se armaría un ciclo.
 
 Ciclo 1 (esqueleto): corre de punta a punta con las reglas vigentes y guarda una entrada
-por socio, pero todavía sin motor de scoring (los componentes salen en cero), sin
-filtrar la población (Ciclo 2), con un desempate provisorio por DNI (Ciclo 4) y de forma
-síncrona (Ciclo 5).
+por socio, pero todavía sin motor de scoring (los componentes salen en cero), con un
+desempate provisorio por DNI (Ciclo 4) y de forma síncrona (Ciclo 5).
+
+Ciclo 2: la población sale de `ranking_population` (cuota al día y sin baja, con o sin
+cuenta activada).
 """
 
 import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..core.date_utils import a_hora_buenos_aires
 from ..models import Ranking, RankingEntry, RankingState, Socio, User, utcnow
 from ..scoring.components import empty_components, total_of
 from .formula_service import require_rules_in_force
+from .ranking_population import select_population
 
 
 def _score(socio: Socio) -> dict[str, Decimal]:
@@ -53,7 +55,7 @@ def start_run(
     db.add(ranking)
     db.flush()
 
-    socios = db.scalars(select(Socio).where(Socio.club_id == club_id)).all()
+    socios = select_population(db, club_id)
     scored: list[tuple[Socio, dict[str, Decimal], Decimal]] = []
     for socio in socios:
         components = _score(socio)
