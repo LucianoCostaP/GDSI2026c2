@@ -1,14 +1,24 @@
 """Ayudas compartidas por los tests de HU-25 (un archivo por ciclo, mismos datos de prueba)."""
 
 import uuid
-from datetime import date
+from collections.abc import Iterable
+from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Ranking, RankingEntry, Socio, User
+from app.models import (
+    AsistenciaDB,
+    CargaParticipacionDB,
+    EstadoCargaParticipacion,
+    EventoVisibleDB,
+    Ranking,
+    RankingEntry,
+    Socio,
+    User,
+)
 from app.scoring.catalog import SCORING_MODEL_V1
 from tests.conftest import BOCA_ID, Outbox, admin_token, bearer
 
@@ -69,3 +79,66 @@ def entries_of(db: Session, ranking: Ranking) -> list[RankingEntry]:
             .order_by(RankingEntry.position)
         )
     )
+
+def make_event(
+    db: Session,
+    *,
+    id_externo: str,
+    when: datetime,
+    tipo: str = "Partido",
+    clase: str | None = "B",
+    puntos: int | None = None,
+    club_id: uuid.UUID = BOCA_ID,
+) -> EventoVisibleDB:
+    """Evento ya publicado (visible) del club. `when` tiene que traer zona horaria."""
+    event = EventoVisibleDB(
+        id_interno=f"INT-{club_id}-{id_externo}",
+        club_id=club_id,
+        id_externo=id_externo,
+        titulo=f"Evento {id_externo}",
+        fecha_hora=when,
+        lugar="La Bombonera",
+        tipo=tipo,
+        clase=clase,
+        puntos=puntos,
+    )
+    db.add(event)
+    db.commit()
+    return event
+
+
+def load_attendance(
+    db: Session,
+    event: EventoVisibleDB,
+    attendees: Iterable[Socio],
+    *,
+    estado: EstadoCargaParticipacion = EstadoCargaParticipacion.SUCCESSFUL,
+) -> CargaParticipacionDB:
+    """Carga de asistencia del evento (HU-24) con los socios que fueron.
+
+    Solo una carga `SUCCESSFUL` deja asistencias definitivas; en cualquier otro estado la
+    carga existe pero no hay filas en `asistencias`, igual que en el sistema real.
+    """
+    carga = CargaParticipacionDB(
+        club_id=event.club_id,
+        tipo="asistencia",
+        origen="club",
+        carga_id_externo=f"carga-{uuid.uuid4().hex[:8]}",
+        evento_id_externo=event.id_externo,
+        estado=estado.value,
+    )
+    db.add(carga)
+    db.flush()
+    if estado == EstadoCargaParticipacion.SUCCESSFUL:
+        for socio in attendees:
+            db.add(
+                AsistenciaDB(
+                    club_id=event.club_id,
+                    evento_id_externo=event.id_externo,
+                    dni=socio.dni,
+                    numero_socio=socio.numero_socio,
+                    carga_id=carga.id,
+                )
+            )
+    db.commit()
+    return carga

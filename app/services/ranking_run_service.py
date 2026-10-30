@@ -9,20 +9,26 @@ desempate provisorio por DNI (Ciclo 4) y de forma síncrona (Ciclo 5).
 
 Ciclo 2: la población sale de `ranking_population` (cuota al día y sin baja, con o sin
 cuenta activada).
+
+Ciclo 3a: cada entrada guarda en `inputs["attendance"]` los insumos de asistencia del socio
+(ventana, partidos por clase, asistidos y distancia). Los componentes siguen en cero hasta el
+motor de scoring.
 """
 
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy.orm import Session
 
 from ..core.date_utils import a_hora_buenos_aires
 from ..models import Ranking, RankingEntry, RankingState, Socio, User, utcnow
+from ..scoring.attendance_inputs import attendance_window_start, build_attendance_inputs
 from ..scoring.components import empty_components, total_of
 from .formula_service import require_rules_in_force
+from .ranking_inputs import load_attended_event_ids_by_dni, load_loaded_matches
 from .ranking_population import select_population
-
 
 def _score(socio: Socio) -> dict[str, Decimal]:
     """Componentes del socio. Reemplazar por el motor de scoring (Ciclos 0 y 3)."""
@@ -56,21 +62,45 @@ def start_run(
     db.flush()
 
     socios = select_population(db, club_id)
-    scored: list[tuple[Socio, dict[str, Decimal], Decimal]] = []
+    matches = load_loaded_matches(
+        db,
+        club_id,
+        window_start=attendance_window_start(ranking.calculation_date),
+        until=started_at,
+    )
+    attended_by_dni = load_attended_event_ids_by_dni(
+        db, club_id, {match.event_id for match in matches}
+    )
+
+    scored: list[tuple[Socio, dict[str, Decimal], Decimal, dict[str, Any]]] = []
     for socio in socios:
+        attendance = build_attendance_inputs(
+            alta=socio.fecha_alta,
+            distance_km=socio.distancia_km,
+            calculation_date=ranking.calculation_date,
+            events=matches,
+            attended_event_ids=attended_by_dni.get(socio.dni, set()),
+        )
         components = _score(socio)
-        scored.append((socio, components, total_of(components)))
+        scored.append(
+            (
+                socio,
+                components,
+                total_of(components),
+                {"attendance": attendance.as_dict()},
+            )
+        )
     # Mayor total primero; el desempate completo llega en el Ciclo 4.
     scored.sort(key=lambda item: (-item[2], item[0].dni))
 
-    for position, (socio, components, total) in enumerate(scored, start=1):
+    for position, (socio, components, total, inputs) in enumerate(scored, start=1):
         db.add(
             RankingEntry(
                 ranking_id=ranking.id,
                 socio_id=socio.id,
                 position=position,
                 total=total,
-                inputs={},
+                inputs=inputs,
                 **components,
             )
         )
