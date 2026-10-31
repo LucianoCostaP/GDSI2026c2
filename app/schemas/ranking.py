@@ -17,3 +17,5 @@ class RankingRunOut(BaseModel):
     # Desde cuándo rige el ranking; `null` mientras la corrida está en curso.
     completed_at: datetime | None
     population_size: int
+    # Mensaje para el Admin cuando la corrida falló; `null` en cualquier otro estado.
+    error: str | None = None

@@ -15,6 +15,7 @@ from sqlalchemy import (
     Numeric,
     UniqueConstraint,
     text,
+    Text
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -22,6 +23,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from ..db import Base
 from .auth import pg_enum, utcnow
 
+# Largo máximo del detalle técnico que se guarda de una falla.
+MAX_ERROR_LENGTH = 1000
 
 class RankingState(enum.StrEnum):
     RUNNING = "running"
@@ -62,6 +65,9 @@ class Ranking(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     population_size: Mapped[int] = mapped_column(Integer, default=0)
     requested_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    
+    # Detalle técnico de por qué falló la corrida (para soporte; no se muestra tal cual).
+    error_message: Mapped[str | None] = mapped_column(Text)
 
     def mark_completed(self, at: datetime) -> None:
         if self.status != RankingState.RUNNING:
@@ -69,10 +75,11 @@ class Ranking(Base):
         self.status = RankingState.COMPLETED
         self.completed_at = at
 
-    def mark_failed(self) -> None:
+    def mark_failed(self, error_message: str) -> None:
         if self.status != RankingState.RUNNING:
             raise ValueError("Solo una corrida en curso puede fallar.")
         self.status = RankingState.FAILED
+        self.error_message = error_message[:MAX_ERROR_LENGTH]
 
 
 class RankingEntry(Base):

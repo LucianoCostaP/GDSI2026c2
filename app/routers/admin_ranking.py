@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import CurrentAdmin, CurrentAdminClub
 from ..db import get_db
-from ..models import Ranking, RulesVersion
+from ..models import Ranking, RankingState, RulesVersion, utcnow
 from ..schemas.ranking import RankingRunOut
 from ..services import ranking_run_service
 from ..services.formula_service import error
@@ -30,6 +30,11 @@ def _run_out(db: Session, ranking: Ranking) -> RankingRunOut:
         calculated_at=ranking.calculated_at,
         completed_at=ranking.completed_at,
         population_size=ranking.population_size,
+        error=(
+            ranking_run_service.RUN_FAILED_MESSAGE
+            if ranking.status == RankingState.FAILED
+            else None
+        )
     )
 
 
@@ -45,6 +50,8 @@ def start_ranking_run(
 def latest_ranking_run(club_id: CurrentAdminClub, db: Db) -> RankingRunOut:
     """Estado de la corrida más reciente: `running` mientras se calcula, luego `completed`
     (con `completed_at`: desde cuándo rige) o `failed`."""
+    # Una corrida en curso de más de 15 minutos se da por abandonada antes de informarla.
+    ranking_run_service.fail_abandoned_runs(db, club_id, utcnow())
     ranking = ranking_run_service.get_latest_run(db, club_id)
     if ranking is None:
         raise error(

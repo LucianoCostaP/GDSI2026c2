@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -43,7 +44,6 @@ def insert_run(
         admin,
         state,
         club_id=club_id,
-        calculated_at=NOW,
         completed_at=NOW if state == RankingState.COMPLETED else None,
     )
 
@@ -228,8 +228,9 @@ def test_a_failure_leaves_the_run_failed_and_releases_the_club(
         raise RuntimeError("falló la fuente de datos")
 
     monkeypatch.setattr(ranking_run_service, "load_loaded_matches", broken)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(HTTPException) as excinfo:
         ranking_run_service.start_run(db, admin, BOCA_ID, now=NOW)
+    assert excinfo.value.status_code == 500
     monkeypatch.undo()
 
     failed = ranking_run_service.get_latest_run(db, BOCA_ID)
@@ -243,13 +244,13 @@ def test_a_failure_leaves_the_run_failed_and_releases_the_club(
 
 def test_only_a_running_ranking_can_fail() -> None:
     running = Ranking(status=RankingState.RUNNING)
-    running.mark_failed()
+    running.mark_failed("falló")
 
     assert running.status == RankingState.FAILED
     assert running.completed_at is None
     for state in (RankingState.COMPLETED, RankingState.FAILED):
         with pytest.raises(ValueError):
-            Ranking(status=state).mark_failed()
+            Ranking(status=state).mark_failed("falló")
 
 
 # --- Unitarias: endpoint de estado ---------------------------------------------------------

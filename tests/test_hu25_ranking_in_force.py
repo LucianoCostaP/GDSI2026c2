@@ -22,6 +22,7 @@ from tests.conftest import (
 )
 from tests.hu25_helpers import (
     RUNS,
+    adjust_rules,
     entries_of,
     headers_for,
     make_ranking,
@@ -55,8 +56,8 @@ def socio(
 
 
 def republish(client: TestClient, boca: dict[str, str], version: int) -> None:
-    """Publica una versión nueva de las reglas (cambia un parámetro)."""
-    publish_rules(client, boca, version, b_max="10.0")
+    """Ajusta los parámetros de las reglas actualmente vigentes."""
+    adjust_rules(client, boca, version, b_max="10.0")
 
 
 # --- Aceptación: "Un ranking nuevo reemplaza al anterior" ----------------------------------
