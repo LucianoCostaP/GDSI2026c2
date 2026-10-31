@@ -208,6 +208,8 @@ def test_a_socio_account_without_club_is_rejected(
 
 # Escenarios 5 y 7 ----------------------------------------------------------------------
 # HU-25 todavía no existe: se simula la consulta del último ranking completado.
+# Estos tests fijan la versión del último ranking con un reemplazo (monkeypatch). La
+# integración sin mocks, con rankings reales de HU-25, está en tests/test_hu25_ranking_in_force.py.
 
 
 def test_notice_when_the_rules_in_force_differ_from_the_latest_ranking(
