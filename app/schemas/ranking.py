@@ -19,3 +19,16 @@ class RankingRunOut(BaseModel):
     population_size: int
     # Mensaje para el Admin cuando la corrida falló; `null` en cualquier otro estado.
     error: str | None = None
+
+class PreflightWarningOut(BaseModel):
+    # `ROSTER_STALE`, `ATTENDANCE_STALE` o `LOADS_AFTER_LAST_RANKING`.
+    code: str
+    message: str
+    # Fecha del dato que motiva la advertencia; `null` si el club nunca cargó ese dato.
+    data_as_of: datetime | None
+
+
+class RankingPreflightOut(BaseModel):
+    warnings: list[PreflightWarningOut]
+    # Las advertencias no bloquean: el Admin siempre puede continuar con el cálculo.
+    can_continue: bool = True

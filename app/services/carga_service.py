@@ -818,10 +818,13 @@ class CargaService:
         )
 
     @staticmethod
-    def obtener_frescura_padron(club: Club, db: Session) -> FreshnessResponse:
+    def obtener_frescura_padron(
+        club: Club, db: Session, now: datetime | None = None
+    ) -> FreshnessResponse:
         """
         Verifica la frescura del padrón de socios según HU-43 / FR-008.
         Si la última carga exitosa tiene más de 24 horas (configurable), emite advertencia.
+        `now` es el reloj inyectable: por defecto, la hora actual.
         """
         ultima_carga = (
             db.query(SocioCarga)
@@ -842,7 +845,7 @@ class CargaService:
                 advertencia=f"El club no cuenta con ninguna carga de padrón exitosa. Límite de frescura: {limite}h.",
             )
 
-        now = datetime.now(UTC)
+        now = now if now is not None else datetime.now(UTC)
         antiguedad = (now - ultima_carga.completado_en).total_seconds() / 3600.0
         esta_desactualizado = antiguedad > limite
 

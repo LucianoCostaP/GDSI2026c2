@@ -21,6 +21,7 @@ from app.models import (
     RulesVersion,
     RulesVersionState,
     Socio,
+    SocioCarga,
     User,
     utcnow
 )
@@ -94,6 +95,12 @@ def entries_of(db: Session, ranking: Ranking) -> list[RankingEntry]:
         )
     )
 
+def _load_times(loaded_at: datetime | None) -> dict[str, datetime]:
+    """Fecha de una carga: la indicada o, si no, la que pone la base al insertarla."""
+    if loaded_at is None:
+        return {}
+    return {"creado_en": loaded_at, "actualizado_en": loaded_at}
+
 def make_event(
     db: Session,
     *,
@@ -127,6 +134,7 @@ def load_attendance(
     attendees: Iterable[Socio],
     *,
     estado: EstadoCargaParticipacion = EstadoCargaParticipacion.SUCCESSFUL,
+    loaded_at: datetime | None = None,
 ) -> CargaParticipacionDB:
     """Carga de asistencia del evento (HU-24) con los socios que fueron.
 
@@ -140,6 +148,7 @@ def load_attendance(
         carga_id_externo=f"carga-{uuid.uuid4().hex[:8]}",
         evento_id_externo=event.id_externo,
         estado=estado.value,
+        **_load_times(loaded_at),
     )
     db.add(carga)
     db.flush()
@@ -158,7 +167,13 @@ def load_attendance(
     return carga
 
 def make_activity(
-    db: Session, socio: Socio, *, tipo: str, desde: date, hasta: date
+    db: Session,
+    socio: Socio,
+    *,
+    tipo: str,
+    desde: date,
+    hasta: date,
+    loaded_at: datetime | None = None,
 ) -> ActividadRecurrenteDB:
     """Registro de actividad recurrente del socio (HU-24), con su carga exitosa."""
     carga = CargaParticipacionDB(
@@ -167,6 +182,7 @@ def make_activity(
         origen="club",
         carga_id_externo=f"carga-{uuid.uuid4().hex[:8]}",
         estado=EstadoCargaParticipacion.SUCCESSFUL.value,
+        **_load_times(loaded_at),
     )
     db.add(carga)
     db.flush()
@@ -230,3 +246,22 @@ def adjust_rules(
         headers=headers,
     )
     assert response.status_code == 200, response.text
+
+def make_roster_load(
+    db: Session,
+    *,
+    completed_at: datetime | None,
+    club_id: uuid.UUID = BOCA_ID,
+    estado: str = "exitosa",
+) -> SocioCarga:
+    """Carga del padrón de socios (HU-43), con la fecha en que terminó."""
+    load = SocioCarga(
+        club_id=club_id,
+        carga_id=f"padron-{uuid.uuid4().hex[:8]}",
+        tipo="completa",
+        estado=estado,
+        completado_en=completed_at,
+    )
+    db.add(load)
+    db.commit()
+    return load
