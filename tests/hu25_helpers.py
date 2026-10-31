@@ -23,7 +23,7 @@ from app.models import (
     Socio,
     SocioCarga,
     User,
-    utcnow
+    utcnow,
 )
 from app.scoring.catalog import SCORING_MODEL_V1
 from tests.conftest import BOCA_ID, Outbox, admin_token, bearer
@@ -95,11 +95,13 @@ def entries_of(db: Session, ranking: Ranking) -> list[RankingEntry]:
         )
     )
 
+
 def _load_times(loaded_at: datetime | None) -> dict[str, datetime]:
     """Fecha de una carga: la indicada o, si no, la que pone la base al insertarla."""
     if loaded_at is None:
         return {}
     return {"creado_en": loaded_at, "actualizado_en": loaded_at}
+
 
 def make_event(
     db: Session,
@@ -166,6 +168,7 @@ def load_attendance(
     db.commit()
     return carga
 
+
 def make_activity(
     db: Session,
     socio: Socio,
@@ -197,6 +200,7 @@ def make_activity(
     db.add(activity)
     db.commit()
     return activity
+
 
 def make_ranking(
     db: Session,
@@ -230,6 +234,7 @@ def make_ranking(
     db.commit()
     return ranking
 
+
 def adjust_rules(
     client: TestClient,
     headers: dict[str, str],
@@ -246,6 +251,7 @@ def adjust_rules(
         headers=headers,
     )
     assert response.status_code == 200, response.text
+
 
 def make_roster_load(
     db: Session,

@@ -38,8 +38,9 @@ def _run_out(db: Session, ranking: Ranking) -> RankingRunOut:
             ranking_run_service.RUN_FAILED_MESSAGE
             if ranking.status == RankingState.FAILED
             else None
-        )
+        ),
     )
+
 
 @router.get("/preflight")
 def ranking_preflight(club_id: CurrentAdminClub, db: Db) -> RankingPreflightOut:
@@ -53,6 +54,7 @@ def ranking_preflight(club_id: CurrentAdminClub, db: Db) -> RankingPreflightOut:
             for w in warnings
         ]
     )
+
 
 @router.post("/runs", status_code=status.HTTP_201_CREATED)
 def start_ranking_run(

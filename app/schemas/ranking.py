@@ -20,6 +20,7 @@ class RankingRunOut(BaseModel):
     # Mensaje para el Admin cuando la corrida falló; `null` en cualquier otro estado.
     error: str | None = None
 
+
 class PreflightWarningOut(BaseModel):
     # `ROSTER_STALE`, `ATTENDANCE_STALE` o `LOADS_AFTER_LAST_RANKING`.
     code: str
