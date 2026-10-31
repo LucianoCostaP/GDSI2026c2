@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     front_origin: str = "http://localhost:5173"
     app_env: str = "local"
     freshness_hours_limit: int = 24
+    # Antigüedad máxima de la última carga de asistencia antes de advertir (HU-25, FR-011).
+    attendance_freshness_days: int = 7
     app_name: str = "Pasión de 10 - API Unificada"
     app_version: str = "1.0.0"
     api_v1_prefix: str = "/api/v1"
