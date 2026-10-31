@@ -10,9 +10,11 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -31,6 +33,17 @@ class Ranking(Base):
     """Una corrida del cálculo. Registra la versión de reglas que usó (FR-005)."""
 
     __tablename__ = "rankings"
+
+    __table_args__ = (
+        # Una sola corrida en curso por club, también ante pedidos concurrentes (FR-001).
+        Index(
+            "uq_rankings_running",
+            "club_id",
+            unique=True,
+            postgresql_where=text("status = 'running'"),
+            sqlite_where=text("status = 'running'"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     club_id: Mapped[uuid.UUID] = mapped_column(
@@ -55,6 +68,11 @@ class Ranking(Base):
             raise ValueError("Solo una corrida en curso puede completarse.")
         self.status = RankingState.COMPLETED
         self.completed_at = at
+
+    def mark_failed(self) -> None:
+        if self.status != RankingState.RUNNING:
+            raise ValueError("Solo una corrida en curso puede fallar.")
+        self.status = RankingState.FAILED
 
 
 class RankingEntry(Base):
