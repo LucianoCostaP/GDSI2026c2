@@ -10,9 +10,13 @@ from sqlalchemy.orm import Session
 
 from ..auth import CurrentAdmin, CurrentAdminClub
 from ..db import get_db
-from ..models import Ranking, RankingState, RulesVersion, utcnow
-from ..schemas.ranking import RankingRunOut
-from ..services import ranking_run_service
+from ..models import Club, Ranking, RankingState, RulesVersion, utcnow
+from ..schemas.ranking import (
+    PreflightWarningOut,
+    RankingPreflightOut,
+    RankingRunOut,
+)
+from ..services import ranking_preflight_service, ranking_run_service
 from ..services.formula_service import error
 
 router = APIRouter(prefix="/admin/ranking", tags=["admin ranking"])
@@ -37,6 +41,18 @@ def _run_out(db: Session, ranking: Ranking) -> RankingRunOut:
         )
     )
 
+@router.get("/preflight")
+def ranking_preflight(club_id: CurrentAdminClub, db: Db) -> RankingPreflightOut:
+    """Advertencias antes de calcular (padrón o asistencias viejos, cargas posteriores al
+    último ranking). No bloquean: el `POST /runs` no las exige."""
+    club = db.get_one(Club, club_id)
+    warnings = ranking_preflight_service.build_preflight(db, club, utcnow())
+    return RankingPreflightOut(
+        warnings=[
+            PreflightWarningOut(code=w.code, message=w.message, data_as_of=w.data_as_of)
+            for w in warnings
+        ]
+    )
 
 @router.post("/runs", status_code=status.HTTP_201_CREATED)
 def start_ranking_run(
