@@ -22,10 +22,16 @@ Ciclo 5 (síncrono): una sola corrida a la vez por club. La corrida se registra 
 como `running` antes de calcular, así los demás pedidos la ven (409 al intentar otra y estado
 consultable) y el índice único parcial la respalda ante pedidos concurrentes. Una falla durante
 el cálculo la deja `failed` y nunca `running`, para no bloquear al club.
+
+Ciclo 7: una falla durante el cálculo deja la corrida `failed` con su detalle, no guarda
+ninguna entrada (todo se deshace) y no toca el ranking vigente; al Admin se le informa con un
+mensaje seguro. Una corrida `running` de más de 15 minutos se da por abandonada (el proceso
+pudo morir) y pasa a `failed`, para no bloquear al club.
 """
 
+import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -54,9 +60,20 @@ from .ranking_inputs import (
 )
 from .ranking_population import select_population
 
-RUN_IN_PROGRESS = "RANKING_RUN_IN_PROGRESS"
-NO_RANKING_RUN = "NO_RANKING_RUN"
+logger = logging.getLogger(__name__)
 
+RUN_IN_PROGRESS = "RANKING_RUN_IN_PROGRESS"
+RUN_FAILED = "RANKING_RUN_FAILED"
+NO_RANKING_RUN = "NO_RANKING_RUN"
+RUN_FAILED_MESSAGE = (
+    "No se pudo completar el cálculo del ranking. El ranking anterior sigue vigente."
+)
+# Una corrida en curso más vieja que esto se da por abandonada (NFR: el cálculo dura menos).
+RUN_TIMEOUT = timedelta(minutes=15)
+ABANDONED_MESSAGE = (
+    "Corrida abandonada: superó los 15 minutos en curso sin terminar "
+    "(el proceso pudo haberse interrumpido)."
+)
 
 def get_running_run(db: Session, club_id: uuid.UUID) -> Ranking | None:
     """La corrida en curso del club, si hay una."""
@@ -76,6 +93,20 @@ def get_latest_run(db: Session, club_id: uuid.UUID) -> Ranking | None:
         .limit(1)
     )
 
+def fail_abandoned_runs(db: Session, club_id: uuid.UUID, now: datetime) -> int:
+    """Pasa a `failed` las corridas del club que llevan más de 15 minutos en curso."""
+    stale = db.scalars(
+        select(Ranking).where(
+            Ranking.club_id == club_id,
+            Ranking.status == RankingState.RUNNING,
+            Ranking.calculated_at < now - RUN_TIMEOUT,
+        )
+    ).all()
+    for ranking in stale:
+        ranking.mark_failed(ABANDONED_MESSAGE)
+    if stale:
+        db.commit()
+    return len(stale)
 
 def _run_in_progress(running: Ranking | None) -> HTTPException:
     details: dict[str, Any] = {}
@@ -100,6 +131,7 @@ def _claim_run(
     started_at: datetime,
 ) -> Ranking:
     """Registra la corrida como `running` y la confirma, o rechaza si ya hay una en curso."""
+    fail_abandoned_runs(db, club_id, started_at)
     running = get_running_run(db, club_id)
     if running is not None:
         raise _run_in_progress(running)
@@ -123,10 +155,12 @@ def _claim_run(
     return ranking
 
 
-def _mark_failed(db: Session, run_id: int) -> None:
+def _mark_failed(db: Session, run_id: int, error_message: str) -> None:
     ranking = db.get_one(Ranking, run_id)
-    ranking.mark_failed()
-    db.commit()
+    # Otro pedido pudo haberla dado por abandonada mientras tanto.
+    if ranking.status == RankingState.RUNNING:
+        ranking.mark_failed(error_message)
+        db.commit()
 
 
 def start_run(
@@ -139,7 +173,9 @@ def start_run(
     """Calcula el ranking del club con las reglas en vigor y lo deja completado.
 
     `now` es el reloj inyectable (constitución, principio 6): por defecto, la hora actual.
-    Rechaza con 409 si el club ya tiene una corrida en curso.
+    Rechaza con 409 si el club ya tiene una corrida en curso. Si el cálculo falla, deshace todo,
+    deja la corrida `failed` con su detalle y responde 500 `RANKING_RUN_FAILED`; el ranking
+    vigente no se toca.
     """
     rules = require_rules_in_force(db, club_id)
     params = ScoringParameters.from_values(rules.values)
@@ -149,11 +185,17 @@ def start_run(
     run_id = ranking.id
     try:
         _calculate_entries(db, ranking, club_id, params, started_at)
-    except Exception:
-        # Una falla nunca deja la corrida en `running`: bloquearía al club (FR-006).
+    except Exception as exc:
+        # Nada de lo calculado queda guardado y la corrida nunca se queda en `running`.
         db.rollback()
-        _mark_failed(db, run_id)
-        raise
+        logger.exception("Falló el cálculo del ranking %s del club %s", run_id, club_id)
+        _mark_failed(db, run_id, f"{type(exc).__name__}: {exc}")
+        raise error(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            RUN_FAILED,
+            RUN_FAILED_MESSAGE,
+            ranking_id=run_id,
+        ) from exc
     return ranking
 
 

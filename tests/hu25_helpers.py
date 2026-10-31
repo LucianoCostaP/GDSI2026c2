@@ -2,7 +2,7 @@
 
 import uuid
 from collections.abc import Iterable
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
@@ -22,6 +22,7 @@ from app.models import (
     RulesVersionState,
     Socio,
     User,
+    utcnow
 )
 from app.scoring.catalog import SCORING_MODEL_V1
 from tests.conftest import BOCA_ID, Outbox, admin_token, bearer
@@ -198,7 +199,7 @@ def make_ranking(
             RulesVersion.state == RulesVersionState.IN_FORCE,
         )
     ).one()
-    moment = calculated_at or datetime(2026, 10, 29, 15, 0, tzinfo=UTC)
+    moment = calculated_at or utcnow()
     ranking = Ranking(
         club_id=club_id,
         rules_version_id=rules_id,
@@ -212,3 +213,20 @@ def make_ranking(
     db.add(ranking)
     db.commit()
     return ranking
+
+def adjust_rules(
+    client: TestClient,
+    headers: dict[str, str],
+    expected_rules_version: int,
+    **overrides: str,
+) -> None:
+    response = client.post(
+        "/admin/formulas/adjust",
+        json={
+            "values": {**DEFAULTS, **overrides},
+            "expected_rules_version": expected_rules_version,
+            "confirmed": True,
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
