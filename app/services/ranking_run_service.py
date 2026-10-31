@@ -75,6 +75,7 @@ ABANDONED_MESSAGE = (
     "(el proceso pudo haberse interrumpido)."
 )
 
+
 def get_running_run(db: Session, club_id: uuid.UUID) -> Ranking | None:
     """La corrida en curso del club, si hay una."""
     return db.scalar(
@@ -93,6 +94,7 @@ def get_latest_run(db: Session, club_id: uuid.UUID) -> Ranking | None:
         .limit(1)
     )
 
+
 def fail_abandoned_runs(db: Session, club_id: uuid.UUID, now: datetime) -> int:
     """Pasa a `failed` las corridas del club que llevan más de 15 minutos en curso."""
     stale = db.scalars(
@@ -107,6 +109,7 @@ def fail_abandoned_runs(db: Session, club_id: uuid.UUID, now: datetime) -> int:
     if stale:
         db.commit()
     return len(stale)
+
 
 def _run_in_progress(running: Ranking | None) -> HTTPException:
     details: dict[str, Any] = {}

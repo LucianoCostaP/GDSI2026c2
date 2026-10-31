@@ -42,6 +42,7 @@ from tests.hu25_helpers import (
 def boca(client: TestClient, outbox: Outbox, admin: User) -> dict[str, str]:
     return headers_for(client, outbox, admin)
 
+
 # --- Aceptación (escenario 1): el Admin dispara el cálculo --------------------------------
 
 
@@ -208,7 +209,9 @@ def test_a_club_without_socios_gets_an_empty_completed_ranking(
 # --- Unitarias: estados de la corrida ------------------------------------------------------
 
 
-def test_completing_a_running_ranking_sets_its_state_and_the_in_force_since_time() -> None:
+def test_completing_a_running_ranking_sets_its_state_and_the_in_force_since_time() -> (
+    None
+):
     ranking = Ranking(status=RankingState.RUNNING)
     moment = datetime(2026, 10, 29, 12, 0, tzinfo=UTC)
 

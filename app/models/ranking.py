@@ -13,9 +13,9 @@ from sqlalchemy import (
     Index,
     Integer,
     Numeric,
+    Text,
     UniqueConstraint,
     text,
-    Text
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -25,6 +25,7 @@ from .auth import pg_enum, utcnow
 
 # Largo máximo del detalle técnico que se guarda de una falla.
 MAX_ERROR_LENGTH = 1000
+
 
 class RankingState(enum.StrEnum):
     RUNNING = "running"
@@ -65,7 +66,7 @@ class Ranking(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     population_size: Mapped[int] = mapped_column(Integer, default=0)
     requested_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    
+
     # Detalle técnico de por qué falló la corrida (para soporte; no se muestra tal cual).
     error_message: Mapped[str | None] = mapped_column(Text)
 

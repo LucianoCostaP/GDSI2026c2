@@ -95,6 +95,7 @@ def load_attended_event_ids_by_dni(
         attended[dni].add(event_id)
     return attended
 
+
 def load_institutional_events_by_dni(
     db: Session, club_id: uuid.UUID, *, window_start: date, until: datetime
 ) -> dict[str, list[InstitutionalEvent]]:
