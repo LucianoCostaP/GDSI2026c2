@@ -17,6 +17,11 @@ total, posición y la instantánea de esos insumos en `inputs`.
 
 Ciclo 4: el orden y las posiciones salen de `scoring.ranking_order` (total y desempates por
 antigüedad, edad y documento), así que las posiciones son únicas y consecutivas.
+
+Ciclo 5 (síncrono): una sola corrida a la vez por club. La corrida se registra y se confirma
+como `running` antes de calcular, así los demás pedidos la ven (409 al intentar otra y estado
+consultable) y el índice único parcial la respalda ante pedidos concurrentes. Una falla durante
+el cálculo la deja `failed` y nunca `running`, para no bloquear al club.
 """
 
 import uuid
@@ -24,6 +29,9 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
+from fastapi import HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..core.date_utils import a_hora_buenos_aires
@@ -37,7 +45,7 @@ from ..scoring.institutional_inputs import (
 from ..scoring.membership_inputs import build_membership_inputs
 from ..scoring.ranking_order import RankingCandidate, assign_positions
 from ..scoring.snapshot import build_scoring_inputs
-from .formula_service import require_rules_in_force
+from .formula_service import error, require_rules_in_force
 from .ranking_inputs import (
     load_activities_by_dni,
     load_attended_event_ids_by_dni,
@@ -45,6 +53,81 @@ from .ranking_inputs import (
     load_loaded_matches,
 )
 from .ranking_population import select_population
+
+RUN_IN_PROGRESS = "RANKING_RUN_IN_PROGRESS"
+NO_RANKING_RUN = "NO_RANKING_RUN"
+
+
+def get_running_run(db: Session, club_id: uuid.UUID) -> Ranking | None:
+    """La corrida en curso del club, si hay una."""
+    return db.scalar(
+        select(Ranking).where(
+            Ranking.club_id == club_id, Ranking.status == RankingState.RUNNING
+        )
+    )
+
+
+def get_latest_run(db: Session, club_id: uuid.UUID) -> Ranking | None:
+    """La corrida más reciente del club, en cualquier estado."""
+    return db.scalar(
+        select(Ranking)
+        .where(Ranking.club_id == club_id)
+        .order_by(Ranking.id.desc())
+        .limit(1)
+    )
+
+
+def _run_in_progress(running: Ranking | None) -> HTTPException:
+    details: dict[str, Any] = {}
+    if running is not None:
+        details = {
+            "ranking_id": running.id,
+            "calculated_at": running.calculated_at.isoformat(),
+        }
+    return error(
+        status.HTTP_409_CONFLICT,
+        RUN_IN_PROGRESS,
+        "Ya hay un cálculo del ranking en curso.",
+        **details,
+    )
+
+
+def _claim_run(
+    db: Session,
+    admin: User,
+    club_id: uuid.UUID,
+    rules_version_id: int,
+    started_at: datetime,
+) -> Ranking:
+    """Registra la corrida como `running` y la confirma, o rechaza si ya hay una en curso."""
+    running = get_running_run(db, club_id)
+    if running is not None:
+        raise _run_in_progress(running)
+    ranking = Ranking(
+        club_id=club_id,
+        rules_version_id=rules_version_id,
+        status=RankingState.RUNNING,
+        calculation_date=a_hora_buenos_aires(started_at).date(),
+        calculated_at=started_at,
+        population_size=0,
+        requested_by_id=admin.id,
+    )
+    db.add(ranking)
+    try:
+        # Se confirma ya: mientras se calcula, la corrida es visible para los demás pedidos
+        # y el índice único parcial frena a quien llegue al mismo tiempo.
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise _run_in_progress(get_running_run(db, club_id)) from None
+    return ranking
+
+
+def _mark_failed(db: Session, run_id: int) -> None:
+    ranking = db.get_one(Ranking, run_id)
+    ranking.mark_failed()
+    db.commit()
+
 
 def start_run(
     db: Session,
@@ -56,23 +139,32 @@ def start_run(
     """Calcula el ranking del club con las reglas en vigor y lo deja completado.
 
     `now` es el reloj inyectable (constitución, principio 6): por defecto, la hora actual.
+    Rechaza con 409 si el club ya tiene una corrida en curso.
     """
     rules = require_rules_in_force(db, club_id)
     params = ScoringParameters.from_values(rules.values)
     started_at = now if now is not None else utcnow()
 
-    ranking = Ranking(
-        club_id=club_id,
-        rules_version_id=rules.id,
-        status=RankingState.RUNNING,
-        calculation_date=a_hora_buenos_aires(started_at).date(),
-        calculated_at=started_at,
-        population_size=0,
-        requested_by_id=admin.id,
-    )
-    db.add(ranking)
-    db.flush()
+    ranking = _claim_run(db, admin, club_id, rules.id, started_at)
+    run_id = ranking.id
+    try:
+        _calculate_entries(db, ranking, club_id, params, started_at)
+    except Exception:
+        # Una falla nunca deja la corrida en `running`: bloquearía al club (FR-006).
+        db.rollback()
+        _mark_failed(db, run_id)
+        raise
+    return ranking
 
+
+def _calculate_entries(
+    db: Session,
+    ranking: Ranking,
+    club_id: uuid.UUID,
+    params: ScoringParameters,
+    started_at: datetime,
+) -> None:
+    """Calcula y guarda las entradas de la corrida y la completa, todo en una transacción."""
     socios = select_population(db, club_id)
     matches = load_loaded_matches(
         db,
@@ -151,4 +243,3 @@ def start_run(
     ranking.population_size = len(candidates)
     ranking.mark_completed(utcnow())
     db.commit()
-    return ranking

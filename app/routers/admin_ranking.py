@@ -10,20 +10,17 @@ from sqlalchemy.orm import Session
 
 from ..auth import CurrentAdmin, CurrentAdminClub
 from ..db import get_db
-from ..models import RulesVersion
+from ..models import Ranking, RulesVersion
 from ..schemas.ranking import RankingRunOut
 from ..services import ranking_run_service
+from ..services.formula_service import error
 
 router = APIRouter(prefix="/admin/ranking", tags=["admin ranking"])
 
 Db = Annotated[Session, Depends(get_db)]
 
 
-@router.post("/runs", status_code=status.HTTP_201_CREATED)
-def start_ranking_run(
-    admin: CurrentAdmin, club_id: CurrentAdminClub, db: Db
-) -> RankingRunOut:
-    ranking = ranking_run_service.start_run(db, admin, club_id)
+def _run_out(db: Session, ranking: Ranking) -> RankingRunOut:
     rules = db.get_one(RulesVersion, ranking.rules_version_id)
     return RankingRunOut(
         id=ranking.id,
@@ -34,3 +31,25 @@ def start_ranking_run(
         completed_at=ranking.completed_at,
         population_size=ranking.population_size,
     )
+
+
+@router.post("/runs", status_code=status.HTTP_201_CREATED)
+def start_ranking_run(
+    admin: CurrentAdmin, club_id: CurrentAdminClub, db: Db
+) -> RankingRunOut:
+    """Calcula el ranking. Responde 409 `RANKING_RUN_IN_PROGRESS` si ya hay uno en curso."""
+    return _run_out(db, ranking_run_service.start_run(db, admin, club_id))
+
+
+@router.get("/runs/latest")
+def latest_ranking_run(club_id: CurrentAdminClub, db: Db) -> RankingRunOut:
+    """Estado de la corrida más reciente: `running` mientras se calcula, luego `completed`
+    (con `completed_at`: desde cuándo rige) o `failed`."""
+    ranking = ranking_run_service.get_latest_run(db, club_id)
+    if ranking is None:
+        raise error(
+            status.HTTP_404_NOT_FOUND,
+            ranking_run_service.NO_RANKING_RUN,
+            "Todavía no se calculó ningún ranking.",
+        )
+    return _run_out(db, ranking)
