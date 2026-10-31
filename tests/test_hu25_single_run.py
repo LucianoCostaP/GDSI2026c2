@@ -12,19 +12,14 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import (
-    Ranking,
-    RankingEntry,
-    RankingState,
-    RulesVersion,
-    RulesVersionState,
-    User,
-)
+from app.models import Ranking, RankingEntry, RankingState, User
+
 from app.services import ranking_run_service
 from tests.conftest import BOCA_ID, RIVER_ID, Outbox
 from tests.hu25_helpers import (
     RUNS,
     headers_for,
+    make_ranking,
     make_socio,
     publish_rules,
     rankings_of,
@@ -43,26 +38,14 @@ def insert_run(
     db: Session, admin: User, state: RankingState, *, club_id=BOCA_ID
 ) -> Ranking:
     """Una corrida ya guardada en ese estado (como la dejaría otro pedido)."""
-    # Las reglas en vigor del club de Boca alcanzan: la clave foránea no mira el club.
-    rules_id = db.scalars(
-        select(RulesVersion.id).where(
-            RulesVersion.club_id == BOCA_ID,
-            RulesVersion.state == RulesVersionState.IN_FORCE,
-        )
-    ).one()
-    ranking = Ranking(
+    return make_ranking(
+        db,
+        admin,
+        state,
         club_id=club_id,
-        rules_version_id=rules_id,
-        status=state,
-        calculation_date=NOW.date(),
         calculated_at=NOW,
         completed_at=NOW if state == RankingState.COMPLETED else None,
-        population_size=0,
-        requested_by_id=admin.id,
     )
-    db.add(ranking)
-    db.commit()
-    return ranking
 
 
 def error_code(response) -> str:

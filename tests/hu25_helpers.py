@@ -2,7 +2,7 @@
 
 import uuid
 from collections.abc import Iterable
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
@@ -17,6 +17,9 @@ from app.models import (
     EventoVisibleDB,
     Ranking,
     RankingEntry,
+    RankingState,
+    RulesVersion,
+    RulesVersionState,
     Socio,
     User,
 )
@@ -35,14 +38,20 @@ def headers_for(client: TestClient, outbox: Outbox, user: User) -> dict[str, str
 
 
 def publish_rules(
-    client: TestClient, headers: dict[str, str], **overrides: str
+    client: TestClient,
+    headers: dict[str, str],
+    expected_rules_version: int | None = None,
+    **overrides: str,
 ) -> None:
-    """Publica las reglas por defecto; `overrides` cambia parámetros (clave=valor en texto)."""
+    """Publica las reglas por defecto; `overrides` cambia parámetros (clave=valor en texto).
+
+    `expected_rules_version` es la versión vigente que el Admin vio (`None` en la primera).
+    """
     response = client.post(
         PUBLISH,
         json={
             "values": {**DEFAULTS, **overrides},
-            "expected_rules_version": None,
+            "expected_rules_version": expected_rules_version,
             "confirmed": True,
         },
         headers=headers,
@@ -171,3 +180,35 @@ def make_activity(
     db.add(activity)
     db.commit()
     return activity
+
+def make_ranking(
+    db: Session,
+    admin: User,
+    state: RankingState,
+    *,
+    club_id: uuid.UUID = BOCA_ID,
+    calculated_at: datetime | None = None,
+    completed_at: datetime | None = None,
+) -> Ranking:
+    """Una corrida ya guardada en ese estado, sin entradas (como la dejaría otro pedido)."""
+    # Las reglas en vigor del club de Boca alcanzan: la clave foránea no mira el club.
+    rules_id = db.scalars(
+        select(RulesVersion.id).where(
+            RulesVersion.club_id == BOCA_ID,
+            RulesVersion.state == RulesVersionState.IN_FORCE,
+        )
+    ).one()
+    moment = calculated_at or datetime(2026, 10, 29, 15, 0, tzinfo=UTC)
+    ranking = Ranking(
+        club_id=club_id,
+        rules_version_id=rules_id,
+        status=state,
+        calculation_date=moment.date(),
+        calculated_at=moment,
+        completed_at=completed_at,
+        population_size=0,
+        requested_by_id=admin.id,
+    )
+    db.add(ranking)
+    db.commit()
+    return ranking
