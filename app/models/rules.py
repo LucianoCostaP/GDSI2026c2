@@ -44,6 +44,7 @@ class RulesVersion(Base):
             "club_id",
             unique=True,
             postgresql_where=text("state = 'in_force'"),
+            sqlite_where=text("state = 'in_force'"),
         ),
     )
 

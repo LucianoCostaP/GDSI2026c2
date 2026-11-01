@@ -1,6 +1,7 @@
-"""Respuestas de la API del cálculo del ranking (HU-25)."""
+"""Respuestas de la API del cálculo del ranking (HU-25 y HU-16)."""
 
 from datetime import date, datetime
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -33,3 +34,25 @@ class RankingPreflightOut(BaseModel):
     warnings: list[PreflightWarningOut]
     # Las advertencias no bloquean: el Admin siempre puede continuar con el cálculo.
     can_continue: bool = True
+
+
+class ScoreComponentOut(BaseModel):
+    """Componente individual del desglose de puntaje (HU-16)."""
+
+    key: str
+    name: str
+    points: str
+    supporting_figures: dict[str, Any] = {}
+    explanation: str | None = None
+
+
+class ScoreBreakdownResponse(BaseModel):
+    """Desglose de puntaje para el Socio (HU-16)."""
+
+    has_ranking: bool
+    message: str | None = None
+    rules_version: int | None = None
+    calculation_date: date | None = None
+    total: str | None = None
+    position: int | None = None
+    components: list[ScoreComponentOut] = []
