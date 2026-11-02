@@ -1,4 +1,5 @@
-"""Explicación del ranking (HU-13), puntaje y posición (HU-14) y desglose (HU-16) del Socio.
+"""Explicación del ranking (HU-13), puntaje y posición (HU-14), desglose (HU-16) y simulador
+(HU-18) del Socio.
 
 El club sale siempre de la cuenta del Socio (decisión 34): estos endpoints no leen `club_id` ni
 `X-Club-ID`, aunque lleguen. Una sola ruta, sin alias.
@@ -12,7 +13,8 @@ from sqlalchemy.orm import Session
 from ..auth import CurrentMember, CurrentMemberClub
 from ..db import get_db
 from ..schemas.ranking import ScoreBreakdownResponse
-from ..services import formula_service, ranking_service
+from ..schemas.simulator import SimulationOut
+from ..services import formula_service, ranking_service, simulator_service
 
 router = APIRouter(prefix="/member/scoring", tags=["member scoring"])
 
@@ -44,3 +46,16 @@ def score_breakdown(
     """Desglose de componentes del puntaje del socio (HU-16)."""
     response.headers["Cache-Control"] = "no-store"
     return ranking_service.get_member_score_breakdown(db, member, club_id)
+
+
+@router.get("/simulator/{event_id}", response_model=SimulationOut)
+def simulate_event(
+    event_id: str,
+    member: CurrentMember,
+    club_id: CurrentMemberClub,
+    db: Db,
+    response: Response,
+) -> SimulationOut:
+    """HU-18: simulación de un evento, solo lectura (no guarda nada)."""
+    response.headers["Cache-Control"] = "no-store"
+    return simulator_service.simulate_event(db, member, club_id, event_id)
