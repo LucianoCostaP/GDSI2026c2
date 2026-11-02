@@ -94,7 +94,7 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 - Seed the first Admin account, assigned to the club it manages (the club is chosen at startup, by its code, and is required).
 - Issue the club's integration token (stored hashed) and hand it to the club through a secure channel.
 - Ship the formula catalog (first entry: `scoring-model.md` with its defaults and its explanation template, see its section 7), ready for the Admin of each club to publish a formula and create its rules version 1 (HU-27). Nothing is seeded as a rules version.
-- Seed settings: default event class, default institutional event points, season start date, wave percentile step, minimum wave step, minimum publication lead, roster staleness limit.
+- Seed settings: default event class, default institutional event points, season start date, wave percentile step, minimum wave step, minimum publication lead, roster staleness limit, and the position settings of HU-18 (section 8).
 - Deliver the application shell with the global navigation menu that HU-11 relies on, and the Socio and management home screens.
 
 ## 8. Settings registry
@@ -111,6 +111,10 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 | Row error tolerance in CSV files uploaded by the Admin (records sent by the club have no tolerance: they are rejected one by one) | 5% | HU-24 |
 | Data staleness limit (age of the latest successful roster load) | 24 hours | HU-43, HU-25, HU-36 |
 | Formula lock of a club at creation | unlocked | HU-27, HU-28 |
+| Position projection of the simulator for Partidos, per club (`position_projection_enabled`); turned on by the team only after the validation of HU-18 passes | off | HU-18 |
+| Probable range level of the estimated position (`position_range_level`) | 80 % | HU-18 |
+| Weight of the club rate in each Socio's attendance probability (`position_prior_strength`) | 5 | HU-18 |
+| Minimum ranked Socios to estimate a position (`position_min_population`) | 100 | HU-18 |
 | Code, session and invitation values | section 3 | HU-01, 05, 06, 07, 08, 11 |
 
 ## 9. Tenancy
