@@ -1,7 +1,7 @@
-# Contrato de la API propia: reglas de puntaje (HU-27 y HU-13)
+# Contrato de la API propia: reglas de puntaje y posición del socio (HU-27, HU-13 y HU-14)
 
-**Estado**: alineado con lo implementado | **Fecha**: 2026-10-27
-**Specs**: `specs/hu-27-base-formula-publication/spec.md` y `specs/hu-13-ranking-explanation/spec.md` (cada uno tiene su tabla de códigos y mensajes, que mandan sobre este resumen), `specs/_shared/scoring-model.md` (sección 7).
+**Estado**: alineado con lo implementado | **Fecha**: 2026-11-01
+**Specs**: `specs/hu-27-base-formula-publication/spec.md` y `specs/hu-13-ranking-explanation/spec.md`, `specs/hu-14-current-score-and-position/spec.md` (cada uno tiene su tabla de códigos y mensajes, que mandan sobre este resumen), `specs/_shared/scoring-model.md` (sección 7).
 **Es el contrato entre el backend y el frontend (React).** No es la API de integración del club (`docs/club-api-contract.md`).
 
 > Una versión anterior de este documento proponía rutas `/admin/scoring/...`, `423` para el bloqueo y una explicación en `sections` con tablas y listas. Se implementó otra cosa en HU-27 y este documento se corrigió para describirla. Si hay que cambiar algo de esto, se cambia primero el spec.
@@ -10,7 +10,7 @@
 
 | Tema | Regla |
 |---|---|
-| Rutas | Una sola ruta por endpoint, sin alias `/api/...` ni `/api/v1/...`. El proxy de Vite quita el prefijo `/api`. Admin: `/admin/formulas/...`. Socio: `/member/scoring/explanation`. |
+| Rutas | Una sola ruta por endpoint, sin alias `/api/...` ni `/api/v1/...`. El proxy de Vite quita el prefijo `/api`. Admin: `/admin/formulas/...`. Socio: `/member/scoring/explanation` y `/member/scoring/current`. |
 | Autenticación | `Authorization: Bearer <sessionToken>`. `401` con `detail` = `NOT_AUTHENTICATED` o `SESSION_EXPIRED`; `403` con `detail` = `FORBIDDEN` si el rol no corresponde, `ADMIN_WITHOUT_CLUB` o `MEMBER_WITHOUT_CLUB` si la cuenta no tiene club. |
 | Club | Sale **siempre de la cuenta** autenticada (`CurrentAdminClub` / `CurrentMemberClub`). Los endpoints no reciben `club_id` ni `X-Club-ID`; si llegan, se ignoran (hay tests). |
 | Números | Todo valor decimal viaja como **string** (`"0.60"`, `"1200"`). El backend valida con `Decimal`. |
@@ -28,6 +28,7 @@
 | `POST /admin/formulas/{id}/{version}/publish` | Admin | `{values, expected_rules_version, confirmed}` → `201` | HU-27: 5, 8, 9, 10, 12, 14 |
 | `POST /admin/formulas/lock` y `/unlock` | Admin | `{reason}` (hasta 500 caracteres) → estado del bloqueo | HU-27: 11 |
 | `GET /member/scoring/explanation` | Socio | Explicación de las reglas vigentes del club del socio | HU-13: 1 a 11 |
+| `GET /member/scoring/current` | Socio | Puntaje, posición y datos del ranking vigente del socio | HU-14: 1 a 6 |
 
 Internos, sin ruta (los usan HU-25 y HU-28): `require_rules_in_force(club)` responde `409 FORMULA_NOT_PUBLISHED` y `require_unlocked(club)` responde `409 FORMULA_LOCKED`.
 
@@ -65,7 +66,7 @@ Los cuerpos de los endpoints del Admin y sus códigos (`STALE_RULES`, `SAME_FORM
 ```json
 { "code": "RULES_AHEAD_OF_RANKING", "message": "Estas reglas se van a reflejar en el ranking después del próximo cálculo." }
 ```
-Sin ningún ranking completado no hay aviso (escenario 7). Hasta que exista HU-25, `ranking_service.latest_completed_ranking_rules_number` responde `None`.
+Sin ningún ranking completado no hay aviso (escenario 7). El último ranking completado sale de HU-25 (`ranking_service.get_ranking_in_force`).
 
 La respuesta nunca incluye quién publicó las reglas ni el bloqueo de la fórmula.
 
@@ -85,8 +86,53 @@ Lo arma el backend (`render_explanation`) y es **el mismo objeto** en la vista p
 - `blocks[0]` (`formula`) sale de la plantilla de la fórmula y sus valores; `blocks[1]` (`common`) es igual para todas las fórmulas.
 - Los textos son planos; el front los muestra con `h2` (título), `h3` (secciones) y `p`.
 
-## 5. Qué hay en el frontend
+## 5. Endpoint del Socio: puntaje y posición (HU-14)
+
+`GET /member/scoring/current`. Solo lectura: no hay otros métodos (`405`). Un Admin recibe `403 FORBIDDEN`. La respuesta lleva `Cache-Control: no-store`. **Siempre responde 200**: cuando no hay datos devuelve la vista provisional, nunca un estado vacío ni un error.
+
+Solo se usa el último ranking **completado** del club; una corrida en curso o fallida no se muestra (escenario 6). `ranking.rules_version` es la versión de reglas que usó ese ranking, no la vigente.
+
+**200, socio rankeado**
+```json
+{
+  "status": "ranked",
+  "reason": null,
+  "score": "59.55",
+  "position": 342,
+  "ranked_total": 5000,
+  "ranking": { "completed_at": "2026-10-29T15:00:03Z", "rules_version": 3 },
+  "label": null,
+  "message": null
+}
+```
+
+**200, vista provisional** (`status: "provisional"`, `score: "0.00"`, `label: "Provisional: todavía no calculado"`). `reason` dice cuál:
+
+| `reason` | Cuándo | `position` | `ranking` |
+|---|---|---|---|
+| `FEES_OVERDUE` | La cuota del socio está vencida **ahora** (padrón del club), esté o no en el ranking. Tiene prioridad sobre todo lo demás (escenario 5) | `N` o `null` si no hay ranking con socios | el vigente o `null` |
+| `NO_RANKING` | No hay ranking completado, o el vigente no tiene socios rankeados | `null` | el vigente o `null` |
+| `NOT_IN_RANKING` | Hay ranking pero el socio no está: ingresó después, regularizó la cuota después del cálculo, fue dado de baja en el padrón o su cuenta no tiene socio en el padrón (escenario 4) | `N` | el vigente |
+
+`N` es `ranked_total`: "el final del ranking" es solo de pantalla y puede repetir el puesto del último rankeado. `message` trae el texto para el socio (para `FEES_OVERDUE`, la explicación de que el ranking solo incluye socios al día, que su historial se conserva y que vuelve al regularizar).
+
+```json
+{
+  "status": "provisional",
+  "reason": "NO_RANKING",
+  "score": "0.00",
+  "position": null,
+  "ranked_total": 0,
+  "ranking": null,
+  "label": "Provisional: todavía no calculado",
+  "message": "Todavía no hay un ranking disponible. Tu puntaje va a aparecer cuando el club calcule el primero."
+}
+```
+
+## 6. Qué hay en el frontend
 
 - `src/services/formula.js`: una función por endpoint (el del socio es `getRankingExplanation`).
-- Pantallas: Admin en `/admin/formula` y `/admin/formula/:id/:version`; Socio en `/ranking/explanation` (barra superior y acceso desde Home), con las guardas de rol de `App.jsx`.
+- `src/services/memberScore.js`: el endpoint de HU-14 (`getCurrentScore`) y el formato del puntaje y la posición.
+- Pantallas: Admin en `/admin/formula` y `/admin/formula/:id/:version`; Socio en `/ranking/explanation` (HU-13) y `/ranking` (HU-14, "Mi puntaje"), las dos con acceso desde la barra lateral y desde Home, con las guardas de rol de `App.jsx`.
+- Estados de la pantalla "Mi puntaje": cargando, error, rankeado y provisional (con la etiqueta y el mensaje que manda el backend).
 - Estados de la pantalla del socio: cargando, error, sin reglas (mensaje amable) y reglas publicadas, con el aviso si corresponde.
