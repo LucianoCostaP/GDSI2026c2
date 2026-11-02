@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from ..auth import CurrentMember, CurrentMemberClub
 from ..db import get_db
 from ..schemas.ranking import ScoreBreakdownResponse
-from ..schemas.simulator import SimulationOut
+from ..schemas.simulator import SimulationOut, SimulatorStatusOut
 from ..services import formula_service, ranking_service, simulator_service
 
 router = APIRouter(prefix="/member/scoring", tags=["member scoring"])
@@ -46,6 +46,15 @@ def score_breakdown(
     """Desglose de componentes del puntaje del socio (HU-16)."""
     response.headers["Cache-Control"] = "no-store"
     return ranking_service.get_member_score_breakdown(db, member, club_id)
+
+
+@router.get("/simulator", response_model=SimulatorStatusOut)
+def simulator_status(
+    member: CurrentMember, club_id: CurrentMemberClub, db: Db, response: Response
+) -> SimulatorStatusOut:
+    """HU-18: al abrir el simulador, si el socio puede simular. Siempre responde 200."""
+    response.headers["Cache-Control"] = "no-store"
+    return simulator_service.simulator_status(db, member, club_id)
 
 
 @router.get("/simulator/{event_id}", response_model=SimulationOut)

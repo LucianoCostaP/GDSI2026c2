@@ -211,18 +211,103 @@ def test_an_event_of_another_club_is_not_found(
         }
 
 
-def test_a_socio_outside_the_ranking_cannot_simulate(
-    client: TestClient, db: Session, boca: dict[str, str], account
+# --- Escenario 2: un socio fuera del ranking no puede simular -------------------------------
+
+STATUS_URL = "/member/scoring/simulator"
+NOT_IN_RANKING = {
+    "code": "NOT_IN_RANKING",
+    "message": "Para simular necesitás un puntaje calculado. "
+    "Todavía no estás en el ranking.",
+}
+
+
+@pytest.fixture
+def outside_ranking(
+    client: TestClient,
+    db: Session,
+    outbox: Outbox,
+    boca: dict[str, str],
+    account,
+    make_member: MakeMember,
+):
+    """Arma cada caso del escenario 2 y devuelve los headers del socio que consulta."""
+
+    def make(case: str) -> dict[str, str]:
+        publish_rules(client, boca)
+        if case == "no_ranking":
+            return account()[1]
+        account()  # alguien del club, para que el ranking tenga población
+        if case == "joined_after":
+            run(client, boca)
+            return account()[1]
+        if case == "fees_overdue":
+            socio, headers = account()
+            run(client, boca)
+            socio.estado_cuota = "moroso"
+            db.commit()
+            return headers
+        assert case == "not_in_roster"
+        run(client, boca)
+        member = make_member(activated=True, dni="99999999", club_id=BOCA_ID)
+        headers = bearer(member_token(client, outbox, member))
+        outbox.clear()
+        return headers
+
+    return make
+
+
+CASES = ("no_ranking", "joined_after", "fees_overdue", "not_in_roster")
+
+
+@pytest.mark.parametrize("case", CASES)
+def test_opening_the_simulator_outside_the_ranking_shows_the_message(
+    client: TestClient, outside_ranking, case: str
 ) -> None:
-    publish_rules(client, boca)
-    _, headers = account()
+    headers = outside_ranking(case)
+
+    response = client.get(STATUS_URL, headers=headers)
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json() == {
+        "status": "unavailable",
+        "reason": NOT_IN_RANKING["code"],
+        "message": NOT_IN_RANKING["message"],
+        "ranking": None,
+    }
+
+
+@pytest.mark.parametrize("case", CASES)
+def test_simulating_an_event_outside_the_ranking_is_rejected(
+    client: TestClient, db: Session, outside_ranking, case: str
+) -> None:
+    headers = outside_ranking(case)
     event = upcoming(db, "P-1")
 
     response = client.get(URL.format(event.id_interno), headers=headers)
 
     assert response.status_code == 409
-    assert response.json()["detail"] == {
-        "code": "NOT_IN_RANKING",
-        "message": "Para simular necesitás un puntaje calculado. "
-        "Todavía no estás en el ranking.",
-    }
+    assert response.json()["detail"] == NOT_IN_RANKING
+
+
+def test_a_ranked_socio_can_open_the_simulator(
+    client: TestClient, db: Session, boca: dict[str, str], account
+) -> None:
+    publish_rules(client, boca)
+    socio, headers = account()
+    run(client, boca)
+
+    body = client.get(STATUS_URL, headers=headers).json()
+
+    ranking = ranking_service.get_ranking_in_force(db, socio.club_id)
+    assert ranking is not None and ranking.completed_at is not None
+    assert body["status"] == "available"
+    assert body["reason"] is None and body["message"] is None
+    assert body["ranking"]["rules_version"] == 1
+    assert body["ranking"]["calculation_date"] == ranking.calculation_date.isoformat()
+
+
+def test_an_admin_cannot_open_the_simulator(
+    client: TestClient, boca: dict[str, str]
+) -> None:
+    assert client.get(STATUS_URL, headers=boca).status_code == 403

@@ -53,3 +53,14 @@ class SimulationOut(BaseModel):
     attend: HypothesisOut
     not_attend: HypothesisOut
     position_estimate: PositionEstimateOut
+
+
+class SimulatorStatusOut(BaseModel):
+    """Si el socio puede simular (escenario 2): siempre 200."""
+
+    # "available" | "unavailable"
+    status: str
+    # "NOT_IN_RANKING" cuando no puede simular.
+    reason: str | None
+    message: str | None
+    ranking: SimulationRankingOut | None

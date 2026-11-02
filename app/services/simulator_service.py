@@ -22,6 +22,7 @@ from ..core.exceptions import PasioDe10Exception
 from ..models import (
     EstadoCuota,
     EventoVisibleDB,
+    Ranking,
     RankingEntry,
     RulesVersion,
     User,
@@ -34,6 +35,7 @@ from ..schemas.simulator import (
     SimulatedEventOut,
     SimulationOut,
     SimulationRankingOut,
+    SimulatorStatusOut,
 )
 from ..scoring.attendance_inputs import MATCH_CLASSES
 from ..scoring.engine import ScoringInputs, ScoringParameters, calculate_score
@@ -78,9 +80,60 @@ def _event_of_club(db: Session, club_id: uuid.UUID, event_id: str) -> EventoVisi
     return event
 
 
-def _not_in_ranking() -> PasioDe10Exception:
-    return PasioDe10Exception(
-        NOT_IN_RANKING_MESSAGE, status.HTTP_409_CONFLICT, "NOT_IN_RANKING"
+def _ranked_entry(
+    db: Session, member_user: User, club_id: uuid.UUID
+) -> tuple[Ranking, RankingEntry] | None:
+    """El ranking vigente y la entrada del socio en él, o `None` si no puede simular.
+
+    Cubre todos los casos del escenario 2: no hay ranking completado, la cuenta no tiene socio
+    en el padrón, la cuota está vencida (se lee del padrón en el momento, como en HU-14) o el
+    socio no tiene entrada (ingresó después del cálculo).
+    """
+    ranking = get_ranking_in_force(db, club_id)
+    socio = _socio_of(db, member_user, club_id)
+    if (
+        ranking is None
+        or socio is None
+        or socio.estado_cuota != EstadoCuota.AL_DIA.value
+    ):
+        return None
+    entry = db.scalar(
+        select(RankingEntry).where(
+            RankingEntry.ranking_id == ranking.id, RankingEntry.socio_id == socio.id
+        )
+    )
+    return None if entry is None else (ranking, entry)
+
+
+def _ranking_out(db: Session, ranking: Ranking) -> SimulationRankingOut:
+    rules_number = db.scalar(
+        select(RulesVersion.number).where(RulesVersion.id == ranking.rules_version_id)
+    )
+    assert rules_number is not None  # clave foránea
+    return SimulationRankingOut(
+        completed_at=ranking.completed_at,
+        calculation_date=ranking.calculation_date,
+        rules_version=rules_number,
+    )
+
+
+def simulator_status(
+    db: Session, member_user: User, club_id: uuid.UUID
+) -> SimulatorStatusOut:
+    """HU-18, escenario 2: si el socio puede simular. Nunca es un error."""
+    ranked = _ranked_entry(db, member_user, club_id)
+    if ranked is None:
+        return SimulatorStatusOut(
+            status="unavailable",
+            reason="NOT_IN_RANKING",
+            message=NOT_IN_RANKING_MESSAGE,
+            ranking=None,
+        )
+    return SimulatorStatusOut(
+        status="available",
+        reason=None,
+        message=None,
+        ranking=_ranking_out(db, ranked[0]),
     )
 
 
@@ -112,22 +165,12 @@ def simulate_event(
     """HU-18: puntaje del socio si asiste y si no asiste a un evento, sin guardar nada."""
     event = _event_of_club(db, club_id, event_id)
 
-    ranking = get_ranking_in_force(db, club_id)
-    socio = _socio_of(db, member_user, club_id)
-    # La cuota se lee del padrón en el momento, como en HU-14.
-    if (
-        ranking is None
-        or socio is None
-        or socio.estado_cuota != EstadoCuota.AL_DIA.value
-    ):
-        raise _not_in_ranking()
-    entry = db.scalar(
-        select(RankingEntry).where(
-            RankingEntry.ranking_id == ranking.id, RankingEntry.socio_id == socio.id
+    ranked = _ranked_entry(db, member_user, club_id)
+    if ranked is None:
+        raise PasioDe10Exception(
+            NOT_IN_RANKING_MESSAGE, status.HTTP_409_CONFLICT, "NOT_IN_RANKING"
         )
-    )
-    if entry is None:
-        raise _not_in_ranking()
+    ranking, entry = ranked
 
     rules = db.get(RulesVersion, ranking.rules_version_id)
     assert rules is not None  # clave foránea
@@ -161,11 +204,7 @@ def simulate_event(
             fecha_hora=event.fecha_hora,
             puntos=None if is_match else event.puntos,
         ),
-        ranking=SimulationRankingOut(
-            completed_at=ranking.completed_at,
-            calculation_date=ranking.calculation_date,
-            rules_version=rules.number,
-        ),
+        ranking=_ranking_out(db, ranking),
         current=CurrentStandingOut(
             score=f"{current:.2f}",
             position=entry.position,
