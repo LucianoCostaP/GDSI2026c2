@@ -1,8 +1,9 @@
-# Guía de Integración Frontend con Backend: HU-17 y HU-22
+# Guía de Integración Frontend con Backend: HU-17, HU-22 y HU-14
 
 Esta guía documenta la integración del frontend (`tp_gestion_reactjs`) con el backend FastAPI para las historias de usuario:
 - **HU-17 (Consulta de Próximos Eventos)**: Vista para socios autenticados.
 - **HU-22 (Definición de Importancia y Publicación de Eventos)**: Vista de gestión para administradores.
+- **HU-14 (Puntaje Actual y Posición en el Ranking)**: Vista de solo lectura para socios autenticados (sección 3.C).
 
 ---
 
@@ -31,7 +32,7 @@ El backend aplica separación estricta por roles en [`app/auth.py`](file:///c:/U
 | Rol Requerido | Flujo de Login | Endpoints Habilitados |
 | :--- | :--- | :--- |
 | **Admin** (`user.role === 'admin'`) | `POST /auth/admin/login/request`<br>`POST /auth/admin/login/verify` | • `GET /admin/events/classes` (HU-22)<br>• `GET /admin/events/pending` (HU-22)<br>• `POST /admin/events/{id}/publish` (HU-22)<br>• `POST /admin/events/auto-publish` (HU-22) |
-| **Socio** (`user.role === 'member'`) | `POST /auth/member/login/request`<br>`POST /auth/member/login/verify` | • `GET /events/upcoming` (HU-17)<br>• `GET /member/events` (HU-17) |
+| **Socio** (`user.role === 'member'`) | `POST /auth/member/login/request`<br>`POST /auth/member/login/verify` | • `GET /events/upcoming` (HU-17)<br>• `GET /member/events` (HU-17)<br>• `GET /member/scoring/current` (HU-14) |
 
 > [!WARNING]
 > Si un usuario con rol `admin` intenta consumir `/events/upcoming`, el backend responderá **HTTP 403 Forbidden**. De igual modo, si un `member` intenta consumir `/admin/events/*`, recibirá **HTTP 403 Forbidden**.
@@ -192,6 +193,45 @@ El backend aplica separación estricta por roles en [`app/auth.py`](file:///c:/U
   "mensaje": null
 }
 ```
+
+---
+
+### C. Endpoint de Socios: Puntaje y Posición (HU-14)
+
+#### Consultar Mi Puntaje y Mi Posición
+- **Ruta**: `GET /member/scoring/current` (una sola ruta, sin alias `/api/...`)
+- **Autenticación**: Bearer Token (Socio). Un Admin recibe `403 FORBIDDEN`; una cuenta sin club, `403 MEMBER_WITHOUT_CLUB`.
+- **Club**: sale de la cuenta del socio. No se manda `club_id` ni `X-Club-ID` (si llegan, se ignoran).
+- **Reglas de Negocio**:
+  - Solo lectura: no hay otros métodos (`405`). Responde con `Cache-Control: no-store`.
+  - **Siempre responde 200**: sin datos devuelve la vista provisional, nunca un estado vacío ni un error.
+  - Usa solo el último ranking **completado** del club (HU-25); una corrida en curso o fallida no se muestra.
+  - `score` viaja como string con dos decimales (`"59.55"`); el front lo muestra con coma (`59,55`).
+  - `ranking.completed_at` es la fecha y hora del ranking (mostrar en hora de Buenos Aires) y `ranking.rules_version` es la versión de reglas que usó ese ranking, no la vigente.
+- **Respuesta (200 OK), socio rankeado**:
+```json
+{
+  "status": "ranked",
+  "reason": null,
+  "score": "59.55",
+  "position": 342,
+  "ranked_total": 5000,
+  "ranking": { "completed_at": "2026-10-29T15:00:03Z", "rules_version": 3 },
+  "label": null,
+  "message": null
+}
+```
+- **Respuesta (200 OK), vista provisional**: `status: "provisional"`, `score: "0.00"`, `label: "Provisional: todavía no calculado"` y `message` con el texto para el socio. `reason` indica el caso:
+
+| `reason` | Cuándo | `position` | `ranking` |
+| :--- | :--- | :--- | :--- |
+| `FEES_OVERDUE` | La cuota está vencida ahora, esté o no en el ranking (tiene prioridad) | `ranked_total`, o `null` si no hay ranking con socios | el vigente o `null` |
+| `NO_RANKING` | Nunca se calculó un ranking, o el vigente no tiene socios | `null` | el vigente o `null` |
+| `NOT_IN_RANKING` | Hay ranking pero el socio no está (ingresó o regularizó después del cálculo, o fue dado de baja en el padrón) | `ranked_total` | el vigente |
+
+La posición provisional ("el final del ranking") es solo de pantalla y puede repetir el puesto del último rankeado. El contrato completo está en `docs/contrato-api-reglas.md` (sección 5).
+
+**Implementado en el front**: servicio `src/services/memberScore.js` (`getCurrentScore`, `formatScore`, `formatPosition`), pantalla `src/pages/MyScore.jsx` en la ruta `/ranking` (solo socios), con acceso desde la barra lateral ("Mi puntaje") y desde Home ("Ver mi puntaje").
 
 ---
 
