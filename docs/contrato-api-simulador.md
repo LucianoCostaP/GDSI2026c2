@@ -11,6 +11,8 @@
 | `GET /events/upcoming` | Socio | Lista de eventos para elegir cuál simular, con estado vacío | HU-18: 1, caso borde "sin eventos" | **Existe** (HU-17), sin cambios |
 | `GET /member/scoring/simulator` | Socio | Al abrir el simulador: ¿el socio puede simular? | HU-18: 2 | Nuevo |
 | `GET /member/scoring/simulator/{event_id}` | Socio | Simulación de un evento: puntajes, diferencias, posición estimada y avisos | HU-18: 1, 3 a 13 | Nuevo |
+| `GET /admin/simulator/settings` | Admin | Configuración del simulador del club | HU-18: 14 | Nuevo |
+| `PATCH /admin/simulator/settings` | Admin | Cambiar esa configuración | HU-18: 14 | Nuevo |
 
 Los dos endpoints nuevos son de **solo lectura** (`GET`): no guardan nada (FR-004, SC-001), repetir la simulación no acumula efectos y otro método responde `405`. Ninguno recibe `club_id` ni `X-Club-ID`; si llegan, se ignoran (`CurrentMemberClub`, decisión 34). Responden con `Cache-Control: no-store`.
 
@@ -109,7 +111,7 @@ Igual que 4.2, pero:
   }
 }
 ```
-`reason` ∈ `PROJECTION_DISABLED` | `INSUFFICIENT_HISTORY` | `SMALL_POPULATION` | `POSITION_ERROR`. El mensaje es **siempre el mismo**: el motivo viaja solo como código (escenario 12). `POSITION_ERROR` también cubre el caso de que el cálculo no termine dentro del tiempo de respuesta (SC-007, 2 s). Como `position_projection_enabled` arranca apagado, **este es el caso por defecto** hasta que el club pase la validación.
+`reason` ∈ `PROJECTION_DISABLED` | `INSUFFICIENT_HISTORY` | `SMALL_POPULATION` | `POSITION_ERROR`. El mensaje es **siempre el mismo**: el motivo viaja solo como código (escenario 12). `POSITION_ERROR` también cubre el caso de que el cálculo no termine dentro del tiempo de respuesta (SC-007, 2 s). `position_projection_enabled` arranca **encendido** (sección 7), así que `PROJECTION_DISABLED` aparece solo si el Admin la apagó.
 
 ### 4.4 200, evento institucional (escenarios 6, 11)
 
@@ -171,12 +173,23 @@ Invariantes que el front puede dar por ciertas (SC-004): `attend.score >= not_at
 
 ## 5. Qué falta en el backend (fuera del contrato, para implementarlo)
 
-- **Configuración por club** (cross-cutting §8, FR-010): no hay ningún lugar donde guardar configuración por club. Hacen falta `position_projection_enabled` (default `false`), `position_range_level` (`0.80`), `position_prior_strength` (`5`) y `position_min_population` (`100`). Hay que agregar una tabla o columnas en `clubes`, con su migración. Sin ningún endpoint de Admin: el equipo la activa después de la validación offline.
+- **Configuración por club** (cross-cutting §8, FR-010): hecha, columnas en `clubes` (migración `a8f3c2d1e9b4`) y los endpoints de la sección 5.1.
 - **Motor único**: reusar `scoring.snapshot.scoring_inputs_from_snapshot` + `scoring.engine.calculate_score` con los parámetros de la `rules_version` del ranking, y `scoring.ranking_order` para el desempate de "arriba de". No duplicar la fórmula.
 - **Instantánea**: `RankingEntry.inputs` ya guarda los conteos por clase, la distancia, los puntos institucionales crudos, `birth_date`, `seniority_start`, `T`, `E`, `t` y la baja previa. El DNI sale de `Socio.dni` de cada entrada.
 - **Reloj inyectable**: el servicio recibe `now: datetime | None = None` para decidir "ya empezó" (escenario 3).
 - **Cache opcional**: `A_j`/`B_j` no dependen de quién consulta, así que se pueden calcular una vez por (ranking, evento) y reusar.
 - **Búsqueda del socio**: `ranking_service._socio_of` (club + DNI), igual que HU-14 y HU-16.
+
+### 5.1 `GET` / `PATCH /admin/simulator/settings` (Admin)
+
+El club sale de la cuenta del Admin (`CurrentAdminClub`); un `club_id` en el cuerpo se rechaza con `422`. `401` sin sesión, `403` para un Socio.
+
+```json
+{ "position_projection_enabled": true, "position_range_level": "0.80",
+  "position_prior_strength": "5.00", "position_min_population": 100 }
+```
+
+`PATCH` recibe solo los campos a cambiar y devuelve la configuración completa. Validación (`422` si no se cumple, sin cambiar nada): `position_range_level` entre 0 y 1 exclusivos, con hasta 2 decimales; `position_prior_strength` mayor que 0; `position_min_population` al menos 1. Cada cambio queda en la auditoría (`simulator_settings.updated`, con valores anteriores y nuevos); un `PATCH` que no cambia nada no se audita. La próxima simulación ya usa los valores nuevos.
 
 ## 6. Qué falta en el frontend
 
@@ -195,3 +208,4 @@ Invariantes que el front puede dar por ciertas (SC-004): `attend.score >= not_at
 | `404` para un evento de otro club | No revela que el evento existe en otro club |
 | `409` para `EVENT_NOT_SIMULABLE` y `NOT_IN_RANKING` | El pedido está bien formado, pero el estado no lo permite |
 | `text` de posición armado en el backend | El spec fija el texto ("Range line"); así el front no reimplementa el formato |
+| `position_projection_enabled` encendido por defecto, editable por el Admin | Decisión del equipo: la simulación no modifica el ranking real. Spec enmendado: HU-18 v5 (escenario 14, FR-013), cross-cutting §8 y decisión 43 |

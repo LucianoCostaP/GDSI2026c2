@@ -27,6 +27,7 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 | Segmentation and schedule (HU-36, HU-37) | No | Yes |
 | Adjust scoring parameters (HU-28) | No | Yes |
 | Simulate rules change and its equity analysis (HU-29, HU-30) | No | Yes |
+| Configure the position settings of the attendance simulator (HU-18) | No | Yes |
 | View ranking explanation, own score, breakdown, simulator (HU-13, 14, 16, 18) | Yes | No |
 | View upcoming events, own slot (HU-17, HU-39) | Yes | No |
 | Log out (HU-11) | Yes | Yes |
@@ -86,7 +87,7 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 | Volume | up to 500,000 Socios, typically far fewer. Admin lists are paginated. Wave membership is derived from ranking positions, never copied per Socio |
 | Read-only Socio screens | response under 2 seconds (95th percentile) |
 | Accessibility | WCAG 2.1 AA: high contrast, large touch targets, keyboard navigation, readable at 200% zoom |
-| Audit | every change of events, rules, formula publications and locks, accounts, loads received from the club, attendance loads and ranking runs records who (Admin, club or system), when and the previous and new values |
+| Audit | every change of events, rules, formula publications and locks, simulator settings, accounts, loads received from the club, attendance loads and ranking runs records who (Admin, club or system), when and the previous and new values |
 | Language | UI in Spanish (Argentina); specs in English |
 
 ## 7. Bootstrap (technical tasks, not stories)
@@ -111,10 +112,10 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 | Row error tolerance in CSV files uploaded by the Admin (records sent by the club have no tolerance: they are rejected one by one) | 5% | HU-24 |
 | Data staleness limit (age of the latest successful roster load) | 24 hours | HU-43, HU-25, HU-36 |
 | Formula lock of a club at creation | unlocked | HU-27, HU-28 |
-| Position projection of the simulator for Partidos, per club (`position_projection_enabled`); turned on by the team only after the validation of HU-18 passes | off | HU-18 |
-| Probable range level of the estimated position (`position_range_level`) | 80 % | HU-18 |
-| Weight of the club rate in each Socio's attendance probability (`position_prior_strength`) | 5 | HU-18 |
-| Minimum ranked Socios to estimate a position (`position_min_population`) | 100 | HU-18 |
+| Position projection of the simulator for Partidos, per club (`position_projection_enabled`); the Admin can turn it off (HU-18 scenario 14) | on | HU-18 |
+| Probable range level of the estimated position (`position_range_level`), editable by the Admin | 80 % | HU-18 |
+| Weight of the club rate in each Socio's attendance probability (`position_prior_strength`), editable by the Admin | 5 | HU-18 |
+| Minimum ranked Socios to estimate a position (`position_min_population`), editable by the Admin | 100 | HU-18 |
 | Code, session and invitation values | section 3 | HU-01, 05, 06, 07, 08, 11 |
 
 ## 9. Tenancy

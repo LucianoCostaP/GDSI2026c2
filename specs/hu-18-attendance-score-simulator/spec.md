@@ -1,7 +1,7 @@
 # Feature Specification: Estimated Score Simulator by Attendance
 
 **Feature Branch**: `hu-18-attendance-score-simulator`
-**Created**: 2026-10-11 | **Revised**: 2026-11-01 (v4)
+**Created**: 2026-10-11 | **Revised**: 2026-11-02 (v5)
 **Status**: Draft
 **Backlog Reference**: HU-18 (Estimate: 8, Priority: Media, MVP: Yes). Re-estimate: the position of a Partido is now a probabilistic range with its own validation (see Revision Notes).
 **Shared rules**: [scoring model](../_shared/scoring-model.md), [cross-cutting](../_shared/cross-cutting.md)
@@ -18,10 +18,10 @@ As a Socio of the club, I want to simulate how attending or not attending the ne
 **What the Socio sees**:
 
 - **The projected score for both hypotheses, from the official calculation.** It is the part that can be stated without reservations: it is exactly what the official calculation gives from the data of the latest ranking, with the Socio's current distance, plus this event.
-- **For a Partido, the position as a range, labeled as an estimate.** A range says what is known; a single number would pretend a precision that does not exist, because the other Socios have not yet decided what they will do.
+- **For a Partido, the position as a range, labeled as an estimate.** A range says what is known; a single number would pretend a precision that does not exist, because the other Socios have not yet decided what they will do. It is shown by default; the Admin of the club can turn it off (scenario 14).
 - **For an institutional event, the notice that not attending leaves the score unchanged but the position can drop.** The position itself is not estimated for these events in this version (see "Position model").
 
-**Independent Test**: As a Socio, pick an upcoming Partido and verify the projected score if attending and if not attending (attending raises or keeps it; not attending never raises it above the score recomputed with the same distance), that the real score is unchanged, that each position is a labeled range, and that the position of attending is never worse than the position of not attending. Change the Socio's distance (club roster) and verify that the projections use the new one while the current total and position keep the ranking's. Pick an institutional event and verify the two scores and the notice, with no position. With the position projection turned off for the club, verify that only the scores are shown.
+**Independent Test**: As a Socio, pick an upcoming Partido and verify the projected score if attending and if not attending (attending raises or keeps it; not attending never raises it above the score recomputed with the same distance), that the real score is unchanged, that each position is a labeled range, and that the position of attending is never worse than the position of not attending. Change the Socio's distance (club roster) and verify that the projections use the new one while the current total and position keep the ranking's. Pick an institutional event and verify the two scores and the notice, with no position. Verify that the position projection is on for a new club, then turn it off as Admin and verify that the next simulation shows only the scores.
 
 **Acceptance Scenarios**:
 
@@ -46,6 +46,10 @@ As a Socio of the club, I want to simulate how attending or not attending the ne
 11. **Given** a selected institutional event, **When** the simulation is shown, **Then** it shows the two projected scores, the current position of the ranking and the notice that not attending leaves the score unchanged but the position can drop (text in "Messages"). No estimated position and no error message are shown; the response carries the reason code `INSTITUTIONAL_NOT_ESTIMATED`.
 12. **Given** a selected Partido whose position cannot be estimated (projection not enabled for the club, not enough history, ranking too small, or a failure while computing it), **When** the simulation is shown, **Then** only the scores are shown, with the message "No podemos estimar tu posición en este momento. Te mostramos solo tu puntaje." (`POSITION_NOT_AVAILABLE`). The reason is returned as a code, never as a different message.
 13. **Given** any estimated position, **When** it is shown or returned, **Then** it is never shown without the estimate label and never as a single exact number.
+
+*Settings of the club (Admin)*
+
+14. **Given** an Admin of the club, **When** they read or change the simulator settings (`position_projection_enabled`, `position_range_level`, `position_prior_strength`, `position_min_population`), **Then** only the settings of their own club are read or changed, only the fields sent change, an invalid value is rejected without changing anything, the change is audited with the previous and new values, and the next simulation already uses the new values. The projection is on by default. A Socio cannot read or change the settings.
 
 ---
 
@@ -121,16 +125,16 @@ p_j = ( a_j + k · r ) / ( n_j + k )
 
 For a Partido, the position is not estimated (scenario 12) when any of these holds:
 
-1. `position_projection_enabled` is off for the club (default). It is turned on only after the validation below passes.
+1. `position_projection_enabled` is off for the club. It is on by default; the Admin can turn it off (scenario 14).
 2. The club has no counted match in the window (see `r`).
 3. The ranking has fewer than `position_min_population` Socios (default 100): the club rates are too noisy.
 4. The calculation fails or does not finish within the response time.
 
 Codes: `PROJECTION_DISABLED`, `INSUFFICIENT_HISTORY`, `SMALL_POPULATION`, `POSITION_ERROR`. For an institutional event the code is `INSTITUTIONAL_NOT_ESTIMATED` (scenario 11).
 
-## Validation, a condition to publish the position *(mandatory)*
+## Validation of the position *(recommended)*
 
-The range is only worth showing if it is right as often as it says. Before `position_projection_enabled` is turned on for a club, the team replays the calculation on past dates and compares it with what really happened. This is an offline procedure of the team, with no screen.
+The range is only worth showing if it is right as often as it says. The projection is on by default anyway: the simulation never changes the real ranking or any stored data (FR-004), and every estimated position carries the estimate label (scenario 13), so a range that is less accurate than it says misleads the Socio's expectation but not their real place. To check it, the team replays the calculation on past dates and compares it with what really happened. This is an offline procedure of the team, with no screen, and it is not a condition to show the position.
 
 **Replay.** For each of at least 5 past reference dates `D`, each followed by a Partido with loaded attendance: rebuild the inputs as of `D` from the events, attendance and activities the system keeps (nothing is deleted; replaced loads stay in the history), compute the official ranking at `D`, run this simulation for that Partido on that ranking, and compare with the official ranking calculated the day after the Partido from the same kept data. The comparison uses the hypothesis that matches what each Socio did. Stored rankings are not used: the history of rankings is outside the MVP. Fields the roster overwrites (distance, fee status) take their current values; this is an approximation that the team records.
 
@@ -141,7 +145,7 @@ The range is only worth showing if it is right as often as it says. Before `posi
 | Coverage of the range | How often is the real position inside "probable entre X y Y"? | within 5 percentage points of `position_range_level` (for 80 %: from 75 % to 85 %). Below means the model is too optimistic; well above means ranges that are uselessly wide |
 | Mean absolute error of the estimated position | Compared with the simple version (every other Socio frozen at today's total) | strictly lower than the simple version. If it does not improve, the complexity is not worth it |
 
-The pass limits are adopted values; changing them is an amendment of this spec. The result, the dates, the sample and the settings used are recorded with the decision. The projection is validated again when the club's formula is replaced (HU-27) or when the replay is repeated with new data and gives a worse result; if it fails, the setting goes back to off and the Socios see only scores. The same replay is the way to tune `k` and the range level before enabling.
+The pass limits are adopted values; changing them is an amendment of this spec. The result, the dates, the sample and the settings used are recorded with the decision. It is worth repeating the replay when the club's formula is replaced (HU-27) or when there is enough new data. If it fails, the team recommends that the Admin tune `k` or the range level with the values the replay suggests, or turn the projection off so that the Socios see only scores (scenario 14).
 
 ## Messages *(mandatory)*
 
@@ -171,14 +175,15 @@ The pass limits are adopted values; changing them is an amendment of this spec. 
 - **FR-007**: System MUST estimate the position of a Partido only when `position_projection_enabled` is on for the club and the conditions of "When the position is not estimated" hold; otherwise it MUST show only the scores with `POSITION_NOT_AVAILABLE`.
 - **FR-008**: System MUST show, for an institutional event, the two scores, the current position and the notice about the position, and MUST NOT estimate its position (`INSTITUTIONAL_NOT_ESTIMATED`).
 - **FR-009**: System MUST NOT reveal the score, probability or any datum of another Socio, and MUST read only the ranking of the Socio's own club (cross-cutting section 9).
-- **FR-010**: System MUST take the settings `position_projection_enabled` (turned on only after the recorded validation passes), `position_range_level`, `position_prior_strength` and `position_min_population` from the club's settings (cross-cutting section 8).
+- **FR-010**: System MUST take the settings `position_projection_enabled` (on by default), `position_range_level`, `position_prior_strength` and `position_min_population` from the club's settings (cross-cutting section 8).
 - **FR-011**: System MUST use the Socio's current distance in both projections when it differs from the one of the ranking, keep the current total and position from the ranking, and show the notice about the difference. Other Socios MUST be taken as the ranking has them.
 - **FR-012**: System MUST NOT show the class or the factor of a Partido on this screen.
+- **FR-013**: System MUST let an Admin read and change the settings of FR-010 for their own club only (the club comes from the account, cross-cutting section 9), changing only the fields sent. It MUST reject, without changing anything, a range level outside the open interval from 0 to 1 or with more than 2 decimals, a weight `k` that is not greater than 0 (with 0, a Socio without history would divide by zero), and a minimum population lower than 1. It MUST audit each change with who, when and the previous and new values; a request that changes nothing is not audited. A Socio MUST NOT read or change them.
 
 ### Key Entities
 
 - **AttendanceSimulation**: Socio, event (type, points for an institutional event), ranking and its calculation date, rules version, current total, current position, distance used and distance of the ranking, per hypothesis (attending, not attending): projected total, difference, estimated position (estimate, lower, upper) or none with its reason code, range level. Transient.
-- **Settings of the club** (cross-cutting section 8): `position_projection_enabled`, `position_range_level`, `position_prior_strength`, `position_min_population`.
+- **Settings of the club** (cross-cutting section 8): `position_projection_enabled` (on), `position_range_level` (0.80), `position_prior_strength` (5), `position_min_population` (100). Edited by the Admin (FR-013).
 
 ## Success Criteria *(mandatory)*
 
@@ -189,7 +194,7 @@ The pass limits are adopted values; changing them is an amendment of this spec. 
 - **SC-003**: 100% of estimated positions are ranges and carry the estimate label.
 - **SC-004**: In 100% of simulations the score of attending is equal or higher than that of not attending, the estimated position of attending is equal or better, and, with an unchanged distance, for an institutional event the score of not attending equals the current one.
 - **SC-005**: 0 responses contain data of another Socio.
-- **SC-006**: A club shows the position only after a recorded validation whose coverage and error measures meet the limits above.
+- **SC-006**: 100% of the Admin's changes to the settings apply from the next simulation, are audited, and never affect another club.
 - **SC-007**: 95% of simulations respond within 2 seconds (cross-cutting section 6), up to 500,000 Socios; otherwise the scores are shown without the position.
 - **SC-008**: In a test with a fixed ranking, the mean, the spread and the range reproduce a hand-computed case (including a Socio with one match attended, ties resolved by the tiebreak, and a club without history for the class).
 - **SC-009**: 100% of institutional simulations show no estimated position and carry the notice.
@@ -198,7 +203,7 @@ The pass limits are adopted values; changing them is an amendment of this spec. 
 
 - Uses the inputs snapshot stored by HU-25, so no source data is re-read, except the Socio's own current distance. For a Partido it needs, per entry: the per-class counts of matches counted and attended, the distance, the raw participation points, the exact seniority start and birth date, `T`, `E`, `t` and the previous-baja interval. The ranking calculation already keeps them to compute and order the ranking; this spec does not change HU-25.
 - The simulation assumes the rest of the Socio's data does not change. The distance is the exception because a change of home is known to the system and the Socio expects the projection to reflect it.
-- Decided by the product owner: the position cannot be known exactly; for a Partido it is shown as a labeled probabilistic range, with the score as the only exact figure, and only when validated. Institutional events show scores and the notice.
+- Decided by the product owner: the position cannot be known exactly; for a Partido it is shown as a labeled probabilistic range, with the score as the only exact figure. It is shown by default, without a prior validation, because the simulation never changes the real ranking; the Admin can turn it off. Institutional events show scores and the notice.
 - The decisions of the Socios are treated as independent and each one attends with their smoothed historical rate; the validation measures how far that holds.
 - The settings (`k` = 5, range 80 %, minimum 100 Socios) and the pass limits are adopted defaults; the replay can show that a club needs other values, which are then set in its settings.
 
@@ -233,6 +238,12 @@ Puntaje               65,55  (+6,00)       59,55  (sin cambios)
 No asistir no cambia tu puntaje, pero tu posición puede bajar
 si otros socios suman puntos.
 ```
+
+## Revision Notes (v5)
+
+- The position projection is **on by default** for every club, and the validation is recommended, not a condition to show the position: the simulation never changes the real ranking or stored data, and every estimated position carries the estimate label. Decided by the team (decision 43).
+- The Admin reads and changes the four settings of their own club (scenario 14, FR-013), with validation and audit. Before, there was no screen and only the team turned the projection on.
+- SC-006 now measures the settings change instead of the recorded validation.
 
 ## Revision Notes (v4)
 

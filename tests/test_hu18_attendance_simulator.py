@@ -1,9 +1,11 @@
 """HU-18: simulador de puntaje por asistencia (`docs/contrato-api-simulador.md`)."""
 
+import math
 import uuid
 from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
+from fractions import Fraction
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,6 +14,8 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import PasioDe10Exception
 from app.models import (
+    AuditLog,
+    Club,
     EventoPendienteDB,
     Member,
     RankingEntry,
@@ -21,6 +25,8 @@ from app.models import (
     utcnow,
 )
 from app.scoring.engine import ScoringParameters, calculate_score
+from app.scoring.position import PositionRange
+from app.scoring.ranking_order import RankingCandidate, ranks_above
 from app.scoring.snapshot import scoring_inputs_from_snapshot
 from app.services import ranking_service, simulator_service
 from tests.conftest import (
@@ -761,3 +767,484 @@ def test_the_notice_disappears_after_a_ranking_with_the_new_rules(
 
     assert body["ranking"]["rules_version"] == 2
     assert body["rules_notice"] is None
+
+
+# --- Escenario 9: las proyecciones usan la distancia actual del padrón ----------------------
+
+
+def move_home(db: Session, socio: Socio, km: str) -> None:
+    """El club manda una distancia nueva para el socio (HU-43) después del ranking."""
+    socio.distancia_km = Decimal(km)
+    db.commit()
+
+
+def test_the_projections_use_the_current_distance(
+    client: TestClient, db: Session, boca: dict[str, str], account
+) -> None:
+    publish_rules(client, boca)
+    socio, headers = account(distancia_km=Decimal("1200.00"))
+    past_match(db, "H-1", [socio])
+    run(client, boca)
+    move_home(db, socio, "850.00")
+    entry = entry_of(db, socio)
+
+    body = simulate(client, headers, upcoming(db, "P-1", clase="B"))
+
+    assert body["distance"] == {
+        "used_km": "850.00",
+        "ranking_km": "1200.00",
+        "changed": True,
+        "notice": "Tu distancia al estadio cambió desde el último ranking: la simulación "
+        "usa 850 km y tu puntaje de hoy usa 1200 km.",
+    }
+    near = Decimal("850.00")
+    assert body["attend"]["score"] == official_total(
+        db,
+        entry,
+        distance_km=near,
+        matches_by_class={"A": 0, "B": 2, "C": 0},
+        attended_by_class={"A": 0, "B": 2, "C": 0},
+    )
+    assert body["not_attend"]["score"] == official_total(
+        db,
+        entry,
+        distance_km=near,
+        matches_by_class={"A": 0, "B": 2, "C": 0},
+        attended_by_class={"A": 0, "B": 1, "C": 0},
+    )
+
+
+def test_the_current_score_and_position_keep_the_ranking_distance(
+    client: TestClient, db: Session, boca: dict[str, str], account
+) -> None:
+    publish_rules(client, boca)
+    socio, headers = account(distancia_km=Decimal("1200.00"))
+    past_match(db, "H-1", [socio])
+    run(client, boca)
+    entry = entry_of(db, socio)
+    total, position = entry.total, entry.position
+    move_home(db, socio, "850.00")
+
+    body = simulate(client, headers, upcoming(db, "P-1"))
+
+    assert body["current"]["score"] == f"{total:.2f}"
+    assert body["current"]["position"] == position
+    # La diferencia se toma contra el puntaje del ranking: incluye el cambio de distancia.
+    for hypothesis in ("attend", "not_attend"):
+        expected = Decimal(body[hypothesis]["score"]) - total
+        assert body[hypothesis]["difference"] == f"{expected:.2f}"
+    # Nada se guarda: la instantánea del ranking sigue con la distancia anterior.
+    db.expire_all()
+    assert entry_of(db, socio).inputs["attendance"]["distance_km"] == "1200.00"
+
+
+def test_without_a_change_of_home_there_is_no_notice(
+    client: TestClient, db: Session, boca: dict[str, str], account
+) -> None:
+    publish_rules(client, boca)
+    _, headers = account(distancia_km=Decimal("1200.00"))
+    run(client, boca)
+
+    body = simulate(client, headers, upcoming(db, "P-1"))
+
+    assert body["distance"] == {
+        "used_km": "1200.00",
+        "ranking_km": "1200.00",
+        "changed": False,
+        "notice": None,
+    }
+
+
+def test_a_distance_with_decimals_is_shown_with_a_decimal_comma(
+    client: TestClient, db: Session, boca: dict[str, str], account
+) -> None:
+    publish_rules(client, boca)
+    socio, headers = account(distancia_km=Decimal("12.00"))
+    run(client, boca)
+    move_home(db, socio, "7.50")
+
+    body = simulate(client, headers, upcoming(db, "P-1"))
+
+    assert body["distance"]["notice"] == (
+        "Tu distancia al estadio cambió desde el último ranking: la simulación usa "
+        "7,5 km y tu puntaje de hoy usa 12 km."
+    )
+
+
+# --- Escenario 10: posición estimada de un Partido, con rango y etiqueta --------------------
+
+ESTIMATE_LABEL = (
+    "Estimación: supone que cada socio asiste según su propio historial. Puede diferir "
+    "después del próximo cálculo."
+)
+
+
+def projection_on(db: Session, **settings) -> None:
+    """El equipo enciende la proyección del club (después de la validación offline)."""
+    club = db.get(Club, BOCA_ID)
+    assert club is not None
+    club.position_projection_enabled = True
+    for field, value in settings.items():
+        setattr(club, field, value)
+    db.commit()
+
+
+def expected_positions(
+    db: Session, me: Socio, match_class: str, hypotheses: dict[str, str]
+) -> dict[str, tuple[int, int, int]]:
+    """Oráculo del "Position model" del spec, escrito a partir de sus fórmulas."""
+    ranking = ranking_service.get_ranking_in_force(db, BOCA_ID)
+    assert ranking is not None
+    rows = db.execute(
+        select(RankingEntry, Socio)
+        .join(Socio, Socio.id == RankingEntry.socio_id)
+        .where(RankingEntry.ranking_id == ranking.id)
+    ).all()
+    attended = sum(
+        e.inputs["attendance"]["attended_by_class"][match_class] for e, _ in rows
+    )
+    counted = sum(
+        e.inputs["attendance"]["matches_by_class"][match_class] for e, _ in rows
+    )
+    rate = Fraction(attended, counted)
+
+    def candidate(entry: RankingEntry, socio: Socio, total: str) -> RankingCandidate:
+        membership = entry.inputs["membership"]
+        return RankingCandidate(
+            socio_id=socio.id,
+            total=Decimal(total),
+            seniority_start=date.fromisoformat(membership["seniority_start"]),
+            birth_date=date.fromisoformat(membership["birth_date"]),
+            dni=socio.dni,
+        )
+
+    my_entry = entry_of(db, me)
+    result = {}
+    for name, my_total in hypotheses.items():
+        own = candidate(my_entry, me, my_total)
+        mu, variance = Fraction(0), Fraction(0)
+        for entry, socio in rows:
+            if socio.id == me.id:
+                continue
+            history = entry.inputs["attendance"]
+            matches = dict(history["matches_by_class"])
+            matches[match_class] += 1
+            went = dict(history["attended_by_class"])
+            went[match_class] += 1
+            a_total = official_total(
+                db, entry, matches_by_class=matches, attended_by_class=went
+            )
+            b_total = official_total(db, entry, matches_by_class=matches)
+            a_above = ranks_above(candidate(entry, socio, a_total), own)
+            b_above = ranks_above(candidate(entry, socio, b_total), own)
+            p = (history["attended_by_class"][match_class] + 5 * rate) / (
+                history["matches_by_class"][match_class] + 5
+            )
+            mu += p * a_above + (1 - p) * b_above
+            if a_above and not b_above:
+                variance += p * (1 - p)
+        center = 1 + mu
+        spread = 1.2815515655446004 * math.sqrt(variance)
+        result[name] = (
+            math.floor(center + Fraction(1, 2)),
+            max(1, math.floor(float(center) - spread)),
+            min(ranking.population_size, math.ceil(float(center) + spread)),
+        )
+    return result
+
+
+@pytest.fixture
+def club_with_history(db: Session, account):
+    """Ocho socios con historiales distintos en 4 Partidos Clase B; devuelve el que consulta."""
+    me, headers = account(fecha_alta=date(2015, 3, 1))
+    others = [
+        make_socio(db, fecha_alta=date(2010 + i, 1, 1), dni=f"{20000000 + i}")
+        for i in range(7)
+    ]
+    went = {
+        "H-1": [me, *others[:6]],
+        "H-2": [me, *others[:4]],
+        "H-3": [*others[:3], others[5]],
+        "H-4": [others[0], others[6]],
+    }
+    for id_externo, attendees in went.items():
+        past_match(db, id_externo, attendees)
+    return me, headers
+
+
+def test_a_partido_shows_an_estimated_position_with_range_and_label(
+    client: TestClient, db: Session, boca: dict[str, str], club_with_history
+) -> None:
+    publish_rules(client, boca)
+    me, headers = club_with_history
+    run(client, boca)
+    projection_on(db, position_min_population=2)
+    entry = entry_of(db, me)
+
+    body = simulate(client, headers, upcoming(db, "P-1", clase="B"))
+
+    assert body["current"] == {
+        "score": f"{entry.total:.2f}",
+        "position": entry.position,
+        "ranked_total": 8,
+    }
+    assert body["position_estimate"] == {
+        "status": "estimated",
+        "code": None,
+        "reason": None,
+        "message": None,
+        "label": ESTIMATE_LABEL,
+        "range_level": "0.80",
+    }
+    expected = expected_positions(
+        db,
+        me,
+        "B",
+        {"attend": body["attend"]["score"], "not_attend": body["not_attend"]["score"]},
+    )
+    for hypothesis in ("attend", "not_attend"):
+        estimate, lower, upper = expected[hypothesis]
+        position = body[hypothesis]["position"]
+        assert (position["estimate"], position["lower"], position["upper"]) == (
+            estimate,
+            lower,
+            upper,
+        )
+        assert 1 <= lower <= estimate <= upper <= 8
+        if lower == upper:
+            assert position["text"] == f"puesto estimado {estimate}"
+        else:
+            assert position["text"] == (
+                f"puesto estimado {estimate} (probable entre {lower} y {upper})"
+            )
+    # Asistir nunca da una posición peor que no asistir (SC-004).
+    assert (
+        body["attend"]["position"]["estimate"]
+        <= body["not_attend"]["position"]["estimate"]
+    )
+    # Nada de otros socios en la respuesta (FR-009).
+    assert "others" not in body and "probability" not in str(body)
+
+
+def test_some_rival_makes_the_range_wider_than_one_place(
+    client: TestClient, db: Session, boca: dict[str, str], club_with_history
+) -> None:
+    """Con socios cerca del puntaje, la posición es un rango y no un número exacto (escenario 13)."""
+    publish_rules(client, boca)
+    _, headers = club_with_history
+    run(client, boca)
+    projection_on(db, position_min_population=2)
+
+    body = simulate(client, headers, upcoming(db, "P-1", clase="B"))
+
+    positions = [body[h]["position"] for h in ("attend", "not_attend")]
+    assert any(p["lower"] < p["upper"] for p in positions)
+    assert all(
+        "probable entre" in p["text"] for p in positions if p["lower"] < p["upper"]
+    )
+
+
+def test_a_socio_clearly_ahead_is_estimated_first_in_both_hypotheses(
+    client: TestClient, db: Session, boca: dict[str, str], account
+) -> None:
+    publish_rules(client, boca)
+    me, headers = account()
+    others = [make_socio(db) for _ in range(3)]
+    for i in range(4):
+        past_match(db, f"H-{i}", [me])
+    past_match(db, "H-9", [me, others[0]])
+    run(client, boca)
+    projection_on(db, position_min_population=2)
+
+    body = simulate(client, headers, upcoming(db, "P-1", clase="B"))
+
+    assert body["position_estimate"]["label"] == ESTIMATE_LABEL
+    for hypothesis in ("attend", "not_attend"):
+        assert body[hypothesis]["position"] == {
+            "estimate": 1,
+            "lower": 1,
+            "upper": 1,
+            "text": "puesto estimado 1",
+        }
+
+
+def test_the_range_level_comes_from_the_club_settings(
+    client: TestClient, db: Session, boca: dict[str, str], club_with_history
+) -> None:
+    publish_rules(client, boca)
+    _, headers = club_with_history
+    run(client, boca)
+    projection_on(db, position_min_population=2)
+    narrow = simulate(client, headers, upcoming(db, "P-1", clase="B"))
+    projection_on(db, position_range_level=Decimal("0.95"))
+
+    wide = simulate(client, headers, upcoming(db, "P-2", clase="B"))
+
+    assert wide["position_estimate"]["range_level"] == "0.95"
+    for hypothesis in ("attend", "not_attend"):
+        before, after = narrow[hypothesis]["position"], wide[hypothesis]["position"]
+        assert after["estimate"] == before["estimate"]
+        assert after["lower"] <= before["lower"] and after["upper"] >= before["upper"]
+
+
+def test_the_range_line_uses_the_es_ar_thousands_separator() -> None:
+    position = simulator_service._position_out(PositionRange(3150, 3136, 3164))
+
+    assert position.text == "puesto estimado 3.150 (probable entre 3.136 y 3.164)"
+
+
+# --- Escenario 14: el Admin configura el simulador de su club (FR-010, FR-013) -------------
+
+SETTINGS = "/admin/simulator/settings"
+
+
+def test_the_projection_is_enabled_by_default(
+    client: TestClient, boca: dict[str, str]
+) -> None:
+    response = client.get(SETTINGS, headers=boca)
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "position_projection_enabled": True,
+        "position_range_level": "0.80",
+        "position_prior_strength": "5.00",
+        "position_min_population": 100,
+    }
+
+
+def test_by_default_a_partido_tries_to_estimate_the_position(
+    client: TestClient, db: Session, boca: dict[str, str], account
+) -> None:
+    """Encendida por defecto: un ranking chico no se estima por tamaño, no por estar apagada."""
+    publish_rules(client, boca)
+    socio, headers = account()
+    past_match(db, "H-1", [socio])
+    run(client, boca)
+
+    body = simulate(client, headers, upcoming(db, "P-1"))
+
+    assert body["position_estimate"]["code"] == "POSITION_NOT_AVAILABLE"
+    assert body["position_estimate"]["reason"] == "SMALL_POPULATION"
+
+
+def test_the_admin_turns_the_projection_off_and_on(
+    client: TestClient, db: Session, boca: dict[str, str], club_with_history
+) -> None:
+    publish_rules(client, boca)
+    _, headers = club_with_history
+    run(client, boca)
+    response = client.patch(SETTINGS, json={"position_min_population": 2}, headers=boca)
+    assert response.status_code == 200, response.text
+    assert (
+        simulate(client, headers, upcoming(db, "P-1"))["position_estimate"]["status"]
+        == "estimated"
+    )
+
+    response = client.patch(
+        SETTINGS, json={"position_projection_enabled": False}, headers=boca
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["position_projection_enabled"] is False
+    body = simulate(client, headers, upcoming(db, "P-2"))
+    assert body["position_estimate"]["reason"] == "PROJECTION_DISABLED"
+    assert body["attend"]["position"] is None and body["not_attend"]["position"] is None
+    client.patch(SETTINGS, json={"position_projection_enabled": True}, headers=boca)
+    assert (
+        simulate(client, headers, upcoming(db, "P-3"))["position_estimate"]["status"]
+        == "estimated"
+    )
+
+
+def test_only_the_sent_fields_change_and_the_change_is_audited(
+    client: TestClient, db: Session, boca: dict[str, str], admin: User
+) -> None:
+    response = client.patch(
+        SETTINGS,
+        json={"position_range_level": "0.90", "position_min_population": 50},
+        headers=boca,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "position_projection_enabled": True,
+        "position_range_level": "0.90",
+        "position_prior_strength": "5.00",
+        "position_min_population": 50,
+    }
+    log = db.scalars(
+        select(AuditLog).where(AuditLog.action == "simulator_settings.updated")
+    ).one()
+    assert log.actor_user_id == admin.id
+    assert log.entity_id == str(BOCA_ID)
+    assert log.details["before"] == {
+        "position_range_level": "0.80",
+        "position_min_population": 100,
+    }
+    assert log.details["after"] == {
+        "position_range_level": "0.90",
+        "position_min_population": 50,
+    }
+
+
+def test_a_patch_without_changes_is_not_audited(
+    client: TestClient, db: Session, boca: dict[str, str]
+) -> None:
+    response = client.patch(
+        SETTINGS, json={"position_projection_enabled": True}, headers=boca
+    )
+
+    assert response.status_code == 200, response.text
+    assert (
+        db.scalars(
+            select(AuditLog).where(AuditLog.action == "simulator_settings.updated")
+        ).first()
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"position_range_level": "1"},
+        {"position_range_level": "0"},
+        {"position_range_level": "0.805"},
+        {"position_prior_strength": "0"},
+        {"position_min_population": 0},
+        {"club_id": str(RIVER_ID)},
+    ],
+)
+def test_invalid_settings_are_rejected(
+    client: TestClient, boca: dict[str, str], body: dict
+) -> None:
+    response = client.patch(SETTINGS, json=body, headers=boca)
+
+    assert response.status_code == 422
+    assert client.get(SETTINGS, headers=boca).json()["position_range_level"] == "0.80"
+
+
+def test_the_settings_belong_to_the_admin_club(
+    client: TestClient, outbox: Outbox, boca: dict[str, str], make_admin
+) -> None:
+    river = headers_for(client, outbox, make_admin(RIVER_ID))
+
+    client.patch(SETTINGS, json={"position_projection_enabled": False}, headers=river)
+
+    assert (
+        client.get(SETTINGS, headers=river).json()["position_projection_enabled"]
+        is False
+    )
+    assert (
+        client.get(SETTINGS, headers=boca).json()["position_projection_enabled"] is True
+    )
+
+
+def test_a_socio_cannot_change_the_settings(client: TestClient, account) -> None:
+    _, headers = account()
+
+    assert client.get(SETTINGS, headers=headers).status_code == 403
+    response = client.patch(
+        SETTINGS, json={"position_projection_enabled": False}, headers=headers
+    )
+    assert response.status_code == 403
+    assert client.patch(SETTINGS, json={}).status_code == 401
