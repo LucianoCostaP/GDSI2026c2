@@ -46,9 +46,18 @@ class PositionEstimateOut(BaseModel):
     range_level: str | None = None
 
 
+class RulesNoticeOut(BaseModel):
+    """Las reglas vigentes del club ya no son las del ranking (escenario 8)."""
+
+    code: str
+    message: str
+
+
 class SimulationOut(BaseModel):
     event: SimulatedEventOut
     ranking: SimulationRankingOut
+    # `null` salvo que las reglas vigentes difieran de las del ranking.
+    rules_notice: RulesNoticeOut | None
     current: CurrentStandingOut
     attend: HypothesisOut
     not_attend: HypothesisOut

@@ -4,10 +4,11 @@ Simula un solo evento sobre la instantánea que guardó el último ranking compl
 otros próximos eventos (escenario 1) y no guarda nada (FR-004). Los puntajes salen del motor
 único (`scoring.engine.calculate_score`) con las reglas de ese ranking.
 
-Un evento que no está publicado o que ya empezó no se simula (escenario 3).
+Un evento que no está publicado o que ya empezó no se simula (escenario 3). Si el club publicó
+reglas nuevas después del ranking, la simulación sigue usando las del ranking y lo avisa
+(escenario 8).
 
-Pendiente (próximos escenarios): aviso de reglas (8), distancia actual (9) y posición estimada
-(10). Mientras tanto la posición de un Partido no se estima, que es lo
+Pendiente (próximos escenarios): distancia actual (9) y posición estimada (10). Mientras tanto la posición de un Partido no se estima, que es lo
 que corresponde con `position_projection_enabled` apagado (su valor por defecto).
 """
 
@@ -37,6 +38,7 @@ from ..schemas.simulator import (
     CurrentStandingOut,
     HypothesisOut,
     PositionEstimateOut,
+    RulesNoticeOut,
     SimulatedEventOut,
     SimulationOut,
     SimulationRankingOut,
@@ -45,6 +47,7 @@ from ..schemas.simulator import (
 from ..scoring.attendance_inputs import MATCH_CLASSES
 from ..scoring.engine import ScoringInputs, ScoringParameters, calculate_score
 from ..scoring.snapshot import scoring_inputs_from_snapshot
+from .formula_service import get_in_force
 from .ranking_service import _socio_of, get_ranking_in_force
 
 EVENT_NOT_FOUND_MESSAGE = "No encontramos el evento."
@@ -54,6 +57,10 @@ NOT_IN_RANKING_MESSAGE = (
 )
 POSITION_NOT_AVAILABLE_MESSAGE = (
     "No podemos estimar tu posición en este momento. Te mostramos solo tu puntaje."
+)
+RULES_AHEAD_MESSAGE = (
+    "Esta simulación usa las reglas del último ranking (versión {n}). Las reglas vigentes "
+    "se aplicarán desde el próximo cálculo."
 )
 INSTITUTIONAL_NOTICE = (
     "No asistir no cambia tu puntaje, pero tu posición puede bajar si otros socios "
@@ -139,6 +146,19 @@ def _ranking_out(db: Session, ranking: Ranking) -> SimulationRankingOut:
         completed_at=ranking.completed_at,
         calculation_date=ranking.calculation_date,
         rules_version=rules_number,
+    )
+
+
+def _rules_notice(
+    db: Session, club_id: uuid.UUID, ranking_rules: RulesVersion
+) -> RulesNoticeOut | None:
+    """Aviso cuando las reglas vigentes del club ya no son las que usó el ranking."""
+    in_force = get_in_force(db, club_id)
+    if in_force is None or in_force.id == ranking_rules.id:
+        return None
+    return RulesNoticeOut(
+        code="RULES_AHEAD_OF_RANKING",
+        message=RULES_AHEAD_MESSAGE.format(n=ranking_rules.number),
     )
 
 
@@ -234,6 +254,7 @@ def simulate_event(
             puntos=None if is_match else event.puntos,
         ),
         ranking=_ranking_out(db, ranking),
+        rules_notice=_rules_notice(db, club_id, rules),
         current=CurrentStandingOut(
             score=f"{current:.2f}",
             position=entry.position,

@@ -33,6 +33,7 @@ from tests.conftest import (
 )
 from tests.hu25_helpers import (
     RUNS,
+    adjust_rules,
     headers_for,
     load_attendance,
     make_event,
@@ -683,3 +684,80 @@ def test_the_simulation_shows_current_projections_and_differences(
         score = Decimal(body[hypothesis]["score"])
         assert Decimal(0) <= score <= Decimal(100)
         assert body[hypothesis]["difference"] == f"{score - entry.total:.2f}"
+
+
+# --- Escenario 8: versión de reglas del ranking y aviso si las vigentes son otras -----------
+
+RULES_AHEAD = {
+    "code": "RULES_AHEAD_OF_RANKING",
+    "message": "Esta simulación usa las reglas del último ranking (versión 1). Las reglas "
+    "vigentes se aplicarán desde el próximo cálculo.",
+}
+
+
+def test_the_simulation_shows_the_rules_version_and_date_of_the_ranking(
+    client: TestClient, db: Session, boca: dict[str, str], account
+) -> None:
+    publish_rules(client, boca)
+    socio, headers = account()
+    run(client, boca)
+
+    body = simulate(client, headers, upcoming(db, "P-1"))
+
+    ranking = ranking_service.get_ranking_in_force(db, socio.club_id)
+    assert ranking is not None and ranking.completed_at is not None
+    assert body["ranking"]["rules_version"] == 1
+    assert body["ranking"]["calculation_date"] == ranking.calculation_date.isoformat()
+    assert body["ranking"]["completed_at"] is not None
+    # Mismas reglas vigentes que las del ranking: no hay aviso.
+    assert body["rules_notice"] is None
+
+
+def test_new_rules_in_force_are_announced_and_not_used(
+    client: TestClient, db: Session, boca: dict[str, str], account
+) -> None:
+    publish_rules(client, boca)
+    socio, headers = account()
+    run(client, boca)
+    adjust_rules(client, boca, expected_rules_version=1, alpha_a="0.50")
+    entry = entry_of(db, socio)
+    event = upcoming(db, "P-1", clase="B")
+
+    body = simulate(client, headers, event)
+
+    assert body["ranking"]["rules_version"] == 1
+    assert body["rules_notice"] == RULES_AHEAD
+    # Los puntajes salen de las reglas del ranking (versión 1), no de las vigentes.
+    one_match = {"A": 0, "B": 1, "C": 0}
+    assert body["attend"]["score"] == official_total(
+        db, entry, matches_by_class=one_match, attended_by_class=one_match
+    )
+    in_force = db.scalars(
+        select(RulesVersion).where(
+            RulesVersion.club_id == BOCA_ID, RulesVersion.number == 2
+        )
+    ).one()
+    with_new_rules = calculate_score(
+        replace(
+            scoring_inputs_from_snapshot(entry.inputs),
+            matches_by_class=one_match,
+            attended_by_class=one_match,
+        ),
+        ScoringParameters.from_values(in_force.values),
+    ).total
+    assert body["attend"]["score"] != f"{with_new_rules:.2f}"
+
+
+def test_the_notice_disappears_after_a_ranking_with_the_new_rules(
+    client: TestClient, db: Session, boca: dict[str, str], account
+) -> None:
+    publish_rules(client, boca)
+    _, headers = account()
+    run(client, boca)
+    adjust_rules(client, boca, expected_rules_version=1, alpha_a="0.50")
+    run(client, boca)
+
+    body = simulate(client, headers, upcoming(db, "P-1"))
+
+    assert body["ranking"]["rules_version"] == 2
+    assert body["rules_notice"] is None
