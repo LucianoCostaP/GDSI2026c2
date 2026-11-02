@@ -1,6 +1,6 @@
 # Contrato de la API propia: simulador de puntaje por asistencia (HU-18)
 
-**Estado**: propuesta, sin implementar | **Fecha**: 2026-11-01
+**Estado**: implementado | **Fecha**: 2026-11-01
 **Spec**: `specs/hu-18-attendance-score-simulator/spec.md` (v4). Su tabla de "Messages" y sus códigos mandan sobre este resumen. Ver también `specs/_shared/scoring-model.md` y `specs/_shared/cross-cutting.md` (secciones 6, 8 y 9).
 **Es el contrato entre el backend y el frontend (`../tp_gestion_reactjs`).** Sigue las convenciones de `docs/contrato-api-reglas.md` (sección 1): una sola ruta por endpoint, club tomado de la cuenta, decimales como string, textos en español.
 
