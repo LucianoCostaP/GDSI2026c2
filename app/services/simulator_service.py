@@ -16,6 +16,7 @@ toman tal como los tiene el ranking: sus dos totales para el evento salen del mi
 """
 
 import logging
+import time
 import uuid
 from dataclasses import dataclass, replace
 from datetime import date, datetime
@@ -41,6 +42,7 @@ from ..models import (
 )
 from ..models.enums import TipoEvento
 from ..schemas.simulator import (
+    ESTIMATED_POSITION_PREFIX,
     CurrentStandingOut,
     DistanceOut,
     EstimatedPositionOut,
@@ -93,6 +95,10 @@ INSTITUTIONAL_NOTICE = (
 )
 
 logger = logging.getLogger(__name__)
+
+# Tiempo máximo para estimar la posición (SC-007: la simulación responde en 2 s). Se deja
+# margen para el resto de la respuesta; si no alcanza, se muestran solo los puntajes.
+POSITION_TIME_BUDGET_SECONDS = 1.5
 
 
 def _not_simulable() -> PasioDe10Exception:
@@ -287,7 +293,7 @@ def _thousands(n: int) -> str:
 
 
 def _position_out(position: PositionRange) -> EstimatedPositionOut:
-    text = f"puesto estimado {_thousands(position.estimate)}"
+    text = f"{ESTIMATED_POSITION_PREFIX}{_thousands(position.estimate)}"
     if position.lower != position.upper:
         text += (
             f" (probable entre {_thousands(position.lower)} y "
@@ -326,8 +332,10 @@ def _estimated_positions(
 ) -> tuple[PositionRange, PositionRange]:
     """Puesto estimado si asiste y si no asiste ("Position model").
 
-    Lanza `_NotEstimated` con el motivo cuando la posición no se estima.
+    Lanza `_NotEstimated` con el motivo cuando la posición no se estima (escenario 12), en el
+    orden del spec: sin historial del club, ranking chico, o sin tiempo para terminar.
     """
+    deadline = time.monotonic() + POSITION_TIME_BUDGET_SECONDS
     rows = db.execute(
         select(RankingEntry.socio_id, RankingEntry.inputs, Socio.dni)
         .join(Socio, Socio.id == RankingEntry.socio_id)
@@ -351,6 +359,11 @@ def _estimated_positions(
 
     others: list[_Other] = []
     for row in rows:
+        if time.monotonic() >= deadline:
+            logger.warning(
+                "La posición estimada del ranking %s no terminó a tiempo", ranking.id
+            )
+            raise _NotEstimated("POSITION_ERROR")
         if row.socio_id == entry.socio_id:
             continue
         inputs = scoring_inputs_from_snapshot(row.inputs)

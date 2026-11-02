@@ -2,8 +2,11 @@
 
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+ESTIMATED_POSITION_PREFIX = "puesto estimado "
 
 
 class SimulatedEventOut(BaseModel):
@@ -37,6 +40,15 @@ class EstimatedPositionOut(BaseModel):
     upper: int
     # "puesto estimado 3.150 (probable entre 3.136 y 3.164)", ya en es-AR.
     text: str
+
+    @model_validator(mode="after")
+    def _is_a_labeled_range(self) -> Self:
+        """Escenario 13: un rango (aunque sea de un solo puesto), nunca un número exacto."""
+        if not 1 <= self.lower <= self.estimate <= self.upper:
+            raise ValueError("El puesto estimado tiene que estar dentro de su rango.")
+        if not self.text.startswith(ESTIMATED_POSITION_PREFIX):
+            raise ValueError("El texto tiene que decir que el puesto es estimado.")
+        return self
 
 
 class HypothesisOut(BaseModel):
@@ -85,6 +97,27 @@ class SimulationOut(BaseModel):
     attend: HypothesisOut
     not_attend: HypothesisOut
     position_estimate: PositionEstimateOut
+
+    @model_validator(mode="after")
+    def _estimates_carry_the_label(self) -> Self:
+        """Escenario 13 (SC-003): ninguna posición estimada sale sin la etiqueta.
+
+        Las dos hipótesis traen posición si y solo si el estado es "estimated", y en ese caso
+        vienen la etiqueta y el nivel del rango. Una respuesta que no lo cumple es un error
+        del programa y no se devuelve.
+        """
+        positions = [self.attend.position, self.not_attend.position]
+        estimate = self.position_estimate
+        if estimate.status == "estimated":
+            if any(position is None for position in positions):
+                raise ValueError(
+                    "Una estimación trae la posición de las dos hipótesis."
+                )
+            if not estimate.label or estimate.range_level is None:
+                raise ValueError("Una posición estimada siempre lleva la etiqueta.")
+        elif any(position is not None for position in positions):
+            raise ValueError("Sin estimación no se devuelve ninguna posición estimada.")
+        return self
 
 
 class SimulatorStatusOut(BaseModel):

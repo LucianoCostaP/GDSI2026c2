@@ -9,6 +9,7 @@ from fractions import Fraction
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -24,6 +25,7 @@ from app.models import (
     User,
     utcnow,
 )
+from app.schemas.simulator import SimulationOut
 from app.scoring.engine import ScoringParameters, calculate_score
 from app.scoring.position import PositionRange
 from app.scoring.ranking_order import RankingCandidate, ranks_above
@@ -1091,6 +1093,382 @@ def test_the_range_line_uses_the_es_ar_thousands_separator() -> None:
     position = simulator_service._position_out(PositionRange(3150, 3136, 3164))
 
     assert position.text == "puesto estimado 3.150 (probable entre 3.136 y 3.164)"
+
+
+# --- Escenario 11: un institucional muestra puntajes, posición actual y aviso, sin estimar ---
+
+INSTITUTIONAL_NOTICE = (
+    "No asistir no cambia tu puntaje, pero tu posición puede bajar si otros socios "
+    "suman puntos."
+)
+
+
+def test_an_institutional_event_shows_scores_current_position_and_notice(
+    client: TestClient, db: Session, boca: dict[str, str], club_with_history
+) -> None:
+    publish_rules(client, boca)
+    me, headers = club_with_history
+    run(client, boca)
+    # Con la proyección encendida y un ranking que alcanza: un Partido sí se estimaría.
+    projection_on(db, position_min_population=2)
+    entry = entry_of(db, me)
+    partido = simulate(client, headers, upcoming(db, "P-1"))
+    assert partido["position_estimate"]["status"] == "estimated"
+
+    body = simulate(
+        client,
+        headers,
+        upcoming(db, "I-1", tipo="Institucional", clase=None, puntos=40),
+    )
+
+    assert body["current"] == {
+        "score": f"{entry.total:.2f}",
+        "position": entry.position,
+        "ranked_total": 8,
+    }
+    assert body["position_estimate"] == {
+        "status": "not_estimated",
+        "code": None,
+        "reason": "INSTITUTIONAL_NOT_ESTIMATED",
+        "message": INSTITUTIONAL_NOTICE,
+        "label": None,
+        "range_level": None,
+    }
+    assert body["attend"]["position"] is None
+    assert body["not_attend"]["position"] is None
+    # Los dos puntajes: asistir suma los puntos y no asistir deja el actual (SC-004).
+    base = scoring_inputs_from_snapshot(entry.inputs)
+    assert body["attend"]["score"] == official_total(
+        db, entry, institutional_points=base.institutional_points + 40
+    )
+    assert body["not_attend"]["score"] == f"{entry.total:.2f}"
+    assert body["not_attend"]["difference"] == "0.00"
+
+
+def test_an_institutional_event_is_not_an_error_with_the_projection_off(
+    client: TestClient, db: Session, boca: dict[str, str], account
+) -> None:
+    publish_rules(client, boca)
+    _, headers = account()
+    run(client, boca)
+    response = client.patch(
+        "/admin/simulator/settings",
+        json={"position_projection_enabled": False},
+        headers=boca,
+    )
+    assert response.status_code == 200, response.text
+
+    body = simulate(
+        client,
+        headers,
+        upcoming(db, "I-1", tipo="Institucional", clase=None, puntos=20),
+    )
+
+    # El motivo es el del institucional, nunca POSITION_NOT_AVAILABLE ni su mensaje.
+    assert body["position_estimate"]["code"] is None
+    assert body["position_estimate"]["reason"] == "INSTITUTIONAL_NOT_ESTIMATED"
+    assert body["position_estimate"]["message"] == INSTITUTIONAL_NOTICE
+
+
+def test_an_institutional_event_never_reads_the_other_socios(
+    client: TestClient,
+    db: Session,
+    boca: dict[str, str],
+    club_with_history,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    publish_rules(client, boca)
+    _, headers = club_with_history
+    run(client, boca)
+    projection_on(db, position_min_population=2)
+
+    def fail(*args, **kwargs):
+        raise AssertionError("no se estima la posición de un institucional")
+
+    monkeypatch.setattr(simulator_service, "_estimated_positions", fail)
+
+    body = simulate(
+        client,
+        headers,
+        upcoming(db, "I-1", tipo="Institucional", clase=None, puntos=40),
+    )
+
+    assert body["position_estimate"]["reason"] == "INSTITUTIONAL_NOT_ESTIMATED"
+
+
+# --- Escenario 12: un Partido sin posición estimada muestra solo los puntajes ---------------
+
+POSITION_NOT_AVAILABLE = (
+    "No podemos estimar tu posición en este momento. Te mostramos solo tu puntaje."
+)
+
+
+def assert_only_scores(db: Session, me: Socio, body: dict, reason: str) -> None:
+    """Mismo mensaje para todos los motivos; el motivo viaja solo como código."""
+    assert body["position_estimate"] == {
+        "status": "unavailable",
+        "code": "POSITION_NOT_AVAILABLE",
+        "reason": reason,
+        "message": POSITION_NOT_AVAILABLE,
+        "label": None,
+        "range_level": None,
+    }
+    entry = entry_of(db, me)
+    assert body["current"]["position"] == entry.position
+    for hypothesis in ("attend", "not_attend"):
+        assert body[hypothesis]["position"] is None
+        expected = Decimal(body[hypothesis]["score"]) - entry.total
+        assert body[hypothesis]["difference"] == f"{expected:.2f}"
+
+
+def test_with_the_projection_off_only_the_scores_are_shown(
+    client: TestClient, db: Session, boca: dict[str, str], club_with_history
+) -> None:
+    publish_rules(client, boca)
+    me, headers = club_with_history
+    run(client, boca)
+    projection_on(db, position_min_population=2)
+    club = db.get(Club, BOCA_ID)
+    assert club is not None
+    club.position_projection_enabled = False
+    db.commit()
+
+    body = simulate(client, headers, upcoming(db, "P-1"))
+
+    assert_only_scores(db, me, body, "PROJECTION_DISABLED")
+
+
+def test_without_any_counted_match_in_the_club_only_the_scores_are_shown(
+    client: TestClient, db: Session, boca: dict[str, str], account
+) -> None:
+    publish_rules(client, boca)
+    me, headers = account()
+    make_socio(db)
+    run(client, boca)
+    projection_on(db, position_min_population=1)
+
+    body = simulate(client, headers, upcoming(db, "P-1"))
+
+    assert_only_scores(db, me, body, "INSUFFICIENT_HISTORY")
+
+
+def test_without_matches_of_the_class_the_club_rate_of_all_classes_is_used(
+    client: TestClient, db: Session, boca: dict[str, str], account
+) -> None:
+    """Sin partidos de la clase hay historial igual: no es INSUFFICIENT_HISTORY."""
+    publish_rules(client, boca)
+    me, headers = account()
+    other = make_socio(db)
+    past_match(db, "H-1", [me, other], clase="A")
+    run(client, boca)
+    projection_on(db, position_min_population=2)
+
+    body = simulate(client, headers, upcoming(db, "P-1", clase="C"))
+
+    assert body["position_estimate"]["status"] == "estimated"
+
+
+def test_a_ranking_smaller_than_the_minimum_shows_only_the_scores(
+    client: TestClient, db: Session, boca: dict[str, str], club_with_history
+) -> None:
+    publish_rules(client, boca)
+    me, headers = club_with_history
+    run(client, boca)
+    # 8 socios en el ranking: con el mínimo en 9 no alcanza, con 8 sí.
+    projection_on(db, position_min_population=9)
+
+    body = simulate(client, headers, upcoming(db, "P-1"))
+
+    assert_only_scores(db, me, body, "SMALL_POPULATION")
+    projection_on(db, position_min_population=8)
+    assert (
+        simulate(client, headers, upcoming(db, "P-2"))["position_estimate"]["status"]
+        == "estimated"
+    )
+
+
+def test_a_failure_while_estimating_shows_only_the_scores(
+    client: TestClient,
+    db: Session,
+    boca: dict[str, str],
+    club_with_history,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    publish_rules(client, boca)
+    me, headers = club_with_history
+    run(client, boca)
+    projection_on(db, position_min_population=2)
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("falla del cálculo")
+
+    monkeypatch.setattr(simulator_service, "ranks_above", broken)
+
+    body = simulate(client, headers, upcoming(db, "P-1"))
+
+    assert_only_scores(db, me, body, "POSITION_ERROR")
+    assert Decimal(body["attend"]["score"]) >= Decimal(body["not_attend"]["score"])
+
+
+def test_an_estimate_that_does_not_finish_in_time_shows_only_the_scores(
+    client: TestClient,
+    db: Session,
+    boca: dict[str, str],
+    club_with_history,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    publish_rules(client, boca)
+    me, headers = club_with_history
+    run(client, boca)
+    projection_on(db, position_min_population=2)
+    monkeypatch.setattr(simulator_service, "POSITION_TIME_BUDGET_SECONDS", 0)
+
+    body = simulate(client, headers, upcoming(db, "P-1"))
+
+    assert_only_scores(db, me, body, "POSITION_ERROR")
+
+
+# --- Escenario 13: una posición estimada nunca sale sin etiqueta ni como número exacto ------
+
+
+def assert_labeled_ranges(body: dict) -> None:
+    """Toda posición estimada es un rango con la etiqueta y el texto de estimación."""
+    assert body["position_estimate"]["status"] == "estimated"
+    assert body["position_estimate"]["label"] == ESTIMATE_LABEL
+    assert body["position_estimate"]["range_level"] is not None
+    for hypothesis in ("attend", "not_attend"):
+        position = body[hypothesis]["position"]
+        assert set(position) == {"estimate", "lower", "upper", "text"}
+        assert position["lower"] <= position["estimate"] <= position["upper"]
+        assert position["text"].startswith("puesto estimado ")
+
+
+def test_every_estimated_position_is_a_labeled_range(
+    client: TestClient, db: Session, boca: dict[str, str], club_with_history
+) -> None:
+    publish_rules(client, boca)
+    _, headers = club_with_history
+    run(client, boca)
+    projection_on(db, position_min_population=2)
+
+    for clase in ("A", "B", "C"):
+        body = simulate(client, headers, upcoming(db, f"P-{clase}", clase=clase))
+        assert_labeled_ranges(body)
+
+
+def test_a_range_of_a_single_place_is_still_labeled_as_an_estimate(
+    client: TestClient, db: Session, boca: dict[str, str], account
+) -> None:
+    publish_rules(client, boca)
+    me, headers = account()
+    others = [make_socio(db) for _ in range(2)]
+    for i in range(4):
+        past_match(db, f"H-{i}", [me])
+    past_match(db, "H-9", [me, others[0]])
+    run(client, boca)
+    projection_on(db, position_min_population=2)
+
+    body = simulate(client, headers, upcoming(db, "P-1"))
+
+    assert_labeled_ranges(body)
+    position = body["attend"]["position"]
+    assert position["lower"] == position["upper"] == 1
+    # Un solo puesto se muestra como "puesto estimado 1", nunca como "1" a secas.
+    assert position["text"] == "puesto estimado 1"
+
+
+def simulation_with(*, position_estimate: dict, attend_position, not_attend_position):
+    """Una respuesta armada a mano, para probar lo que el esquema deja salir."""
+    return SimulationOut.model_validate(
+        {
+            "event": {
+                "id": "e",
+                "titulo": "t",
+                "tipo": "Partido",
+                "fecha_hora": "2026-11-08T20:00:00Z",
+                "puntos": None,
+            },
+            "ranking": {
+                "completed_at": None,
+                "calculation_date": "2026-10-29",
+                "rules_version": 1,
+            },
+            "rules_notice": None,
+            "distance": {
+                "used_km": "1.00",
+                "ranking_km": "1.00",
+                "changed": False,
+                "notice": None,
+            },
+            "current": {"score": "50.00", "position": 3, "ranked_total": 10},
+            "attend": {
+                "score": "51.00",
+                "difference": "1.00",
+                "position": attend_position,
+            },
+            "not_attend": {
+                "score": "49.00",
+                "difference": "-1.00",
+                "position": not_attend_position,
+            },
+            "position_estimate": position_estimate,
+        }
+    )
+
+
+RANGE = {
+    "estimate": 3,
+    "lower": 2,
+    "upper": 4,
+    "text": "puesto estimado 3 (probable entre 2 y 4)",
+}
+ESTIMATED = {
+    "status": "estimated",
+    "code": None,
+    "reason": None,
+    "message": None,
+    "label": ESTIMATE_LABEL,
+    "range_level": "0.80",
+}
+UNAVAILABLE = {
+    "status": "unavailable",
+    "code": "POSITION_NOT_AVAILABLE",
+    "reason": "POSITION_ERROR",
+    "message": "No podemos estimar tu posición en este momento. Te mostramos solo tu puntaje.",
+}
+
+
+def test_a_well_formed_estimate_is_accepted() -> None:
+    simulation_with(
+        position_estimate=ESTIMATED, attend_position=RANGE, not_attend_position=RANGE
+    )
+
+
+@pytest.mark.parametrize(
+    ("position_estimate", "attend_position", "not_attend_position"),
+    [
+        # Sin etiqueta.
+        ({**ESTIMATED, "label": None}, RANGE, RANGE),
+        ({**ESTIMATED, "label": ""}, RANGE, RANGE),
+        ({**ESTIMATED, "range_level": None}, RANGE, RANGE),
+        # Una posición estimada fuera de una estimación.
+        (UNAVAILABLE, RANGE, None),
+        # Una estimación a la que le falta una hipótesis.
+        (ESTIMATED, RANGE, None),
+        # Un número exacto disfrazado: sin texto de estimación o fuera de su rango.
+        (ESTIMATED, {**RANGE, "text": "puesto 3"}, RANGE),
+        (ESTIMATED, {**RANGE, "estimate": 5}, RANGE),
+    ],
+)
+def test_an_estimated_position_without_its_label_is_never_returned(
+    position_estimate, attend_position, not_attend_position
+) -> None:
+    with pytest.raises(ValidationError):
+        simulation_with(
+            position_estimate=position_estimate,
+            attend_position=attend_position,
+            not_attend_position=not_attend_position,
+        )
 
 
 # --- Escenario 14: el Admin configura el simulador de su club (FR-010, FR-013) -------------
