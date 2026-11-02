@@ -4,28 +4,33 @@ Simula un solo evento sobre la instantánea que guardó el último ranking compl
 otros próximos eventos (escenario 1) y no guarda nada (FR-004). Los puntajes salen del motor
 único (`scoring.engine.calculate_score`) con las reglas de ese ranking.
 
-Pendiente (próximos escenarios): evento ya empezado (3), aviso de reglas (8), distancia actual
-(9) y posición estimada (10). Mientras tanto la posición de un Partido no se estima, que es lo
+Un evento que no está publicado o que ya empezó no se simula (escenario 3).
+
+Pendiente (próximos escenarios): aviso de reglas (8), distancia actual (9) y posición estimada
+(10). Mientras tanto la posición de un Partido no se estima, que es lo
 que corresponde con `position_projection_enabled` apagado (su valor por defecto).
 """
 
 import uuid
 from dataclasses import replace
+from datetime import datetime
 from decimal import Decimal
 
 from fastapi import status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..core.date_utils import formatear_tipo_evento
+from ..core.date_utils import asegurar_utc, formatear_tipo_evento
 from ..core.exceptions import PasioDe10Exception
 from ..models import (
     EstadoCuota,
+    EventoPendienteDB,
     EventoVisibleDB,
     Ranking,
     RankingEntry,
     RulesVersion,
     User,
+    utcnow,
 )
 from ..models.enums import TipoEvento
 from ..schemas.simulator import (
@@ -56,8 +61,20 @@ INSTITUTIONAL_NOTICE = (
 )
 
 
-def _event_of_club(db: Session, club_id: uuid.UUID, event_id: str) -> EventoVisibleDB:
-    """El evento publicado del club; uno de otro club responde igual que uno inexistente."""
+def _not_simulable() -> PasioDe10Exception:
+    return PasioDe10Exception(
+        EVENT_NOT_SIMULABLE_MESSAGE, status.HTTP_409_CONFLICT, "EVENT_NOT_SIMULABLE"
+    )
+
+
+def _simulable_event(
+    db: Session, club_id: uuid.UUID, event_id: str, now: datetime
+) -> EventoVisibleDB:
+    """El evento publicado y todavía no empezado del club (escenario 3, FR-001).
+
+    Uno de otro club responde igual que uno inexistente (FR-009). Uno del club que todavía no
+    está publicado, o que ya empezó, se rechaza sin calcular nada.
+    """
     event = db.scalar(
         select(EventoVisibleDB).where(
             EventoVisibleDB.id_interno == event_id,
@@ -65,18 +82,26 @@ def _event_of_club(db: Session, club_id: uuid.UUID, event_id: str) -> EventoVisi
         )
     )
     if event is None:
+        pending = db.scalar(
+            select(EventoPendienteDB.id_interno).where(
+                EventoPendienteDB.id_interno == event_id,
+                EventoPendienteDB.club_id == club_id,
+            )
+        )
+        if pending is not None:
+            raise _not_simulable()
         raise PasioDe10Exception(
             EVENT_NOT_FOUND_MESSAGE, status.HTTP_404_NOT_FOUND, "EVENT_NOT_FOUND"
         )
+    if asegurar_utc(event.fecha_hora) <= now:
+        raise _not_simulable()
     is_match = event.tipo == TipoEvento.PARTIDO.value
     if (is_match and event.clase not in MATCH_CLASSES) or (
         not is_match
         and (event.tipo != TipoEvento.INSTITUCIONAL.value or not event.puntos)
     ):
         # Un Partido sin clase o un institucional sin puntos no entran en el cálculo.
-        raise PasioDe10Exception(
-            EVENT_NOT_SIMULABLE_MESSAGE, status.HTTP_409_CONFLICT, "EVENT_NOT_SIMULABLE"
-        )
+        raise _not_simulable()
     return event
 
 
@@ -160,10 +185,14 @@ def _hypothesis(score: Decimal, current: Decimal) -> HypothesisOut:
 
 
 def simulate_event(
-    db: Session, member_user: User, club_id: uuid.UUID, event_id: str
+    db: Session,
+    member_user: User,
+    club_id: uuid.UUID,
+    event_id: str,
+    now: datetime | None = None,
 ) -> SimulationOut:
     """HU-18: puntaje del socio si asiste y si no asiste a un evento, sin guardar nada."""
-    event = _event_of_club(db, club_id, event_id)
+    event = _simulable_event(db, club_id, event_id, asegurar_utc(now or utcnow()))
 
     ranked = _ranked_entry(db, member_user, club_id)
     if ranked is None:
