@@ -1,7 +1,7 @@
 # Feature Specification: View Explanation of How the Ranking Works
 
 **Feature Branch**: `hu-13-ranking-explanation`
-**Created**: 2026-10-11 | **Revised**: 2026-10-27 (v5)
+**Created**: 2026-10-11 | **Revised**: 2026-11-01 (v6)
 **Status**: Draft
 **Backlog Reference**: HU-13 (Estimate: 1, Priority: Media, MVP: Yes). Re-estimate: generated text, empty states and entry point.
 **Shared rules**: [scoring model](../_shared/scoring-model.md), [cross-cutting](../_shared/cross-cutting.md)
@@ -30,7 +30,7 @@ The explanation is **generated automatically** from the formula published by the
 7. **Given** a club with rules in force but no completed ranking yet, **When** the Socio opens the section, **Then** the explanation is shown normally, without the notice of scenario 5.
 8. **Given** the explanation, **When** it shows the common block, **Then** it states that only Socios with fees up to date appear, that their history is kept and that a Socio who pays up returns with their accumulated record, and that equal scores are ordered by seniority, then age, then document number, with no data of other Socios.
 9. **Given** the explanation of the scoring model v1, **When** the formula block describes attendance, **Then** it states that matches of lower demand weigh more, and it covers the attendance window, distance, institutional participation with its 365-day validity, seniority and age, and the new-member bonus, each with the current values.
-10. **Given** a logged-in Socio, **When** they look for the explanation, **Then** they find it from the top navigation bar and from a shortcut on their home screen. The Socio sees it whatever their fee status.
+10. **Given** a logged-in Socio, **When** they look for the explanation, **Then** they find it from the side navigation bar and from a shortcut on their home screen. The Socio sees it whatever their fee status.
 11. **Given** an Admin or a request without session, **When** they request the Socio's explanation, **Then** it is rejected (Admins use the preview in HU-27).
 
 ---
@@ -70,7 +70,7 @@ Defined while implementing (README, decision 40). The texts are in Spanish and c
 | No published formula in the club (scenario 6; not an error) | 200 | `status: "none"` | Todavía no hay reglas de puntaje publicadas. Cuando el club las publique, vas a poder verlas acá. |
 | Rules in force differ from the latest completed ranking (scenario 5) | 200 | `notice.code = RULES_AHEAD_OF_RANKING` | Estas reglas se van a reflejar en el ranking después del próximo cálculo. |
 | Explanation title (the front also uses it as the home shortcut label) | — | — | ¿Cómo se calcula mi puntaje? |
-| Label in the top navigation bar | — | — | Cómo se calcula |
+| Label in the side navigation bar | — | — | Cómo se calcula |
 | Loading, front only | — | — | Cargando la explicación… |
 | Load error, front only | — | — | No pudimos cargar la explicación. Probá de nuevo en un rato. |
 | Socio account without club | 403 | `MEMBER_WITHOUT_CLUB` | The front shows: Tu cuenta no tiene un club asignado. Consultá con el club. |
@@ -110,3 +110,4 @@ Under the Socio's session; the club comes from the account (decision 34). One ro
 - v3: added the statement about fee status and kept history.
 - v5: messages, codes and API defined with the implementation (decision 40); `MEMBER_WITHOUT_CLUB`; the response never exposes Admin data; `no-store`.
 - v4: works with any formula of the catalog (formula block plus common block); added the empty states, the entry points, per-club rules and the preview shared with HU-27.
+- v6: the navigation is a side bar, not a top bar (scenario 10 and the messages table).
