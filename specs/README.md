@@ -54,7 +54,7 @@
 10. **Two event types**: Partido (attendance pillar, needs a class, has waves) and Evento institucional/amateur (institutional pillar, no class, no waves). Elections and assemblies are institutional events. Events held outside the stadium are institutional/amateur.
 11. **Minimum publication lead: 48 hours** before the event start. Automatic publication happens at the earlier of 24 hours after the event is received and 48 hours before the start.
 12. **The club sends, the system receives.** The Socio roster (HU-43), events (HU-21), attendance and recurring activities (HU-24) arrive through an integration API the system exposes, authenticated with a Bearer token per club. The system never calls an API of the club (data contract, section 5).
-13. The attendance simulator (HU-18) shows an estimated position, clearly labeled as an estimate that holds the other Socios constant.
+13. The attendance simulator (HU-18) shows the projected scores exactly (official calculation over the latest ranking, with the Socio's current distance) and, for a Partido, the position as a labeled probabilistic range: each other Socio attends with a smoothed probability from their own history, and the position is 1 plus the sum of the probabilities of ending above. The range is shown by default; if the Admin turns the projection off for the club, the Socio sees only the scores (decision 43). For institutional events it shows the scores and a notice, without a position. The current score and position stay those of the ranking, which used the previous distance if the Socio's home changed.
 14. **Records sent by the club are validated one by one**: invalid records are rejected with a code and a reason, valid ones are applied, as the HU-43 prototype does. A structurally invalid request is rejected whole. Resends are idempotent.
 15. Maximum volume: **500,000 Socios** (typically far fewer).
 16. Admin invitations expire after **48 hours** and must then be created again. There is no manual revocation.
@@ -85,6 +85,8 @@
 39. **Decimal arithmetic** for parameter values, limits, the sum rule and rounding (scoring model, rule 8).
 40. **Messages and codes of HU-27 and HU-13 are defined during implementation** and added to the specs in the same PR. This is an exception to the Definition of Ready; it needs an amendment of `docs/constitution.md` section 3 (2 approvals).
 41. **Version history is outside the MVP.** There is no history of rules versions (HU-27, HU-28) and no history of previous rankings (HU-25). Each rules version is still stored unchanged, and each ranking records the one it used, so HU-13's notice and the Socio views anchored to the latest ranking keep working. The audit keeps who, when and the previous and new values. HU-25, the ranking run itself, stays in the MVP.
+42. **HU-18 position scope**: the estimated position is for Partidos only; institutional events show scores and a notice (decision 13). It uses what the ranking snapshot already stores and does not change HU-25.
+43. **HU-18 position projection on by default, set by the Admin.** `position_projection_enabled` starts on for every club, without a prior validation, because the simulation never changes the real ranking or any stored data and every estimated position carries the estimate label. The Admin reads and changes the four simulator settings of their own club, with validation and audit (HU-18 scenario 14, FR-013). The offline validation of HU-18 (coverage and error against the frozen-others version) stays as a recommended check to tune `k` and the range level or to turn the projection off.
 
 ## Defaults set by this revision (change them in one place)
 
@@ -94,6 +96,8 @@ Default class B for Partidos not classified in time and 20 default points for in
 
 - **Socio type for HU-30**: the backlog suggests segmenting by "tipo de socio", but the club does not send that field. It needs the club to add it to the roster (HU-43).
 - **HU-16, HU-18, HU-29 and HU-30 with other formulas**: they are written for the components of the scoring model v1. When a second formula enters the catalog they must read their components from its descriptor. Not needed in the MVP, which ships one formula.
+- **Position of institutional events in HU-18**: not estimated in this version because the inputs snapshot (HU-25, scoring model rule 4) does not hold the number of institutional events each Socio could attend in the window. Adding it needs that data in the snapshot and a revision of HU-18. Until then HU-18 shows scores and a notice for those events.
+- **Wording of scoring model rule 4**: it lists "class-weighted sums" and does not name the exact seniority start and birth date; HU-18 relies on the per-class counts and those dates, which the ranking calculation stores today. The rule should name them the next time that document is revised.
 - **Constitution amendment** for decision 40 (DoR exception): written in `docs/constitution.md` 1.1.0; it still needs the 2 approvals of its PR.
 
 ## Interpretations to confirm (not blocking)

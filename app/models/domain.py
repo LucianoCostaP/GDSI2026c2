@@ -61,6 +61,21 @@ class Club(Base):
         onupdate=func.now(),
         nullable=False,
     )
+    # Configuración del simulador por club (HU-18 FR-010, cross-cutting §8). La proyección
+    # arranca encendida (el spec la quiere apagada hasta validarla; decisión del equipo,
+    # porque no modifica el ranking real). El Admin la cambia en `/admin/simulator/settings`.
+    position_projection_enabled: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("true"), nullable=False
+    )
+    position_range_level: Mapped[Decimal] = mapped_column(
+        Numeric(3, 2), server_default=text("0.80"), nullable=False
+    )
+    position_prior_strength: Mapped[Decimal] = mapped_column(
+        Numeric(6, 2), server_default=text("5"), nullable=False
+    )
+    position_min_population: Mapped[int] = mapped_column(
+        Integer, server_default=text("100"), nullable=False
+    )
 
     socios: Mapped[list["Socio"]] = relationship(
         "Socio", back_populates="club", cascade="all, delete-orphan"

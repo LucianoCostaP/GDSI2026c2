@@ -57,3 +57,8 @@ def assign_positions(
     """Posición (desde 1, sin saltos ni repetidos) de cada candidato, en orden de ranking."""
     ordered = sorted(candidates, key=_sort_key)
     return list(enumerate(ordered, start=1))
+
+
+def ranks_above(first: RankingCandidate, second: RankingCandidate) -> bool:
+    """Si `first` va antes que `second` en el orden del ranking (con los desempates)."""
+    return _sort_key(first) < _sort_key(second)

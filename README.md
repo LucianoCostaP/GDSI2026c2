@@ -65,6 +65,10 @@ Lo que **no** hace falta instalar a mano:
    ```bash
    uv run python -m app.seed
    ```
+   (para levantar 144 usuarios para poder probar el simulador)
+   ```bash
+   uv run python -m app.seed_simulator
+   ```
 5. Levantar el back:
    ```bash
    uv run uvicorn app.main:app --reload

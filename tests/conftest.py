@@ -4,9 +4,26 @@ import uuid
 from collections.abc import Callable, Iterator
 
 # Aislamiento de base de datos para pruebas:
-# Si no está definida explícitamente, se redirige a la base de datos de test
 os.environ.setdefault("APP_ENV", "test")
-if "DATABASE_URL" not in os.environ or os.environ["DATABASE_URL"].endswith("/app"):
+
+import socket
+
+
+def _check_local_pg() -> bool:
+    s = socket.socket()
+    s.settimeout(0.2)
+    try:
+        s.connect(("127.0.0.1", 5432))
+        s.close()
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+if not _check_local_pg():
+    os.environ["DB_ENGINE"] = "sqlite"
+    os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+elif "DATABASE_URL" not in os.environ or os.environ["DATABASE_URL"].endswith("/app"):
     os.environ["DATABASE_URL"] = os.environ.get(
         "TEST_DATABASE_URL",
         "postgresql+psycopg://app:app@localhost:5432/app_test",
@@ -15,8 +32,22 @@ if "DATABASE_URL" not in os.environ or os.environ["DATABASE_URL"].endswith("/app
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
+from sqlalchemy.dialects.postgresql import JSONB as PG_JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
+
+
+@compiles(PG_UUID, "sqlite")
+def _compile_pg_uuid_sqlite(type_, compiler, **kw):
+    return "TEXT"
+
+
+@compiles(PG_JSONB, "sqlite")
+def _compile_pg_jsonb_sqlite(type_, compiler, **kw):
+    return "TEXT"
+
 
 from app.config import settings
 from app.db import Base, engine, get_db
@@ -52,11 +83,68 @@ RACING_HEADERS = {
 
 _test_sqlite_engine = None
 
+_postgres_available: bool | None = None
+
+
+def _is_postgres_available() -> bool:
+    global _postgres_available
+    if _postgres_available is None:
+        if settings.db_engine.lower() != "postgres":
+            _postgres_available = False
+        else:
+            import socket
+
+            s = socket.socket()
+            s.settimeout(0.3)
+            try:
+                s.connect(("127.0.0.1", 5432))
+                s.close()
+                _postgres_available = True
+            except Exception:  # noqa: BLE001
+                _postgres_available = False
+    return _postgres_available
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _setup_test_database() -> None:
     """Asegura que la base de datos de test exista y tenga las migraciones ejecutadas."""
-    if settings.db_engine.lower() != "postgres":
+    if not _is_postgres_available():
+        global _test_sqlite_engine
+        if _test_sqlite_engine is None:
+            _test_sqlite_engine = create_engine(
+                "sqlite://",
+                connect_args={"check_same_thread": False},
+                poolclass=StaticPool,
+            )
+            Base.metadata.create_all(_test_sqlite_engine)
+            from app.models.domain import Club
+
+            with Session(bind=_test_sqlite_engine) as _s:
+                if not _s.get(Club, BOCA_ID):
+                    _s.add(
+                        Club(
+                            id=BOCA_ID,
+                            nombre="Boca Juniors",
+                            codigo_identificador="CABJ",
+                            api_token=BOCA_TOKEN,
+                            activo=True,
+                        )
+                    )
+                if not _s.get(Club, RIVER_ID):
+                    _s.add(
+                        Club(
+                            id=RIVER_ID,
+                            nombre="River Plate",
+                            codigo_identificador="CARP",
+                            api_token=RIVER_TOKEN,
+                            activo=True,
+                        )
+                    )
+                _s.commit()
+            import app.db
+
+            app.db.SessionLocal.configure(bind=_test_sqlite_engine)
+            settings.db_engine = "sqlite"
         return
 
     # Verificar / crear la base de datos de test si no existe aún
@@ -112,41 +200,63 @@ def clean_club_data() -> None:
     memory_repository.tabla_eventos_pendientes.clear()
     memory_repository.tabla_eventos_visibles.clear()
     memory_repository.tabla_eventos_cambios_pendientes.clear()
-    if settings.db_engine.lower() == "postgres":
+    if _is_postgres_available():
         try:
             with engine.begin() as conn:
                 conn.execute(text(f"TRUNCATE TABLE {CLUB_DATA_TABLES} CASCADE;"))
         except Exception:  # noqa: BLE001, S110
-            # Sin PostgreSQL disponible, el fixture `db` cae a SQLite.
             pass
+    elif _test_sqlite_engine is not None:
+        with _test_sqlite_engine.begin() as conn:
+            for tbl in [
+                "ranking_entries",
+                "rankings",
+                "formula_locks",
+                "rules_versions",
+                "socios",
+                "members",
+                "access_codes",
+                "users",
+            ]:
+                try:
+                    conn.execute(text(f"DELETE FROM {tbl};"))
+                except Exception:  # noqa: BLE001, S110
+                    pass
 
 
 @pytest.fixture
 def db() -> Iterator[Session]:
     # Intenta usar la conexión configurada (PostgreSQL en CI o Docker).
     # Si PostgreSQL no está corriendo, realiza fallback a SQLite en memoria.
-    try:
-        connection = engine.connect()
-        transaction = connection.begin()
-        session = Session(bind=connection, join_transaction_mode="create_savepoint")
-        yield session
-        session.close()
-        transaction.rollback()
-        connection.close()
-    except Exception:  # noqa: BLE001
-        global _test_sqlite_engine
-        if _test_sqlite_engine is None:
-            _test_sqlite_engine = create_engine(
-                "sqlite://",
-                connect_args={"check_same_thread": False},
-                poolclass=StaticPool,
-            )
-            Base.metadata.create_all(_test_sqlite_engine)
-
-        with _test_sqlite_engine.connect() as conn:
-            session = Session(bind=conn)
+    if _is_postgres_available():
+        try:
+            connection = engine.connect()
+            transaction = connection.begin()
+            session = Session(bind=connection, join_transaction_mode="create_savepoint")
             yield session
             session.close()
+            transaction.rollback()
+            connection.close()
+            return
+        except Exception:  # noqa: BLE001, S110
+            pass
+
+    global _test_sqlite_engine
+    if _test_sqlite_engine is None:
+        _test_sqlite_engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(_test_sqlite_engine)
+        import app.db
+
+        app.db.SessionLocal.configure(bind=_test_sqlite_engine)
+
+    with _test_sqlite_engine.connect() as conn:
+        session = Session(bind=conn)
+        yield session
+        session.close()
 
 
 @pytest.fixture

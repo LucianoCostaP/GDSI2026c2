@@ -123,7 +123,7 @@ Reglas comunes: token Bearer por club guardado con hash, validación de estructu
 ## 8. Estrategia de pruebas
 
 - **Dataset de referencia** con resultados esperados.
-- **Equivalencia:** lo que muestran HU-18 y HU-29 debe coincidir con lo que daría el cálculo oficial (HU-25) con los mismos datos.
+- **Equivalencia:** lo que muestran HU-18 (los puntajes proyectados) y HU-29 debe coincidir con lo que daría el cálculo oficial (HU-25) con los mismos datos. La posición de HU-18 es una estimación y se valida aparte (cobertura del rango y error contra la versión simple).
 - **Carga:** cálculo masivo, simulación, entrega de códigos y primera recepción completa del padrón (hasta 500.000 socios en menos de una hora).
 - **Fechas:** pruebas con reloj inyectado para el plazo de 24 horas, la antelación de 48 horas, el corte de temporada y las oleadas.
 
