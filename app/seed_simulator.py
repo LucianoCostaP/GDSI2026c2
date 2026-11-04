@@ -28,7 +28,13 @@ from sqlalchemy.dialects.postgresql import insert
 
 from .config import settings
 from .db import SessionLocal
-from .models.domain import AsistenciaDB, CargaParticipacionDB, Club, EventoVisibleDB, Socio
+from .models.domain import (
+    AsistenciaDB,
+    CargaParticipacionDB,
+    Club,
+    EventoVisibleDB,
+    Socio,
+)
 from .models.enums import EstadoCargaParticipacion, OrigenCarga, TipoParticipacion
 
 CLUB_CODE = "CABJ"
@@ -47,8 +53,18 @@ FIXED_RATES = {
 # (días atrás, clase) de los partidos pasados. Todos caen en la ventana del ranking
 # (año anterior completo + año en curso).
 PAST_MATCHES = [
-    (12, "A"), (26, "B"), (40, "C"), (54, "A"), (68, "B"), (82, "B"),
-    (96, "A"), (110, "C"), (124, "B"), (138, "A"), (152, "B"), (166, "C"),
+    (12, "A"),
+    (26, "B"),
+    (40, "C"),
+    (54, "A"),
+    (68, "B"),
+    (82, "B"),
+    (96, "A"),
+    (110, "C"),
+    (124, "B"),
+    (138, "A"),
+    (152, "B"),
+    (166, "C"),
 ]
 # (días atrás, puntos) de los eventos institucionales pasados.
 PAST_INSTITUTIONAL = [(30, 20), (90, 40)]
@@ -74,7 +90,9 @@ def main() -> None:
     with SessionLocal() as db:
         club = db.scalar(select(Club).where(Club.codigo_identificador == CLUB_CODE))
         if club is None:
-            raise SystemExit("No existe el club CABJ: corré primero `uv run python -m app.seed`.")
+            raise SystemExit(
+                "No existe el club CABJ: corré primero `uv run python -m app.seed`."
+            )
         club_id = club.id
 
         # 1. Padrón: 120 socios más, al día y activos (entran a la población del ranking).
@@ -96,7 +114,9 @@ def main() -> None:
                     "fecha_baja_previa": None,
                     "estado_cuota": "al_dia",
                     "email": f"sim{i:03d}@boca.example.com",
-                    "distancia_km": Decimal(rng.choice([3, 8, 15, 40, 120, 400, 900, 1500])),
+                    "distancia_km": Decimal(
+                        rng.choice([3, 8, 15, 40, 120, 400, 900, 1500])
+                    ),
                     "localidad": "Buenos Aires",
                     "activo": True,
                 }
@@ -107,21 +127,31 @@ def main() -> None:
                 constraint="uq_socios_club_dni",
                 set_={
                     col: insert_socios.excluded[col]
-                    for col in ("nombre", "estado_cuota", "activo", "fecha_alta", "distancia_km")
+                    for col in (
+                        "nombre",
+                        "estado_cuota",
+                        "activo",
+                        "fecha_alta",
+                        "distancia_km",
+                    )
                 },
             )
         )
         print(f"✓ {NEW_MEMBERS} socios del simulador cargados en el padrón.")
 
         # 2. Eventos publicados: pasados (con asistencia) y futuros (para simular).
-        def evento(key: str, *, dias: float, titulo: str, tipo: str, clase=None, puntos=None) -> dict:
+        def evento(
+            key: str, *, dias: float, titulo: str, tipo: str, clase=None, puntos=None
+        ) -> dict:
             return {
                 "id_interno": f"INT-EVT-{PREFIX}-{key}",
                 "club_id": club_id,
                 "id_externo": f"EVT-{PREFIX}-{key}",
                 "titulo": titulo,
                 "fecha_hora": ahora + timedelta(days=dias),
-                "lugar": STADIUM if tipo == "Partido" else "Polideportivo Quinquela Martín",
+                "lugar": STADIUM
+                if tipo == "Partido"
+                else "Polideportivo Quinquela Martín",
                 "tipo": tipo,
                 "descripcion": "Evento de prueba del simulador (HU-18).",
                 "clase": clase,
@@ -171,11 +201,21 @@ def main() -> None:
                 constraint="uq_eventos_visibles_club_externo",
                 set_={
                     col: insert_eventos.excluded[col]
-                    for col in ("titulo", "fecha_hora", "lugar", "tipo", "clase", "puntos", "descripcion")
+                    for col in (
+                        "titulo",
+                        "fecha_hora",
+                        "lugar",
+                        "tipo",
+                        "clase",
+                        "puntos",
+                        "descripcion",
+                    )
                 },
             )
         )
-        print(f"✓ {len(past)} eventos pasados y {len(future)} partidos futuros publicados.")
+        print(
+            f"✓ {len(past)} eventos pasados y {len(future)} partidos futuros publicados."
+        )
 
         # 3. Asistencias: se reemplazan las cargas previas de este seed.
         old_cargas = select(CargaParticipacionDB.id).where(
@@ -192,10 +232,14 @@ def main() -> None:
 
         population = db.execute(
             select(Socio.dni, Socio.numero_socio, Socio.fecha_alta).where(
-                Socio.club_id == club_id, Socio.activo.is_(True), Socio.estado_cuota == "al_dia"
+                Socio.club_id == club_id,
+                Socio.activo.is_(True),
+                Socio.estado_cuota == "al_dia",
             )
         ).all()
-        rates = {dni: FIXED_RATES.get(dni, _member_rate(rng)) for dni, _, _ in population}
+        rates = {
+            dni: FIXED_RATES.get(dni, _member_rate(rng)) for dni, _, _ in population
+        }
 
         total = 0
         for ev in past:
@@ -239,7 +283,9 @@ def main() -> None:
                 for dni, numero in attendees
             )
             total += len(attendees)
-        print(f"✓ {total} asistencias cargadas en {len(past)} eventos ({len(population)} socios al día).")
+        print(
+            f"✓ {total} asistencias cargadas en {len(past)} eventos ({len(population)} socios al día)."
+        )
 
         db.commit()
 
