@@ -58,8 +58,9 @@ def _schedule_out(view: wave_schedule_service.ScheduleView) -> WaveScheduleOut:
                 position_to=item.wave.position_to,
                 socios=item.wave.socios,
                 starts_at=item.starts_at,
+                state=state,
             )
-            for item in view.waves
+            for item, state in zip(view.waves, view.states, strict=True)
         ],
     )
 

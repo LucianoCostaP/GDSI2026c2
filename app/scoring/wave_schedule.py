@@ -4,6 +4,7 @@ El Admin define la apertura de la primera ola y el cierre general; con N olas, l
 empieza en apertura + (i − 1) × (cierre − apertura) / N.
 """
 
+import enum
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -91,3 +92,34 @@ def schedule_waves(
 def step_seconds(opening: datetime, closing: datetime, waves: int) -> int:
     """Tiempo entre la apertura de dos olas seguidas, en segundos enteros."""
     return int((closing - opening).total_seconds()) // waves
+
+
+class WaveState(enum.StrEnum):
+    # Todavía no llegó su hora de inicio.
+    PENDING = "pending"
+    # Ya llegó su hora y no pasó el cierre general: el acceso está abierto.
+    OPEN = "open"
+    # Pasó el cierre general.
+    CLOSED = "closed"
+
+
+def wave_state(starts_at: datetime, closing: datetime, now: datetime) -> WaveState:
+    """Una ola abre en su hora de inicio y queda abierta hasta el cierre general."""
+    if now >= closing:
+        return WaveState.CLOSED
+    if now >= starts_at:
+        return WaveState.OPEN
+    return WaveState.PENDING
+
+
+def wave_states(
+    starts: list[datetime], closing: datetime, now: datetime
+) -> list[WaveState]:
+    """Estado de cada ola. Como las horas de inicio están en orden, cuando abre una ola
+    también están abiertas todas las anteriores (escenario 5, FR-004)."""
+    return [wave_state(starts_at, closing, now) for starts_at in starts]
+
+
+def first_wave_open(opening: datetime, now: datetime) -> bool:
+    """Si la primera ola ya abrió: desde la apertura, aunque después llegue el cierre."""
+    return now >= opening

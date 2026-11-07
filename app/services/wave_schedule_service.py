@@ -23,7 +23,13 @@ from ..models import (
     WaveSegmentation,
     utcnow,
 )
-from ..scoring.wave_schedule import ScheduledWave, schedule_waves, validate_period
+from ..scoring.wave_schedule import (
+    ScheduledWave,
+    WaveState,
+    schedule_waves,
+    validate_period,
+    wave_states,
+)
 from ..scoring.waves import build_waves
 from . import segmentation_service
 from .formula_service import error
@@ -36,14 +42,28 @@ class ScheduleView:
     generated_by: str
     confirmed_by: str | None
     waves: list[ScheduledWave]
+    # Estado de cada ola con el reloj del servidor; `None` mientras no está confirmado,
+    # porque un borrador o un cronograma invalidado no abre ninguna ola.
+    states: list[WaveState | None]
 
 
 def _now(now: datetime | None) -> datetime:
     return asegurar_utc(now or utcnow())
 
 
-def _view(db: Session, schedule: WaveSchedule) -> ScheduleView:
+def _view(db: Session, schedule: WaveSchedule, now: datetime) -> ScheduleView:
     segmentation = db.get_one(WaveSegmentation, schedule.segmentation_id)
+    closing_at = asegurar_utc(schedule.closing_at)
+    waves = schedule_waves(
+        build_waves(segmentation.ranked_total, segmentation.percentile_step),
+        asegurar_utc(schedule.opening_at),
+        closing_at,
+    )
+    states: list[WaveState | None] = (
+        list(wave_states([w.starts_at for w in waves], closing_at, now))
+        if schedule.status == WaveScheduleStatus.CONFIRMED
+        else [None] * len(waves)
+    )
     return ScheduleView(
         schedule=schedule,
         event=db.get_one(EventoVisibleDB, schedule.event_id),
@@ -53,11 +73,8 @@ def _view(db: Session, schedule: WaveSchedule) -> ScheduleView:
             if schedule.confirmed_by_id is not None
             else None
         ),
-        waves=schedule_waves(
-            build_waves(segmentation.ranked_total, segmentation.percentile_step),
-            asegurar_utc(schedule.opening_at),
-            asegurar_utc(schedule.closing_at),
-        ),
+        waves=waves,
+        states=states,
     )
 
 
@@ -86,8 +103,10 @@ def _schedule_of(
     return schedule
 
 
-def get_schedule(db: Session, club_id: uuid.UUID, event_id: str) -> ScheduleView:
-    return _view(db, _schedule_of(db, club_id, event_id))
+def get_schedule(
+    db: Session, club_id: uuid.UUID, event_id: str, now: datetime | None = None
+) -> ScheduleView:
+    return _view(db, _schedule_of(db, club_id, event_id), _now(now))
 
 
 def visible_schedule(db: Session, event_id: str) -> WaveSchedule | None:
@@ -184,7 +203,7 @@ def generate(
         new=_audit_values(schedule),
     )
     db.commit()
-    return _view(db, schedule)
+    return _view(db, schedule, current)
 
 
 def confirm(
@@ -196,6 +215,7 @@ def confirm(
     now: datetime | None = None,
 ) -> ScheduleView:
     """Confirma el borrador: desde ahí lo ven los socios (escenario 4, FR-006)."""
+    current = _now(now)
     schedule = _schedule_of(db, club_id, event_id, for_update=True)
     if schedule.status == WaveScheduleStatus.CONFIRMED:
         raise error(
@@ -203,7 +223,7 @@ def confirm(
             "SCHEDULE_ALREADY_CONFIRMED",
             "El cronograma ya está confirmado.",
         )
-    if asegurar_utc(schedule.opening_at) <= _now(now):
+    if asegurar_utc(schedule.opening_at) <= current:
         raise error(
             status.HTTP_409_CONFLICT,
             "OPENING_ALREADY_PASSED",
@@ -223,4 +243,4 @@ def confirm(
         new=_audit_values(schedule),
     )
     db.commit()
-    return _view(db, schedule)
+    return _view(db, schedule, current)

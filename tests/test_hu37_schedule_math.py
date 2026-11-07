@@ -8,10 +8,13 @@ import pytest
 from app.config import Settings
 from app.schemas.wave_schedule import GenerateScheduleIn
 from app.scoring.wave_schedule import (
+    WaveState,
+    first_wave_open,
     schedule_waves,
     step_seconds,
     validate_period,
     wave_starts,
+    wave_states,
 )
 from app.scoring.waves import build_waves
 
@@ -305,3 +308,56 @@ def test_each_wave_of_the_segmentation_gets_its_start_in_order() -> None:
 def test_the_step_is_the_period_divided_by_the_waves() -> None:
     assert step_seconds(OPENING, OPENING + 5 * HOUR, 5) == 3600
     assert step_seconds(OPENING, OPENING + 100 * MINUTE, 3) == 2000
+
+
+# Ciclo 5: apertura acumulativa de las olas (escenario 5, FR-004).
+
+STARTS = [OPENING + hours * HOUR for hours in range(5)]
+CLOSING = OPENING + 5 * HOUR
+PENDING, OPEN, CLOSED = WaveState.PENDING, WaveState.OPEN, WaveState.CLOSED
+
+
+def test_before_the_opening_every_wave_is_pending() -> None:
+    assert wave_states(STARTS, CLOSING, OPENING - SECOND) == [PENDING] * 5
+
+
+def test_a_wave_opens_exactly_at_its_start() -> None:
+    assert wave_states(STARTS, CLOSING, OPENING) == [OPEN] + [PENDING] * 4
+    assert wave_states(STARTS, CLOSING, STARTS[1] - SECOND)[1] == PENDING
+    assert wave_states(STARTS, CLOSING, STARTS[1])[1] == OPEN
+
+
+def test_opening_a_wave_keeps_the_previous_ones_open() -> None:
+    now = OPENING + 2 * HOUR + 30 * MINUTE
+
+    assert wave_states(STARTS, CLOSING, now) == [OPEN, OPEN, OPEN, PENDING, PENDING]
+
+
+def test_with_the_last_wave_started_every_wave_is_open() -> None:
+    assert wave_states(STARTS, CLOSING, STARTS[-1]) == [OPEN] * 5
+
+
+def test_one_microsecond_before_the_closing_every_wave_is_open() -> None:
+    now = CLOSING - timedelta(microseconds=1)
+
+    assert wave_states(STARTS, CLOSING, now) == [OPEN] * 5
+
+
+def test_at_the_closing_every_wave_is_closed() -> None:
+    assert wave_states(STARTS, CLOSING, CLOSING) == [CLOSED] * 5
+    assert wave_states(STARTS, CLOSING, CLOSING + DAY) == [CLOSED] * 5
+
+
+@pytest.mark.parametrize("minutes", [0, 1, 59, 60, 61, 150, 240, 299])
+def test_open_waves_are_always_the_first_ones(minutes: int) -> None:
+    states = wave_states(STARTS, CLOSING, OPENING + minutes * MINUTE)
+
+    opened = states.count(OPEN)
+    assert states == [OPEN] * opened + [PENDING] * (5 - opened)
+    assert opened >= 1
+
+
+def test_the_first_wave_is_open_from_the_opening() -> None:
+    assert first_wave_open(OPENING, OPENING - SECOND) is False
+    assert first_wave_open(OPENING, OPENING) is True
+    assert first_wave_open(OPENING, CLOSING + DAY) is True

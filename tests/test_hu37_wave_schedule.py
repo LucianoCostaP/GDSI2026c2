@@ -370,7 +370,8 @@ def test_the_schedule_follows_the_waves_of_the_segmentation(
     body = generate_schedule(client, boca, event).json()
 
     assert [
-        {k: v for k, v in w.items() if k != "starts_at"} for w in body["waves"]
+        {k: v for k, v in w.items() if k not in ("starts_at", "state")}
+        for w in body["waves"]
     ] == segmentation["waves"]
 
 
@@ -414,7 +415,9 @@ def test_confirming_makes_it_visible_to_socios(
     assert body["status"] == "confirmed"
     assert body["confirmed_by"] == admin.name
     assert body["confirmed_at"] is not None
-    assert body["waves"] == generated["waves"]
+    assert [w["starts_at"] for w in body["waves"]] == [
+        w["starts_at"] for w in generated["waves"]
+    ]
     visible = wave_schedule_service.visible_schedule(db, event.id_interno)
     assert visible is not None
     assert visible.status == WaveScheduleStatus.CONFIRMED
@@ -522,6 +525,78 @@ def test_socios_do_not_see_an_invalidated_schedule(
     db.commit()
 
     assert wave_schedule_service.visible_schedule(db, event.id_interno) is None
+
+
+# Escenario 5
+
+
+def confirmed_at_2030(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> tuple[EventoVisibleDB, datetime]:
+    """Cronograma confirmado de 5 olas: 21:00 a 02:00 UTC (18:00 a 23:00 en Buenos Aires)."""
+    event = segmented(
+        client, db, admin, boca, when=datetime(2030, 3, 2, 21, 0, tzinfo=UTC)
+    )
+    opening = datetime(2030, 3, 1, 21, 0, tzinfo=UTC)
+    generate_schedule(client, boca, event, opening=opening, closing=opening + 5 * HOUR)
+    assert client.post(confirm_url(event), headers=boca).status_code == 200
+    return event, opening
+
+
+@pytest.mark.parametrize(
+    ("elapsed", "expected"),
+    [
+        (-MINUTE, ["pending"] * 5),
+        (timedelta(0), ["open", "pending", "pending", "pending", "pending"]),
+        (2 * HOUR + 30 * MINUTE, ["open", "open", "open", "pending", "pending"]),
+        (4 * HOUR, ["open"] * 5),
+        (5 * HOUR, ["closed"] * 5),
+    ],
+)
+def test_wave_states_follow_the_server_clock(
+    client: TestClient,
+    db: Session,
+    admin: User,
+    boca: dict[str, str],
+    elapsed: timedelta,
+    expected: list[str],
+) -> None:
+    event, opening = confirmed_at_2030(client, db, admin, boca)
+
+    view = wave_schedule_service.get_schedule(
+        db, BOCA_ID, event.id_interno, now=opening + elapsed
+    )
+
+    assert view.states == expected
+
+
+def test_a_confirmed_schedule_shows_its_states_through_the_api(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event, _ = confirmed_at_2030(client, db, admin, boca)
+
+    body = client.get(schedule_url(event), headers=boca).json()
+
+    assert [w["state"] for w in body["waves"]] == ["pending"] * 5
+
+
+def test_a_draft_does_not_open_any_wave(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(
+        client, db, admin, boca, when=datetime(2030, 3, 2, 21, 0, tzinfo=UTC)
+    )
+    opening = datetime(2030, 3, 1, 21, 0, tzinfo=UTC)
+    body = generate_schedule(
+        client, boca, event, opening=opening, closing=opening + 5 * HOUR
+    ).json()
+
+    view = wave_schedule_service.get_schedule(
+        db, BOCA_ID, event.id_interno, now=opening + HOUR
+    )
+
+    assert [w["state"] for w in body["waves"]] == [None] * 5
+    assert view.states == [None] * 5
 
 
 # Casos borde: solo Partidos publicados, futuros y del club del Admin
