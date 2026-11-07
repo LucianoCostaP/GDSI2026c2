@@ -26,7 +26,7 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 | Run ranking calculation (HU-25) | No | Yes |
 | Segmentation and schedule (HU-36, HU-37) | No | Yes |
 | Adjust scoring parameters (HU-28) | No | Yes |
-| Simulate rules change and its equity analysis (HU-29, HU-30) | No | Yes |
+| Simulate rules change, see its equity analysis and download the result as CSV (HU-29, HU-30) | No | Yes |
 | Configure the position settings of the attendance simulator (HU-18) | No | Yes |
 | View ranking explanation, own score, breakdown, simulator (HU-13, 14, 16, 18) | Yes | No |
 | View upcoming events, own slot (HU-17, HU-39) | Yes | No |
@@ -75,7 +75,8 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 
 - Socio-facing views (HU-14, HU-16, HU-18) are anchored to the **rules version of the latest completed ranking** and show it.
 - HU-13 explains the rules **in force**. If they differ from the rules of the latest completed ranking, it states that the ranking will reflect them after the next calculation; with no completed ranking there is no notice. With no published formula it shows a friendly "no rules yet" message. The Admin's preview in HU-27 renders the same explanation.
-- HU-29 compares against the latest completed ranking.
+- HU-29 compares against the latest completed ranking, shows its date and rules version, and pre-fills the form with that rules version; when the rules in force differ it says so and lets the Admin load them. HU-30 analyzes the same simulation. Each result uses one ranking.
+- Simulations (HU-18, HU-29, HU-30) change nothing and are not audited; only changes to the simulator settings of HU-18 are. The formula lock and the season cut-off of HU-28 do not block HU-29.
 
 ## 6. Non-functional requirements (defaults)
 
@@ -83,7 +84,8 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 |---|---|
 | Ranking calculation (HU-25) | completes in under 15 minutes for up to 500,000 Socios, without blocking other screens |
 | Initial roster reception (HU-43) | up to 500,000 Socios processed in under one hour; discrepancies below 0.1% |
-| Rules-change simulation (HU-29) | result in under 3 seconds (95th percentile) up to 50,000 Socios and under 10 seconds up to 500,000 |
+| Rules-change simulation (HU-29), with the equity analysis of HU-30 | result in under 3 seconds (95th percentile) up to 50,000 Socios and under 10 seconds up to 500,000 |
+| Effect of each parameter of the simulation (HU-29), shown after the result | under 9 seconds (95th percentile) up to 50,000 Socios and under 30 seconds up to 500,000 (proposed, to validate with a load test) |
 | Volume | up to 500,000 Socios, typically far fewer. Admin lists are paginated. Wave membership is derived from ranking positions, never copied per Socio |
 | Read-only Socio screens | response under 2 seconds (95th percentile) |
 | Accessibility | WCAG 2.1 AA: high contrast, large touch targets, keyboard navigation, readable at 200% zoom |
@@ -117,6 +119,8 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 | Weight of the club rate in each Socio's attendance probability (`position_prior_strength`), editable by the Admin | 5 | HU-18 |
 | Minimum ranked Socios to estimate a position (`position_min_population`), editable by the Admin | 100 | HU-18 |
 | Code, session and invitation values | section 3 | HU-01, 05, 06, 07, 08, 11 |
+
+Not settings: the thresholds of HU-29 (relevant movement of 1 % of the ranking, saturation, flatness alert at 80 %) and of HU-30 (bands, minimum group of 10 Socios, marks at 2 % and 5 %) are fixed in the product; they change only by amending their specs.
 
 ## 9. Tenancy
 

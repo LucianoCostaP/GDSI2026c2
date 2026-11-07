@@ -1,6 +1,6 @@
-# MVP Specs Index (v4.2)
+# MVP Specs Index (v4.3)
 
-25 specs: the 24 stories the backlog marks as MVP, plus HU-23 (outside the MVP, kept as a ready spec), and 3 shared documents. Titles, estimates, priorities and MVP scope follow the backlog (`Backlog - US.csv`). v4 aligns the specs with the backlog and with the integration prototypes: **the club sends its data to an API the system exposes; the system never calls the club.** v4.1 applies the review in `CORRECCIONES_SPECS.txt` (decisions 24–33 and the table at the end). v4.2 reworks HU-27 and HU-13 around a formula catalog and per-club rules (decisions 34–40).
+25 specs: the 24 stories the backlog marks as MVP, plus HU-23 (outside the MVP, kept as a ready spec), and 3 shared documents. Titles, estimates, priorities and MVP scope follow the backlog (`Backlog - US.csv`). v4 aligns the specs with the backlog and with the integration prototypes: **the club sends its data to an API the system exposes; the system never calls the club.** v4.1 applies the review in `CORRECCIONES_SPECS.txt` (decisions 24–33 and the table at the end). v4.2 reworks HU-27 and HU-13 around a formula catalog and per-club rules (decisions 34–40). v4.3 reworks HU-29 and HU-30 around four business questions of the Admin: who is rewarded, whom the change harms or favors, which parameter causes the effect and whether the ranking flattens (decisions 44–48).
 
 ## Shared documents
 
@@ -87,17 +87,22 @@
 41. **Version history is outside the MVP.** There is no history of rules versions (HU-27, HU-28) and no history of previous rankings (HU-25). Each rules version is still stored unchanged, and each ranking records the one it used, so HU-13's notice and the Socio views anchored to the latest ranking keep working. The audit keeps who, when and the previous and new values. HU-25, the ranking run itself, stays in the MVP.
 42. **HU-18 position scope**: the estimated position is for Partidos only; institutional events show scores and a notice (decision 13). It uses what the ranking snapshot already stores and does not change HU-25.
 43. **HU-18 position projection on by default, set by the Admin.** `position_projection_enabled` starts on for every club, without a prior validation, because the simulation never changes the real ranking or any stored data and every estimated position carries the estimate label. The Admin reads and changes the four simulator settings of their own club, with validation and audit (HU-18 scenario 14, FR-013). The offline validation of HU-18 (coverage and error against the frozen-others version) stays as a recommended check to tune `k` and the range level or to turn the projection off.
+44. **HU-29 baseline and validation.** The baseline is the latest completed ranking, as stored, and the form is pre-filled with its rules version; when the rules in force differ, the Admin is told and can load them into the form to anticipate the next calculation. A simulation uses the limits, sum rule, codes and texts of HU-27 and is **not** blocked by the formula lock or the season cut-off of HU-28, which govern saving official rules, not previewing them. Each result uses one ranking and shows its date and rules version.
+45. **HU-29 results.** For the ranking and the simulation side by side: histogram (20 bins of 5 points), mean, median, standard deviation and 10th and 90th percentiles; Socios up, down and unchanged, mean absolute change of position and relevant movements (a relevant movement is `m = max(1, ceil(N/100))` positions, 1 % of the ranking); Socios at the cap of 100, Socios needing a cap adjustment, tied Socios and the largest tie, with saturation and flatness alerts; and the mean change per score component, whose changes add up to the change of the mean total.
+46. **HU-29 effect by parameter.** The changed parameters are grouped in factors: pillar weights (always together, because each alone breaks the sum rule), `αA`, `dsat` and other parameters. When two or more factors changed, each changed factor among pillar weights, `αA` and `dsat` is simulated on its own (at most three extra simulations) and ordered by mean absolute change of position; the rest, with the other parameters and the interactions, is shown as a remainder because the effects are not additive. The breakdown is shown after the main result and never blocks it. Targets 9 s (up to 50,000 Socios) and 30 s (up to 500,000) are proposals to validate with a load test.
+47. **HU-30 profile and equity.** Next to the simulation: the profile of the Socios who move up and down, against all Socios (distance, seniority, age, attendance at Clase C matches, institutional participation; medians; no group under 10 Socios shown), and the equity by seniority, distance and age in fixed bands with a deterministic merge rule for segments under 10 Socios. A segment is marked when its mean change of position is 2 % of the ranking or more, and strong at 5 %; there is a verdict per attribute and an overall one (`EQUITY_OK`, `EQUITY_ATTENTION`, `EQUITY_BIAS`). The thresholds (1 %, 80 %, 10 Socios, 2 %, 5 %) are fixed in the product, not settings; changing them is an amendment of the spec. Segmenting by "tipo de socio" stays out until the club sends that field.
+48. **The simulator never applies values.** HU-28 remains the only way to change the rules, with its cut-off, lock and confirmation. The result lists the changed parameters with their previous and hypothetical values, and can be downloaded as a CSV generated at that moment and never stored. Simulations change nothing and are not audited. A stored or executive report is HU-42, outside the MVP.
 
 ## Defaults set by this revision (change them in one place)
 
-Default class B for Partidos not classified in time and 20 default points for institutional events without points when the automatic publication runs; row-error tolerance of 5% for CSV files; code, session and lockout parameters; time zone Buenos Aires; attendance window of previous calendar year plus current year to date; rounding to two decimals; minimum 5 minutes between wave openings; roster staleness limit of 24 hours; 60-minute expiry for paged loads; size limits of decision 27; HU-29 target of under 3 seconds up to 50,000 Socios and under 10 seconds up to 500,000.
+Default class B for Partidos not classified in time and 20 default points for institutional events without points when the automatic publication runs; row-error tolerance of 5% for CSV files; code, session and lockout parameters; time zone Buenos Aires; attendance window of previous calendar year plus current year to date; rounding to two decimals; minimum 5 minutes between wave openings; roster staleness limit of 24 hours; 60-minute expiry for paged loads; size limits of decision 27; HU-29 target of under 3 seconds up to 50,000 Socios and under 10 seconds up to 500,000 (9 and 30 seconds for its effect by parameter); fixed thresholds of HU-29 and HU-30 (decisions 45 and 47).
 
 ## Open items
 
 - **Socio type for HU-30**: the backlog suggests segmenting by "tipo de socio", but the club does not send that field. It needs the club to add it to the roster (HU-43).
 - **HU-16, HU-18, HU-29 and HU-30 with other formulas**: they are written for the components of the scoring model v1. When a second formula enters the catalog they must read their components from its descriptor. Not needed in the MVP, which ships one formula.
 - **Position of institutional events in HU-18**: not estimated in this version because the inputs snapshot (HU-25, scoring model rule 4) does not hold the number of institutional events each Socio could attend in the window. Adding it needs that data in the snapshot and a revision of HU-18. Until then HU-18 shows scores and a notice for those events.
-- **Wording of scoring model rule 4**: it lists "class-weighted sums" and does not name the exact seniority start and birth date; HU-18 relies on the per-class counts and those dates, which the ranking calculation stores today. The rule should name them the next time that document is revised.
+- **Thresholds of HU-29 and HU-30**: the relevant movement (1 %), the flatness alert (80 %), the marks of the equity analysis (2 % and 5 % of the ranking) and the minimum group (10 Socios) are proposals to review with the club on real simulations (decisions 45 and 47).
 - **Constitution amendment** for decision 40 (DoR exception): written in `docs/constitution.md` 1.1.0; it still needs the 2 approvals of its PR.
 
 ## Interpretations to confirm (not blocking)
@@ -108,7 +113,7 @@ Default class B for Partidos not classified in time and 20 default points for in
 - Attendance at elections and assemblies is loaded like any other event attendance (HU-24).
 - When nobody defines the points of an institutional event before the automatic publication, a default applies (a system setting, proposed 20).
 - The points of an institutional event are limited to a whole number from 1 to 100, matching the maximum of the participation cap.
-- The performance targets for 500,000 Socios (HU-25 under 15 minutes, HU-29 under 10 seconds, HU-43 under one hour) are proposals to validate with a load test.
+- The performance targets for 500,000 Socios (HU-25 under 15 minutes, HU-29 under 10 seconds and its effect by parameter under 30 seconds, HU-43 under one hour) are proposals to validate with a load test.
 
 ## Backlog changes still required
 
@@ -123,12 +128,15 @@ The backlog already describes the push model for HU-21 and HU-43. Pending:
 - The row of HU-26 (Exportación de Listado Priorizado) has "0" instead of its number.
 - HU-36 ("Un evento retirado invalida su segmentación") and HU-39 ("Para un evento retirado se informa...") describe effects of HU-23, which is outside the MVP; move those criteria to HU-23 (decision 33).
 - HU-38 (outside the MVP) still mentions Socios excluded "con asiento transferido", a feature that no longer exists.
+- HU-29 and HU-30 in the backlog still describe the original scope. Align their criteria with the specs (business questions, baseline and pre-fill, saturation and ties, change per component, effect by parameter, profile of the movers, equity with verdict, CSV) and re-estimate them (decisions 44–48).
 
 ## Residual risks
 
 - Socios are not notified by email when an event changes (HU-19/20 are out): they see the change only when they open the app.
 - The wave schedule is informative: with no reservation, ticket-office export or notifications in the MVP, nothing enforces it. State this clearly in the demo.
 - Using age as a score component is a policy choice the club should be able to defend before its Socios.
+- The verdict of HU-30 is descriptive: it applies fixed thresholds to three attributes (seniority, distance, age); it is not a statistical test and does not certify the absence of bias in other attributes.
+- HU-29 and HU-30 work on the snapshot of the latest ranking: they do not age the Socios, shift the attendance window or reflect later loads. To see the current situation the Admin runs HU-25 first.
 - The freshness of the ranking depends on the club sending its data on time; the 24-hour staleness warning is the safeguard.
 - Without HU-23 in the MVP, a published event the club reschedules or cancels keeps its old data until HU-23 is built.
 
