@@ -1,7 +1,7 @@
 # Feature Specification: Segment Socios into Waves
 
 **Feature Branch**: `hu-36-wave-segmentation`
-**Created**: 2026-10-11 | **Revised**: 2026-10-13 (v3)
+**Created**: 2026-10-11 | **Revised**: 2026-11-07 (v4)
 **Status**: Draft
 **Backlog Reference**: HU-36 (Estimate: 8, Priority: Alta, MVP: Yes)
 **Shared rules**: [cross-cutting](../_shared/cross-cutting.md), [data contract](../_shared/data-contract.md)
@@ -24,17 +24,19 @@ As an Admin, I want to automatically generate the segmentation of Socios into wa
 3. **Given** a ranking of M Socios, **When** a Socio's position is p, **Then** their percentile is 100·p / M and they belong to wave k when (k − 1)·step < percentile ≤ k·step. Wave 1 holds the best positions.
 4. **Given** the bands, **When** boundaries fall between positions, **Then** positions are assigned with whole numbers (the boundary of wave k is floor(k·step·M / 100)), so wave sizes differ by at most one Socio and the last wave ends at position M.
 5. **Given** a generated segmentation, **When** it is shown, **Then** it includes, per wave, its order, the percentile range, the position range and the number of Socios.
-6. **Given** an event that is not a published Partido, or no completed ranking, **When** the Admin triggers segmentation, **Then** it is not possible and the missing prerequisite is stated.
+6. **Given** an event that is not a published Partido, a Partido whose start has already passed, or no completed ranking with at least one ranked Socio, **When** the Admin triggers segmentation, **Then** it is not possible and the missing prerequisite is stated.
 7. **Given** a segmentation already exists and the first wave has not opened, **When** the Admin generates it again, **Then** after confirmation it replaces the previous one and any existing schedule (HU-37) is invalidated.
 8. **Given** the first wave already opened, **When** the Admin tries to generate again, **Then** it is blocked.
 9. **Given** later ranking recalculations, **When** they complete, **Then** the generated waves do not change (the segmentation is fixed to its ranking version).
+10. **Given** the latest successful roster load is older than the staleness limit (default 24 hours) at the time of generating, or there were successful loads (roster, attendance or activities) after the ranking that will be used, **When** the Admin starts the segmentation, **Then** they are warned before it runs and they can continue (HU-43 FR-008).
 
 ---
 
 ### Edge Cases
 
+- **Only upcoming Partidos**: the event must be of type Partido and its start must not have passed. Institutional/amateur and historical events are not Partidos and are never segmented.
 - **Who is segmented**: the Socios of the ranking version used, that is, Socios with fees up to date when that ranking was calculated. Fee status is not re-checked.
-- **Small rankings**: a wave that would hold no Socios is omitted and the others keep their order (for example, 3 Socios give three waves).
+- **Small rankings**: a band that would hold no Socios is omitted, wherever it falls, and the remaining waves are renumbered 1 to N in order. Each wave keeps the percentile range of its original band. For example, with 3 Socios and step 20 the boundaries are 0, 1, 1, 2 and 3: bands 1 and 3 are empty, so there are three waves, wave 1 (20–40%, position 1), wave 2 (60–80%, position 2) and wave 3 (80–100%, position 3). HU-37 schedules these N waves.
 - **Socios outside the ranking version** (joined or paid up afterwards) belong to no wave; HU-39 explains it.
 - **Storage at scale**: the segmentation stores the ranking version, the step and the number of ranked Socios; each Socio's wave is derived from their position, so nothing is copied per Socio (up to 500,000).
 - **Not in scope**: capacity of the stadium, Abonados and seat transfers.
@@ -43,7 +45,7 @@ As an Admin, I want to automatically generate the segmentation of Socios into wa
 
 ### Functional Requirements
 
-- **FR-001**: System MUST let the Admin trigger segmentation for a published event of type Partido with a completed ranking.
+- **FR-001**: System MUST let the Admin trigger segmentation for a published event of type Partido whose start has not passed, with a completed ranking.
 - **FR-002**: System MUST define waves as percentile bands in steps of the configured step (default 20).
 - **FR-003**: System MUST assign each ranked Socio to the wave that contains their percentile, with wave 1 holding the best positions.
 - **FR-004**: System MUST use whole-number boundaries so that wave sizes differ by at most one Socio and every ranked Socio belongs to exactly one wave.
@@ -51,6 +53,7 @@ As an Admin, I want to automatically generate the segmentation of Socios into wa
 - **FR-006**: System MUST fix the segmentation to a ranking version.
 - **FR-007**: System MUST allow regeneration only before the first wave opens, invalidating the schedule.
 - **FR-008**: System MUST audit every generation.
+- **FR-009**: System MUST warn, without blocking, when the roster is older than the staleness limit or when there were loads after the ranking that will be used.
 
 ### Key Entities
 
@@ -75,3 +78,4 @@ As an Admin, I want to automatically generate the segmentation of Socios into wa
 
 - Replaced the capacity-based rule with fixed percentile bands (20, 40, 60, 80, 100), as decided by the product owner.
 - Wave membership is derived from the ranking version rather than stored per Socio.
+- v4: only upcoming Partidos can be segmented; Partidos whose start has passed and historical events are rejected. Empty bands can fall in the middle: the remaining waves are renumbered 1 to N and keep their original percentile range. The ranking must have at least one ranked Socio. Added the staleness warning required by HU-43 FR-008, plus the warning for loads after the ranking.
