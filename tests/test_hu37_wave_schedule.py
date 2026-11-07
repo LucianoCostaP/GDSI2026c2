@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.date_utils import asegurar_utc
 from app.models import (
     AuditLog,
@@ -24,6 +25,8 @@ from tests.conftest import BOCA_ID, RIVER_ID, MakeMember, Outbox, bearer, member
 from tests.hu25_helpers import headers_for, publish_rules
 from tests.hu36_helpers import DAY, HOUR, code_of, partido, ranking_with
 from tests.hu36_helpers import generate as generate_waves
+
+MINUTE = timedelta(minutes=1)
 
 
 def schedule_url(event: EventoVisibleDB | str) -> str:
@@ -72,9 +75,10 @@ def segmented(
     headers: dict[str, str],
     *,
     when: datetime | None = None,
+    socios: int = 10,
 ) -> EventoVisibleDB:
-    """Un Partido de Boca con olas generadas (HU-36) sobre un ranking de 10 socios."""
-    ranking_with(db, admin, 10)
+    """Un Partido de Boca con olas generadas (HU-36); 10 socios dan 5 olas."""
+    ranking_with(db, admin, socios)
     event = partido(db, when=when)
     assert generate_waves(client, headers, event).status_code == 201
     return event
@@ -143,7 +147,9 @@ def test_the_generated_schedule_can_be_read(
 def test_generation_is_audited(
     client: TestClient, db: Session, admin: User, boca: dict[str, str]
 ) -> None:
-    event = segmented(client, db, admin, boca)
+    event = segmented(
+        client, db, admin, boca, when=datetime(2030, 3, 2, 21, 0, tzinfo=UTC)
+    )
     opening = datetime(2030, 3, 1, 18, 0, tzinfo=UTC)
     closing = opening + 5 * HOUR
 
@@ -158,6 +164,113 @@ def test_generation_is_audited(
         "opening_at": "2030-03-01T18:00:00+00:00",
         "closing_at": "2030-03-01T23:00:00+00:00",
     }
+
+
+# Escenario 2
+
+
+@pytest.mark.parametrize(
+    ("opening_in", "closing_in", "code"),
+    [
+        (-MINUTE, 3 * DAY, "OPENING_NOT_IN_FUTURE"),
+        (3 * DAY, 2 * DAY, "CLOSING_NOT_AFTER_OPENING"),
+        (2 * DAY, 2 * DAY, "CLOSING_NOT_AFTER_OPENING"),
+        (2 * DAY, 11 * DAY, "CLOSING_AFTER_EVENT_START"),
+        (2 * DAY, 2 * DAY + 24 * MINUTE, "WAVE_STEP_TOO_SHORT"),
+    ],
+)
+def test_invalid_periods_are_rejected_with_the_reason(
+    client: TestClient,
+    db: Session,
+    admin: User,
+    boca: dict[str, str],
+    opening_in: timedelta,
+    closing_in: timedelta,
+    code: str,
+) -> None:
+    event = segmented(client, db, admin, boca, when=utcnow() + 10 * DAY)
+    now = utcnow()
+
+    response = generate_schedule(
+        client, boca, event, opening=now + opening_in, closing=now + closing_in
+    )
+
+    assert response.status_code == 422
+    assert code_of(response) == code
+    assert response.json()["detail"]["message"]
+    assert schedules(db) == []
+    assert audits(db) == []
+
+
+def test_the_step_message_tells_the_minimum_period(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca)
+    opening = utcnow() + 2 * DAY
+
+    response = generate_schedule(
+        client, boca, event, opening=opening, closing=opening + 10 * MINUTE
+    )
+
+    assert response.json()["detail"]["message"] == (
+        "Entre oleadas tiene que haber al menos 5 minutos: con 5 oleadas, "
+        "el período tiene que durar al menos 25 minutos."
+    )
+
+
+def test_the_minimum_period_uses_the_waves_that_exist(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    # 3 socios dan 3 olas (HU-36 omite las bandas vacías): alcanzan 15 minutos.
+    event = segmented(client, db, admin, boca, socios=3)
+    opening = utcnow() + 2 * DAY
+
+    response = generate_schedule(
+        client, boca, event, opening=opening, closing=opening + 15 * MINUTE
+    )
+
+    assert response.status_code == 201
+
+
+def test_the_minimum_step_comes_from_the_setting(
+    client: TestClient,
+    db: Session,
+    admin: User,
+    boca: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    event = segmented(client, db, admin, boca)
+    opening = utcnow() + 2 * DAY
+    monkeypatch.setattr(settings, "wave_min_step_minutes", 10)
+
+    response = generate_schedule(
+        client, boca, event, opening=opening, closing=opening + 45 * MINUTE
+    )
+
+    assert response.status_code == 422
+    assert code_of(response) == "WAVE_STEP_TOO_SHORT"
+
+
+def test_dates_without_time_zone_are_read_in_buenos_aires(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(
+        client, db, admin, boca, when=datetime(2030, 3, 2, 21, 0, tzinfo=UTC)
+    )
+
+    response = client.post(
+        schedule_url(event),
+        json={"opening_at": "2030-03-01T15:00", "closing_at": "2030-03-01T20:00"},
+        headers=boca,
+    )
+
+    assert response.status_code == 201
+    assert as_utc(response.json()["opening_at"]) == datetime(
+        2030, 3, 1, 18, 0, tzinfo=UTC
+    )
+    assert as_utc(response.json()["closing_at"]) == datetime(
+        2030, 3, 1, 23, 0, tzinfo=UTC
+    )
 
 
 # Casos borde: solo Partidos publicados, futuros y del club del Admin
@@ -235,10 +348,11 @@ def test_the_start_is_compared_with_the_injected_clock(
         event.id_interno,
         opening_at=opening,
         closing_at=kickoff,
-        now=kickoff - timedelta(seconds=1),
+        now=opening - timedelta(seconds=1),
     )
 
     assert started.value.status_code == 409
+    assert started.value.detail["code"] == "EVENT_ALREADY_STARTED"
     assert view.schedule.event_id == event.id_interno
 
 

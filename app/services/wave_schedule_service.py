@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import audit
+from ..config import settings
 from ..core.date_utils import asegurar_utc
 from ..models import (
     EventoVisibleDB,
@@ -22,6 +23,8 @@ from ..models import (
     WaveSegmentation,
     utcnow,
 )
+from ..scoring.wave_schedule import validate_period
+from ..scoring.waves import build_waves
 from . import segmentation_service
 from .formula_service import error
 
@@ -83,6 +86,28 @@ def _segmentation_required(db: Session, event: EventoVisibleDB) -> WaveSegmentat
     return segmentation
 
 
+def _validated_period(
+    event: EventoVisibleDB,
+    segmentation: WaveSegmentation,
+    opening_at: datetime,
+    closing_at: datetime,
+    now: datetime,
+) -> None:
+    """Rechaza el período con el motivo (escenario 2, FR-005)."""
+    violation = validate_period(
+        opening=opening_at,
+        closing=closing_at,
+        event_start=asegurar_utc(event.fecha_hora),
+        waves=len(build_waves(segmentation.ranked_total, segmentation.percentile_step)),
+        now=now,
+        min_step_minutes=settings.wave_min_step_minutes,
+    )
+    if violation is not None:
+        raise error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, violation.code, violation.message
+        )
+
+
 def generate(
     db: Session,
     admin: User,
@@ -94,22 +119,26 @@ def generate(
     now: datetime | None = None,
 ) -> ScheduleView:
     """Genera el cronograma del Partido en borrador."""
+    current = _now(now)
+    opening_at = asegurar_utc(opening_at)
+    closing_at = asegurar_utc(closing_at)
     event = segmentation_service.upcoming_partido(
         db,
         club_id,
         event_id,
-        _now(now),
+        current,
         action="armar el cronograma",
         started="no se puede generar el cronograma",
     )
     segmentation = _segmentation_required(db, event)
+    _validated_period(event, segmentation, opening_at, closing_at, current)
 
     schedule = WaveSchedule(
         club_id=club_id,
         event_id=event.id_interno,
         segmentation_id=segmentation.id,
-        opening_at=asegurar_utc(opening_at),
-        closing_at=asegurar_utc(closing_at),
+        opening_at=opening_at,
+        closing_at=closing_at,
         status=WaveScheduleStatus.DRAFT,
         generated_at=utcnow(),
         generated_by_id=admin.id,
