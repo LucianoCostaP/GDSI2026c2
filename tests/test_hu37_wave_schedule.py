@@ -861,6 +861,126 @@ def test_the_schedule_reports_whether_it_is_locked(
     assert client.get(schedule_url(event), headers=boca).json()["locked"] is False
 
 
+# Caso borde: regenerar las olas (HU-36) invalida el cronograma
+
+
+def resegment(
+    client: TestClient,
+    db: Session,
+    admin: User,
+    boca: dict[str, str],
+    event: EventoVisibleDB,
+    socios: int = 10,
+) -> None:
+    """Regenera las olas del Partido sobre un ranking nuevo de `socios` posiciones."""
+    ranking_with(db, admin, socios, at=utcnow())
+    assert generate_waves(client, boca, event, confirmed=True).status_code == 200
+
+
+@pytest.mark.parametrize("confirm_first", [False, True], ids=["draft", "confirmed"])
+def test_resegmenting_invalidates_the_schedule(
+    client: TestClient,
+    db: Session,
+    admin: User,
+    boca: dict[str, str],
+    confirm_first: bool,
+) -> None:
+    event = segmented(client, db, admin, boca)
+    generate_schedule(client, boca, event)
+    if confirm_first:
+        confirm_schedule(client, boca, event)
+
+    resegment(client, db, admin, boca, event)
+
+    (schedule,) = schedules(db)
+    assert schedule.status == WaveScheduleStatus.INVALIDATED
+    assert wave_schedule_service.visible_schedule(db, event.id_interno) is None
+    body = client.get(schedule_url(event), headers=boca).json()
+    assert body["status"] == "invalidated"
+    assert body["locked"] is False
+    assert [w["state"] for w in body["waves"]] == [None] * len(body["waves"])
+    invalidated = audits(db)[-1]
+    assert invalidated.action == "wave_schedule.invalidated"
+    assert invalidated.actor_user_id == admin.id
+    assert invalidated.details["previous"] == {
+        "status": "confirmed" if confirm_first else "draft"
+    }
+    assert invalidated.details["new"] == {"status": "invalidated"}
+
+
+def test_the_first_segmentation_invalidates_nothing(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    segmented(client, db, admin, boca)
+
+    assert audits(db) == []
+
+
+def test_an_invalidated_schedule_is_invalidated_only_once(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca)
+    generate_schedule(client, boca, event)
+
+    resegment(client, db, admin, boca, event)
+    resegment(client, db, admin, boca, event)
+
+    actions = [a.action for a in audits(db)]
+    assert actions.count("wave_schedule.invalidated") == 1
+
+
+def test_a_new_schedule_over_an_invalidated_one_needs_no_confirmation(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca)
+    generate_schedule(client, boca, event)
+    resegment(client, db, admin, boca, event)
+    opening = utcnow() + 3 * DAY
+
+    response = generate_schedule(client, boca, event, opening=opening)
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "draft"
+    assert as_utc(response.json()["opening_at"]) == opening
+    assert len(schedules(db)) == 1
+    assert audits(db)[-1].action == "wave_schedule.generated"
+
+
+def test_the_new_schedule_follows_the_new_waves(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca)
+    generate_schedule(client, boca, event)
+    # 3 socios en el ranking nuevo: HU-36 genera 3 olas en vez de 5.
+    resegment(client, db, admin, boca, event, socios=3)
+    opening = utcnow() + 3 * DAY
+
+    body = generate_schedule(
+        client, boca, event, opening=opening, closing=opening + 3 * HOUR
+    ).json()
+
+    assert [as_utc(w["starts_at"]) for w in body["waves"]] == [
+        opening,
+        opening + HOUR,
+        opening + 2 * HOUR,
+    ]
+
+
+def test_an_invalidated_schedule_cannot_be_confirmed(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca)
+    generate_schedule(client, boca, event)
+    resegment(client, db, admin, boca, event)
+
+    response = client.post(confirm_url(event), headers=boca)
+
+    assert response.status_code == 409
+    assert code_of(response) == "SCHEDULE_INVALIDATED"
+    (schedule,) = schedules(db)
+    assert schedule.status == WaveScheduleStatus.INVALIDATED
+
+
 # Casos borde: solo Partidos publicados, futuros y del club del Admin
 
 

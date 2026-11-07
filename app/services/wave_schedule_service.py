@@ -173,8 +173,8 @@ def generate(
     confirmed: bool = False,
     now: datetime | None = None,
 ) -> tuple[ScheduleView, bool]:
-    """Genera el cronograma del Partido en borrador. Si ya tenía uno, lo reemplaza solo
-    con `confirmed` (escenario 6). Devuelve la vista y si reemplazó uno anterior."""
+    """Genera el cronograma del Partido en borrador. Si ya tenía uno vigente, lo reemplaza
+    solo con `confirmed` (escenario 6). Devuelve la vista y si reemplazó uno vigente."""
     current = _now(now)
     opening_at = asegurar_utc(opening_at)
     closing_at = asegurar_utc(closing_at)
@@ -199,7 +199,8 @@ def generate(
         select(WaveSchedule).where(WaveSchedule.event_id == event.id_interno)
     )
     previous = None
-    if schedule is not None:
+    # Uno invalidado (se regeneraron las olas) ya no vale: se pisa sin pedir confirmación.
+    if schedule is not None and schedule.status != WaveScheduleStatus.INVALIDATED:
         if not confirmed:
             raise error(
                 status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -257,6 +258,12 @@ def confirm(
             status.HTTP_409_CONFLICT,
             "SCHEDULE_ALREADY_CONFIRMED",
             "El cronograma ya está confirmado.",
+        )
+    if schedule.status == WaveScheduleStatus.INVALIDATED:
+        raise error(
+            status.HTTP_409_CONFLICT,
+            "SCHEDULE_INVALIDATED",
+            "Las olas se regeneraron: generá el cronograma de nuevo.",
         )
     if asegurar_utc(schedule.opening_at) <= current:
         raise error(

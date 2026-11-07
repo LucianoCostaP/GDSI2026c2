@@ -68,6 +68,31 @@ def first_wave_opened(
     return opening_at is not None and first_wave_open(asegurar_utc(opening_at), now)
 
 
+def invalidate_schedule(db: Session, event_id: str, actor: User) -> None:
+    """Regenerar las olas invalida el cronograma vigente del Partido (HU-36 FR-007, HU-37):
+    sus horas ya no corresponden a las olas nuevas y hay que generarlo de nuevo."""
+    schedule = db.scalar(
+        select(WaveSchedule).where(
+            WaveSchedule.event_id == event_id,
+            WaveSchedule.status != WaveScheduleStatus.INVALIDATED,
+        )
+    )
+    if schedule is None:
+        return
+    previous_status = schedule.status.value
+    schedule.status = WaveScheduleStatus.INVALIDATED
+    audit.record(
+        db,
+        "wave_schedule.invalidated",
+        actor_id=actor.id,
+        entity="wave_schedule",
+        entity_id=schedule.id,
+        event_id=event_id,
+        previous={"status": previous_status},
+        new={"status": WaveScheduleStatus.INVALIDATED.value},
+    )
+
+
 def _now(now: datetime | None) -> datetime:
     return asegurar_utc(now or utcnow())
 
@@ -264,6 +289,7 @@ def generate(
     else:
         for field, value in values.items():
             setattr(segmentation, field, value)
+        invalidate_schedule(db, event.id_interno, admin)
     db.flush()
 
     audit.record(

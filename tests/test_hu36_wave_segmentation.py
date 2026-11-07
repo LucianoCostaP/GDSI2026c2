@@ -425,6 +425,21 @@ def test_a_draft_schedule_past_its_opening_does_not_lock_the_waves(
     assert response.status_code == 200
 
 
+def test_regenerating_the_waves_invalidates_the_schedule(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    ranking_with(db, admin, 5)
+    event = partido(db)
+    generate(client, boca, event)
+    schedule = schedule_for(db, admin, WaveScheduleStatus.CONFIRMED, utcnow() + DAY)
+
+    response = generate(client, boca, event, confirmed=True)
+
+    assert response.status_code == 200
+    db.refresh(schedule)
+    assert schedule.status == WaveScheduleStatus.INVALIDATED
+
+
 # Escenario 9
 
 
