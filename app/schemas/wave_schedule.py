@@ -41,4 +41,7 @@ class WaveScheduleOut(BaseModel):
     min_step_minutes: int
     generated_at: datetime
     generated_by: str
+    # Solo con `status = confirmed`: desde ahí lo ven los socios.
+    confirmed_at: datetime | None
+    confirmed_by: str | None
     waves: list[ScheduledWaveOut]

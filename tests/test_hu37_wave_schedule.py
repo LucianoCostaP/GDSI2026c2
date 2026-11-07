@@ -17,6 +17,7 @@ from app.models import (
     EventoVisibleDB,
     User,
     WaveSchedule,
+    WaveScheduleStatus,
     WaveSegmentation,
     utcnow,
 )
@@ -55,6 +56,10 @@ def generate_schedule(
         },
         headers=headers,
     )
+
+
+def confirm_url(event: EventoVisibleDB | str) -> str:
+    return f"{schedule_url(event)}/confirm"
 
 
 def as_utc(value: str) -> datetime:
@@ -369,6 +374,156 @@ def test_the_schedule_follows_the_waves_of_the_segmentation(
     ] == segmentation["waves"]
 
 
+# Escenario 4
+
+
+def test_a_generated_schedule_is_a_draft_that_socios_do_not_see(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca)
+
+    body = generate_schedule(client, boca, event).json()
+
+    assert body["status"] == "draft"
+    assert body["confirmed_at"] is None
+    assert body["confirmed_by"] is None
+    assert wave_schedule_service.visible_schedule(db, event.id_interno) is None
+
+
+def test_reading_an_event_without_schedule_answers_404(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca)
+
+    response = client.get(schedule_url(event), headers=boca)
+
+    assert response.status_code == 404
+    assert code_of(response) == "SCHEDULE_NOT_FOUND"
+
+
+def test_confirming_makes_it_visible_to_socios(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca)
+    generated = generate_schedule(client, boca, event).json()
+
+    response = client.post(confirm_url(event), headers=boca)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "confirmed"
+    assert body["confirmed_by"] == admin.name
+    assert body["confirmed_at"] is not None
+    assert body["waves"] == generated["waves"]
+    visible = wave_schedule_service.visible_schedule(db, event.id_interno)
+    assert visible is not None
+    assert visible.status == WaveScheduleStatus.CONFIRMED
+    assert client.get(schedule_url(event), headers=boca).json() == body
+
+
+def test_confirmation_is_audited(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca)
+    generate_schedule(client, boca, event)
+
+    client.post(confirm_url(event), headers=boca)
+
+    generated, confirmed = audits(db)
+    assert generated.action == "wave_schedule.generated"
+    assert confirmed.action == "wave_schedule.confirmed"
+    assert confirmed.actor_user_id == admin.id
+    assert confirmed.details["event_id"] == event.id_interno
+    assert confirmed.details["new"] == generated.details["new"]
+
+
+def test_confirming_without_schedule_answers_404(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca)
+
+    response = client.post(confirm_url(event), headers=boca)
+
+    assert response.status_code == 404
+    assert code_of(response) == "SCHEDULE_NOT_FOUND"
+
+
+def test_a_confirmed_schedule_cannot_be_confirmed_again(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca)
+    generate_schedule(client, boca, event)
+    client.post(confirm_url(event), headers=boca)
+
+    response = client.post(confirm_url(event), headers=boca)
+
+    assert response.status_code == 409
+    assert code_of(response) == "SCHEDULE_ALREADY_CONFIRMED"
+    assert [a.action for a in audits(db)] == [
+        "wave_schedule.generated",
+        "wave_schedule.confirmed",
+    ]
+
+
+def test_a_draft_whose_opening_passed_cannot_be_confirmed(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca)
+    generate_schedule(client, boca, event)
+    (draft,) = schedules(db)
+    draft.opening_at = utcnow() - MINUTE
+    db.commit()
+
+    response = client.post(confirm_url(event), headers=boca)
+
+    assert response.status_code == 409
+    assert code_of(response) == "OPENING_ALREADY_PASSED"
+    db.refresh(draft)
+    assert draft.status == WaveScheduleStatus.DRAFT
+    assert wave_schedule_service.visible_schedule(db, event.id_interno) is None
+
+
+def test_the_opening_is_compared_with_the_injected_clock_when_confirming(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca)
+    opening = utcnow() + 2 * DAY
+    generate_schedule(client, boca, event, opening=opening)
+
+    with pytest.raises(HTTPException) as passed:
+        wave_schedule_service.confirm(db, admin, BOCA_ID, event.id_interno, now=opening)
+    view = wave_schedule_service.confirm(
+        db, admin, BOCA_ID, event.id_interno, now=opening - timedelta(seconds=1)
+    )
+
+    assert passed.value.detail["code"] == "OPENING_ALREADY_PASSED"
+    assert view.schedule.status == WaveScheduleStatus.CONFIRMED
+
+
+def test_a_schedule_of_another_club_cannot_be_confirmed(
+    client: TestClient, db: Session, boca: dict[str, str]
+) -> None:
+    river_event = partido(db, club_id=RIVER_ID)
+
+    response = client.post(confirm_url(river_event), headers=boca)
+
+    assert response.status_code == 404
+    assert code_of(response) == "SCHEDULE_NOT_FOUND"
+
+
+def test_socios_do_not_see_an_invalidated_schedule(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca)
+    generate_schedule(client, boca, event)
+    client.post(confirm_url(event), headers=boca)
+    (schedule,) = schedules(db)
+    schedule.status = WaveScheduleStatus.INVALIDATED
+    db.commit()
+
+    assert wave_schedule_service.visible_schedule(db, event.id_interno) is None
+
+
 # Casos borde: solo Partidos publicados, futuros y del club del Admin
 
 
@@ -498,5 +653,6 @@ def test_a_socio_cannot_use_any_schedule_route(
     for response in (
         client.get(schedule_url(event), headers=headers),
         generate_schedule(client, headers, event),
+        client.post(confirm_url(event), headers=headers),
     ):
         assert response.status_code == 403

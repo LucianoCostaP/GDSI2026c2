@@ -47,6 +47,8 @@ def _schedule_out(view: wave_schedule_service.ScheduleView) -> WaveScheduleOut:
         min_step_minutes=settings.wave_min_step_minutes,
         generated_at=schedule.generated_at,
         generated_by=view.generated_by,
+        confirmed_at=schedule.confirmed_at,
+        confirmed_by=view.confirmed_by,
         waves=[
             ScheduledWaveOut(
                 order=item.wave.order,
@@ -86,3 +88,11 @@ def generate_schedule(
             closing_at=body.closing_at,
         )
     )
+
+
+@router.post("/admin/events/{event_id}/schedule/confirm")
+def confirm_schedule(
+    event_id: str, admin: CurrentAdmin, club_id: CurrentAdminClub, db: Db
+) -> WaveScheduleOut:
+    """Confirma el borrador: desde ahí lo ven los socios."""
+    return _schedule_out(wave_schedule_service.confirm(db, admin, club_id, event_id))

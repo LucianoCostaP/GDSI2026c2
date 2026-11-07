@@ -34,6 +34,7 @@ class ScheduleView:
     schedule: WaveSchedule
     event: EventoVisibleDB
     generated_by: str
+    confirmed_by: str | None
     waves: list[ScheduledWave]
 
 
@@ -47,6 +48,11 @@ def _view(db: Session, schedule: WaveSchedule) -> ScheduleView:
         schedule=schedule,
         event=db.get_one(EventoVisibleDB, schedule.event_id),
         generated_by=db.get_one(User, schedule.generated_by_id).name,
+        confirmed_by=(
+            db.get_one(User, schedule.confirmed_by_id).name
+            if schedule.confirmed_by_id is not None
+            else None
+        ),
         waves=schedule_waves(
             build_waves(segmentation.ranked_total, segmentation.percentile_step),
             asegurar_utc(schedule.opening_at),
@@ -63,20 +69,35 @@ def _audit_values(schedule: WaveSchedule) -> dict[str, Any]:
     }
 
 
-def get_schedule(db: Session, club_id: uuid.UUID, event_id: str) -> ScheduleView:
-    schedule = db.scalar(
-        select(WaveSchedule).where(
-            WaveSchedule.event_id == event_id,
-            WaveSchedule.club_id == club_id,
-        )
+def _schedule_of(
+    db: Session, club_id: uuid.UUID, event_id: str, *, for_update: bool = False
+) -> WaveSchedule:
+    query = select(WaveSchedule).where(
+        WaveSchedule.event_id == event_id,
+        WaveSchedule.club_id == club_id,
     )
+    schedule = db.scalar(query.with_for_update() if for_update else query)
     if schedule is None:
         raise error(
             status.HTTP_404_NOT_FOUND,
             "SCHEDULE_NOT_FOUND",
             "Este partido todavía no tiene cronograma.",
         )
-    return _view(db, schedule)
+    return schedule
+
+
+def get_schedule(db: Session, club_id: uuid.UUID, event_id: str) -> ScheduleView:
+    return _view(db, _schedule_of(db, club_id, event_id))
+
+
+def visible_schedule(db: Session, event_id: str) -> WaveSchedule | None:
+    """El cronograma que pueden ver los socios (HU-39): solo el confirmado (SC-003)."""
+    return db.scalar(
+        select(WaveSchedule).where(
+            WaveSchedule.event_id == event_id,
+            WaveSchedule.status == WaveScheduleStatus.CONFIRMED,
+        )
+    )
 
 
 def _segmentation_required(db: Session, event: EventoVisibleDB) -> WaveSegmentation:
@@ -160,6 +181,45 @@ def generate(
         entity="wave_schedule",
         entity_id=schedule.id,
         event_id=event.id_interno,
+        new=_audit_values(schedule),
+    )
+    db.commit()
+    return _view(db, schedule)
+
+
+def confirm(
+    db: Session,
+    admin: User,
+    club_id: uuid.UUID,
+    event_id: str,
+    *,
+    now: datetime | None = None,
+) -> ScheduleView:
+    """Confirma el borrador: desde ahí lo ven los socios (escenario 4, FR-006)."""
+    schedule = _schedule_of(db, club_id, event_id, for_update=True)
+    if schedule.status == WaveScheduleStatus.CONFIRMED:
+        raise error(
+            status.HTTP_409_CONFLICT,
+            "SCHEDULE_ALREADY_CONFIRMED",
+            "El cronograma ya está confirmado.",
+        )
+    if asegurar_utc(schedule.opening_at) <= _now(now):
+        raise error(
+            status.HTTP_409_CONFLICT,
+            "OPENING_ALREADY_PASSED",
+            "La apertura ya pasó: regenerá el cronograma con otro período.",
+        )
+
+    schedule.status = WaveScheduleStatus.CONFIRMED
+    schedule.confirmed_at = utcnow()
+    schedule.confirmed_by_id = admin.id
+    audit.record(
+        db,
+        "wave_schedule.confirmed",
+        actor_id=admin.id,
+        entity="wave_schedule",
+        entity_id=schedule.id,
+        event_id=schedule.event_id,
         new=_audit_values(schedule),
     )
     db.commit()
