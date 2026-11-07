@@ -981,6 +981,52 @@ def test_an_invalidated_schedule_cannot_be_confirmed(
     assert schedule.status == WaveScheduleStatus.INVALIDATED
 
 
+# Listado de partidos de las olas (HU-36) con el resumen del cronograma
+
+EVENTS = "/admin/segmentation/events"
+
+
+def test_the_list_includes_the_schedule_summary(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    ranking_with(db, admin, 10)
+    without_waves = partido(db, when=utcnow() + 4 * DAY)
+    without_schedule = partido(db, when=utcnow() + 5 * DAY)
+    draft = partido(db, when=utcnow() + 6 * DAY)
+    confirmed = partido(db, when=utcnow() + 7 * DAY)
+    for event in (without_schedule, draft, confirmed):
+        assert generate_waves(client, boca, event).status_code == 201
+    opening = utcnow() + 2 * DAY
+    closing = opening + 5 * HOUR
+    generate_schedule(client, boca, draft, opening=opening, closing=closing)
+    generate_schedule(client, boca, confirmed, opening=opening, closing=closing)
+    confirm_schedule(client, boca, confirmed)
+
+    items = {
+        item["event"]["id_interno"]: item
+        for item in client.get(EVENTS, headers=boca).json()
+    }
+
+    assert items[without_waves.id_interno]["schedule"] is None
+    assert items[without_schedule.id_interno]["schedule"] is None
+    assert items[draft.id_interno]["schedule"]["status"] == "draft"
+    assert as_utc(items[draft.id_interno]["schedule"]["opening_at"]) == opening
+    assert as_utc(items[draft.id_interno]["schedule"]["closing_at"]) == closing
+    assert items[confirmed.id_interno]["schedule"]["status"] == "confirmed"
+
+
+def test_the_list_shows_an_invalidated_schedule(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca)
+    generate_schedule(client, boca, event)
+    resegment(client, db, admin, boca, event)
+
+    (item,) = client.get(EVENTS, headers=boca).json()
+
+    assert item["schedule"]["status"] == "invalidated"
+
+
 # Casos borde: solo Partidos publicados, futuros y del club del Admin
 
 

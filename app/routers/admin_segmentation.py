@@ -15,6 +15,7 @@ from ..models import EventoVisibleDB
 from ..schemas.ranking import PreflightWarningOut
 from ..schemas.segmentation import (
     GenerateSegmentationIn,
+    ScheduleSummaryOut,
     SegmentableEventOut,
     SegmentationEventOut,
     SegmentationOut,
@@ -84,6 +85,15 @@ def segmentable_events(club_id: CurrentAdminClub, db: Db) -> list[SegmentableEve
                     ),
                 )
                 if item.segmentation
+                else None
+            ),
+            schedule=(
+                ScheduleSummaryOut(
+                    status=item.schedule.status,
+                    opening_at=item.schedule.opening_at,
+                    closing_at=item.schedule.closing_at,
+                )
+                if item.schedule
                 else None
             ),
         )

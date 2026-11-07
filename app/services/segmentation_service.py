@@ -52,6 +52,8 @@ class SegmentationView:
 class SegmentableEvent:
     event: EventoVisibleDB
     segmentation: WaveSegmentation | None
+    # Cronograma de las olas (HU-37), si ya se generó.
+    schedule: WaveSchedule | None
 
 
 def first_wave_opened(
@@ -118,12 +120,14 @@ def _view(db: Session, segmentation: WaveSegmentation) -> SegmentationView:
 def list_segmentable_events(
     db: Session, club_id: uuid.UUID, now: datetime | None = None
 ) -> list[SegmentableEvent]:
-    """Los Partidos publicados del club que todavía no empezaron, con su segmentación."""
+    """Los Partidos publicados del club que todavía no empezaron, con su segmentación y
+    su cronograma (HU-37)."""
     rows = db.execute(
-        select(EventoVisibleDB, WaveSegmentation)
+        select(EventoVisibleDB, WaveSegmentation, WaveSchedule)
         .outerjoin(
             WaveSegmentation, WaveSegmentation.event_id == EventoVisibleDB.id_interno
         )
+        .outerjoin(WaveSchedule, WaveSchedule.event_id == EventoVisibleDB.id_interno)
         .where(
             EventoVisibleDB.club_id == club_id,
             EventoVisibleDB.tipo == PARTIDO,
@@ -131,7 +135,10 @@ def list_segmentable_events(
         )
         .order_by(EventoVisibleDB.fecha_hora, EventoVisibleDB.id_interno)
     ).all()
-    return [SegmentableEvent(event, segmentation) for event, segmentation in rows]
+    return [
+        SegmentableEvent(event, segmentation, schedule)
+        for event, segmentation, schedule in rows
+    ]
 
 
 def build_preflight(

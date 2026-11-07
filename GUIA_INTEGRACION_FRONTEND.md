@@ -1,9 +1,10 @@
-# Guía de Integración Frontend con Backend: HU-17, HU-22 y HU-14
+# Guía de Integración Frontend con Backend: HU-17, HU-22, HU-14 y HU-37
 
 Esta guía documenta la integración del frontend (`tp_gestion_reactjs`) con el backend FastAPI para las historias de usuario:
 - **HU-17 (Consulta de Próximos Eventos)**: Vista para socios autenticados.
 - **HU-22 (Definición de Importancia y Publicación de Eventos)**: Vista de gestión para administradores.
 - **HU-14 (Puntaje Actual y Posición en el Ranking)**: Vista de solo lectura para socios autenticados (sección 3.C).
+- **HU-37 (Cronograma de Habilitación de Oleadas)**: Vista de gestión para administradores (sección 3.D).
 
 ---
 
@@ -31,7 +32,7 @@ El backend aplica separación estricta por roles en [`app/auth.py`](file:///c:/U
 
 | Rol Requerido | Flujo de Login | Endpoints Habilitados |
 | :--- | :--- | :--- |
-| **Admin** (`user.role === 'admin'`) | `POST /auth/admin/login/request`<br>`POST /auth/admin/login/verify` | • `GET /admin/events/classes` (HU-22)<br>• `GET /admin/events/pending` (HU-22)<br>• `POST /admin/events/{id}/publish` (HU-22)<br>• `POST /admin/events/auto-publish` (HU-22) |
+| **Admin** (`user.role === 'admin'`) | `POST /auth/admin/login/request`<br>`POST /auth/admin/login/verify` | • `GET /admin/events/classes` (HU-22)<br>• `GET /admin/events/pending` (HU-22)<br>• `POST /admin/events/{id}/publish` (HU-22)<br>• `POST /admin/events/auto-publish` (HU-22)<br>• `GET`/`POST /admin/events/{id}/schedule` (HU-37)<br>• `POST /admin/events/{id}/schedule/confirm` (HU-37) |
 | **Socio** (`user.role === 'member'`) | `POST /auth/member/login/request`<br>`POST /auth/member/login/verify` | • `GET /events/upcoming` (HU-17)<br>• `GET /member/events` (HU-17)<br>• `GET /member/scoring/current` (HU-14) |
 
 > [!WARNING]
@@ -232,6 +233,47 @@ El backend aplica separación estricta por roles en [`app/auth.py`](file:///c:/U
 La posición provisional ("el final del ranking") es solo de pantalla y puede repetir el puesto del último rankeado. El contrato completo está en `docs/contrato-api-reglas.md` (sección 5).
 
 **Implementado en el front**: servicio `src/services/memberScore.js` (`getCurrentScore`, `formatScore`, `formatPosition`), pantalla `src/pages/MyScore.jsx` en la ruta `/ranking` (solo socios), con acceso desde la barra lateral ("Mi puntaje") y desde Home ("Ver mi puntaje").
+
+---
+
+### D. Endpoints de Administración: Cronograma de Oleadas (HU-37)
+
+- **Rutas**:
+  - `GET /admin/events/{id}/schedule`: cronograma del partido (`404 SCHEDULE_NOT_FOUND` si no tiene).
+  - `POST /admin/events/{id}/schedule`: genera o regenera. Cuerpo `{ "opening_at", "closing_at", "confirmed": false }`. Responde `201` la primera vez y `200` cuando reemplaza uno vigente.
+  - `POST /admin/events/{id}/schedule/confirm`: confirma el borrador. Desde ahí lo ven los socios (HU-39).
+- **Autenticación**: Bearer Token (Admin). Un socio recibe `403 FORBIDDEN`. El club sale de la cuenta del Admin.
+- **Reglas de Negocio**:
+  - Requiere las olas del partido (HU-36): sin ellas, `409 SEGMENTATION_REQUIRED`.
+  - Fechas en ISO-8601 con offset (el front manda `-03:00`). Sin offset se leen en hora de Buenos Aires.
+  - Período: apertura futura, cierre posterior a la apertura y no posterior al inicio del partido, y al menos `min_step_minutes` (5 por defecto) entre oleadas. Si no se cumple, `422` con el motivo en `detail.message`.
+  - La ola *i* empieza en `apertura + (i − 1) × (cierre − apertura) / N`. La ola 1 (mejores posiciones) abre primero.
+  - Nace en `draft` y hay que confirmarlo. Regenerar uno vigente exige `confirmed: true` (si no, `422 CONFIRMATION_REQUIRED`) y lo vuelve a `draft`.
+  - Con un cronograma confirmado cuya apertura ya pasó (`locked: true`), no se pueden regenerar ni el cronograma (`409 SCHEDULE_LOCKED`) ni las olas (`409 SEGMENTATION_LOCKED`).
+  - Regenerar las olas deja el cronograma en `invalidated`. Generar sobre uno invalidado no pide confirmación.
+- **Respuesta (200/201)**:
+```json
+{
+  "event": { "id_interno": "INT-…", "titulo": "Boca vs. River", "fecha_hora": "2026-11-21T20:00:00Z", "lugar": "La Bombonera" },
+  "status": "confirmed",
+  "opening_at": "2026-11-20T21:00:00Z",
+  "closing_at": "2026-11-21T02:00:00Z",
+  "step_seconds": 3600,
+  "min_step_minutes": 5,
+  "locked": false,
+  "generated_at": "2026-11-07T22:00:00Z",
+  "generated_by": "Admin Demo",
+  "confirmed_at": "2026-11-07T22:05:00Z",
+  "confirmed_by": "Admin Demo",
+  "waves": [
+    { "order": 1, "percentile_from": 0, "percentile_to": 20, "position_from": 1, "position_to": 20, "socios": 20, "starts_at": "2026-11-20T21:00:00Z", "state": "pending" }
+  ]
+}
+```
+  `state` (`pending` / `open` / `closed`) se calcula con el reloj del servidor y es `null` mientras el cronograma no está confirmado. La tabla completa de códigos de error está en `specs/hu-37-wave-schedule-generation/spec.md` (sección API).
+- **Listado**: `GET /admin/segmentation/events` (HU-36) trae `schedule: { status, opening_at, closing_at } | null` en cada partido.
+
+**Implementado en el front**: servicio `src/services/schedule.js` (`getSchedule`, `generateSchedule`, `confirmSchedule`, `toBuenosAiresIso`, `toBuenosAiresInput`), pantalla `src/pages/WaveSchedule.jsx` en la ruta `/admin/segmentation/:id/schedule` (solo admins), con acceso desde el detalle de olas y desde el listado "Oleadas".
 
 ---
 
