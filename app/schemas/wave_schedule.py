@@ -6,7 +6,7 @@ from pydantic import BaseModel, field_validator
 
 from ..core.date_utils import BUENOS_AIRES_TZ
 from ..models import WaveScheduleStatus
-from .segmentation import SegmentationEventOut
+from .segmentation import SegmentationEventOut, WaveOut
 
 
 class GenerateScheduleIn(BaseModel):
@@ -25,10 +25,20 @@ class GenerateScheduleIn(BaseModel):
         return value.astimezone(UTC)
 
 
+class ScheduledWaveOut(WaveOut):
+    # Desde acá el acceso queda abierto para esta ola (y las anteriores) hasta el cierre.
+    starts_at: datetime
+
+
 class WaveScheduleOut(BaseModel):
     event: SegmentationEventOut
     status: WaveScheduleStatus
     opening_at: datetime
     closing_at: datetime
+    # Tiempo entre la apertura de dos olas seguidas: (cierre − apertura) / N.
+    step_seconds: int
+    # Mínimo vigente entre oleadas (setting), para mostrarlo al Admin.
+    min_step_minutes: int
     generated_at: datetime
     generated_by: str
+    waves: list[ScheduledWaveOut]

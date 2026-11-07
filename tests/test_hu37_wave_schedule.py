@@ -273,6 +273,102 @@ def test_dates_without_time_zone_are_read_in_buenos_aires(
     )
 
 
+# Escenario 3
+
+
+def test_waves_start_evenly_spaced_with_wave_1_first(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(
+        client, db, admin, boca, when=datetime(2030, 3, 2, 21, 0, tzinfo=UTC)
+    )
+    opening = datetime(2030, 3, 1, 21, 0, tzinfo=UTC)
+
+    response = generate_schedule(
+        client, boca, event, opening=opening, closing=opening + 5 * HOUR
+    )
+
+    waves = response.json()["waves"]
+    assert [w["order"] for w in waves] == [1, 2, 3, 4, 5]
+    assert [as_utc(w["starts_at"]) for w in waves] == [
+        opening + hours * HOUR for hours in range(5)
+    ]
+    assert waves[0]["position_from"] == 1
+    assert waves[0]["percentile_from"] == 0
+    assert waves[-1]["percentile_to"] == 100
+
+
+def test_every_wave_gets_a_start_within_the_period(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca, socios=103)
+    opening = utcnow() + 2 * DAY
+    closing = opening + 7 * HOUR + 13 * MINUTE
+
+    response = generate_schedule(client, boca, event, opening=opening, closing=closing)
+
+    starts = [as_utc(w["starts_at"]) for w in response.json()["waves"]]
+    assert len(starts) == 5
+    assert starts == sorted(starts)
+    assert all(opening <= start < closing for start in starts)
+
+
+def test_small_rankings_schedule_only_the_existing_waves(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    # 3 socios: HU-36 genera 3 olas (20–40 %, 60–80 % y 80–100 %).
+    event = segmented(client, db, admin, boca, socios=3)
+    opening = utcnow() + 2 * DAY
+
+    response = generate_schedule(
+        client, boca, event, opening=opening, closing=opening + 3 * HOUR
+    )
+
+    waves = response.json()["waves"]
+    assert [(w["percentile_from"], w["percentile_to"]) for w in waves] == [
+        (20, 40),
+        (60, 80),
+        (80, 100),
+    ]
+    assert [as_utc(w["starts_at"]) for w in waves] == [
+        opening,
+        opening + HOUR,
+        opening + 2 * HOUR,
+    ]
+
+
+def test_each_wave_shows_its_socios_and_the_general_closing(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca, socios=103)
+    opening = utcnow() + 2 * DAY
+    closing = opening + 5 * HOUR
+
+    body = generate_schedule(
+        client, boca, event, opening=opening, closing=closing
+    ).json()
+
+    assert [w["socios"] for w in body["waves"]] == [20, 21, 20, 21, 21]
+    assert as_utc(body["closing_at"]) == closing
+    assert body["step_seconds"] == 3600
+    assert body["min_step_minutes"] == 5
+
+
+def test_the_schedule_follows_the_waves_of_the_segmentation(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca, socios=103)
+    segmentation = client.get(
+        f"/admin/events/{event.id_interno}/segmentation", headers=boca
+    ).json()
+
+    body = generate_schedule(client, boca, event).json()
+
+    assert [
+        {k: v for k, v in w.items() if k != "starts_at"} for w in body["waves"]
+    ] == segmentation["waves"]
+
+
 # Casos borde: solo Partidos publicados, futuros y del club del Admin
 
 

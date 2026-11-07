@@ -10,9 +10,16 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from ..auth import CurrentAdmin, CurrentAdminClub
+from ..config import settings
+from ..core.date_utils import asegurar_utc
 from ..db import get_db
 from ..schemas.segmentation import SegmentationEventOut
-from ..schemas.wave_schedule import GenerateScheduleIn, WaveScheduleOut
+from ..schemas.wave_schedule import (
+    GenerateScheduleIn,
+    ScheduledWaveOut,
+    WaveScheduleOut,
+)
+from ..scoring.wave_schedule import step_seconds
 from ..services import wave_schedule_service
 
 router = APIRouter(tags=["admin wave schedule"])
@@ -32,8 +39,26 @@ def _schedule_out(view: wave_schedule_service.ScheduleView) -> WaveScheduleOut:
         status=schedule.status,
         opening_at=schedule.opening_at,
         closing_at=schedule.closing_at,
+        step_seconds=step_seconds(
+            asegurar_utc(schedule.opening_at),
+            asegurar_utc(schedule.closing_at),
+            len(view.waves),
+        ),
+        min_step_minutes=settings.wave_min_step_minutes,
         generated_at=schedule.generated_at,
         generated_by=view.generated_by,
+        waves=[
+            ScheduledWaveOut(
+                order=item.wave.order,
+                percentile_from=item.wave.percentile_from,
+                percentile_to=item.wave.percentile_to,
+                position_from=item.wave.position_from,
+                position_to=item.wave.position_to,
+                socios=item.wave.socios,
+                starts_at=item.starts_at,
+            )
+            for item in view.waves
+        ],
     )
 
 

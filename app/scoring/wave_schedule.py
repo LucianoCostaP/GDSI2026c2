@@ -7,6 +7,8 @@ empieza en apertura + (i − 1) × (cierre − apertura) / N.
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from .waves import Wave
+
 
 @dataclass(frozen=True)
 class PeriodViolation:
@@ -56,3 +58,36 @@ def validate_period(
             f"{waves * min_step_minutes} minutos.",
         )
     return None
+
+
+@dataclass(frozen=True)
+class ScheduledWave:
+    wave: Wave
+    starts_at: datetime
+
+
+def wave_starts(opening: datetime, closing: datetime, waves: int) -> list[datetime]:
+    """Hora de inicio de cada ola, en orden: la ola 1 (mejores posiciones) abre primero.
+
+    Se multiplica antes de dividir para que el redondeo (al microsegundo) no se acumule.
+    """
+    if waves < 1:
+        raise ValueError("waves tiene que ser al menos 1")
+    period = closing - opening
+    return [opening + period * (order - 1) / waves for order in range(1, waves + 1)]
+
+
+def schedule_waves(
+    waves: list[Wave], opening: datetime, closing: datetime
+) -> list[ScheduledWave]:
+    """Las olas de la segmentación con su hora de inicio."""
+    starts = wave_starts(opening, closing, len(waves))
+    return [
+        ScheduledWave(wave, starts_at)
+        for wave, starts_at in zip(waves, starts, strict=True)
+    ]
+
+
+def step_seconds(opening: datetime, closing: datetime, waves: int) -> int:
+    """Tiempo entre la apertura de dos olas seguidas, en segundos enteros."""
+    return int((closing - opening).total_seconds()) // waves

@@ -1,12 +1,19 @@
 """HU-37: reglas puras del cronograma de oleadas (período, horas de inicio y estados)."""
 
 from datetime import UTC, datetime, timedelta
+from fractions import Fraction
 
 import pytest
 
 from app.config import Settings
 from app.schemas.wave_schedule import GenerateScheduleIn
-from app.scoring.wave_schedule import validate_period
+from app.scoring.wave_schedule import (
+    schedule_waves,
+    step_seconds,
+    validate_period,
+    wave_starts,
+)
+from app.scoring.waves import build_waves
 
 SECOND = timedelta(seconds=1)
 MINUTE = timedelta(minutes=1)
@@ -202,3 +209,99 @@ def test_dates_with_time_zone_keep_their_instant(
 
     assert body.opening_at == expected
     assert body.opening_at.utcoffset() == timedelta(0)
+
+
+# Ciclo 3: horas de inicio de las olas (escenario 3, FR-003, SC-001, SC-002).
+
+OPENING = datetime(2030, 3, 1, 21, 0, tzinfo=UTC)
+
+
+def reference_start(
+    opening: datetime, closing: datetime, order: int, waves: int
+) -> datetime:
+    """La fórmula del spec, calculada aparte con fracciones exactas de microsegundo."""
+    period_us = (closing - opening) // timedelta(microseconds=1)
+    offset_us = round(Fraction(period_us * (order - 1), waves))
+    return opening + timedelta(microseconds=offset_us)
+
+
+def test_the_first_wave_starts_at_the_opening() -> None:
+    assert wave_starts(OPENING, OPENING + 5 * HOUR, 5)[0] == OPENING
+
+
+def test_five_waves_over_five_hours_start_every_hour() -> None:
+    assert wave_starts(OPENING, OPENING + 5 * HOUR, 5) == [
+        OPENING + hours * HOUR for hours in range(5)
+    ]
+
+
+def test_a_single_wave_starts_at_the_opening() -> None:
+    assert wave_starts(OPENING, OPENING + HOUR, 1) == [OPENING]
+
+
+@pytest.mark.parametrize("waves", [1, 2, 3, 5, 7, 20])
+def test_starts_are_increasing_and_inside_the_period(waves: int) -> None:
+    closing = OPENING + 7 * HOUR + 13 * MINUTE
+
+    starts = wave_starts(OPENING, closing, waves)
+
+    assert len(starts) == waves
+    assert starts == sorted(starts)
+    assert len(set(starts)) == waves
+    assert all(OPENING <= start < closing for start in starts)
+
+
+@pytest.mark.parametrize("waves", [1, 2, 3, 5, 7, 20])
+@pytest.mark.parametrize(
+    "period",
+    [5 * HOUR, HOUR + SECOND, 7 * HOUR + 13 * MINUTE, 3 * DAY + 17 * SECOND],
+)
+def test_parity_with_the_formula(waves: int, period: timedelta) -> None:
+    closing = OPENING + period
+
+    starts = wave_starts(OPENING, closing, waves)
+
+    assert starts == [
+        reference_start(OPENING, closing, order, waves) for order in range(1, waves + 1)
+    ]
+
+
+def test_an_uneven_division_does_not_drift() -> None:
+    starts = wave_starts(OPENING, OPENING + 100 * MINUTE, 3)
+
+    assert starts == [
+        OPENING,
+        OPENING + 33 * MINUTE + 20 * SECOND,
+        OPENING + 66 * MINUTE + 40 * SECOND,
+    ]
+
+
+@pytest.mark.parametrize("waves", [0, -1])
+def test_there_must_be_at_least_one_wave(waves: int) -> None:
+    with pytest.raises(ValueError):
+        wave_starts(OPENING, OPENING + HOUR, waves)
+
+
+def test_starts_keep_the_time_zone_of_the_opening() -> None:
+    assert all(
+        start.utcoffset() == timedelta(0)
+        for start in wave_starts(OPENING, OPENING + HOUR, 3)
+    )
+
+
+def test_each_wave_of_the_segmentation_gets_its_start_in_order() -> None:
+    waves = build_waves(3, 20)
+
+    scheduled = schedule_waves(waves, OPENING, OPENING + 3 * HOUR)
+
+    assert [item.wave for item in scheduled] == waves
+    assert [item.starts_at for item in scheduled] == [
+        OPENING,
+        OPENING + HOUR,
+        OPENING + 2 * HOUR,
+    ]
+
+
+def test_the_step_is_the_period_divided_by_the_waves() -> None:
+    assert step_seconds(OPENING, OPENING + 5 * HOUR, 5) == 3600
+    assert step_seconds(OPENING, OPENING + 100 * MINUTE, 3) == 2000

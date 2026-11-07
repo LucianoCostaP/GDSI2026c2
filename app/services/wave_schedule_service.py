@@ -23,7 +23,7 @@ from ..models import (
     WaveSegmentation,
     utcnow,
 )
-from ..scoring.wave_schedule import validate_period
+from ..scoring.wave_schedule import ScheduledWave, schedule_waves, validate_period
 from ..scoring.waves import build_waves
 from . import segmentation_service
 from .formula_service import error
@@ -34,6 +34,7 @@ class ScheduleView:
     schedule: WaveSchedule
     event: EventoVisibleDB
     generated_by: str
+    waves: list[ScheduledWave]
 
 
 def _now(now: datetime | None) -> datetime:
@@ -41,10 +42,16 @@ def _now(now: datetime | None) -> datetime:
 
 
 def _view(db: Session, schedule: WaveSchedule) -> ScheduleView:
+    segmentation = db.get_one(WaveSegmentation, schedule.segmentation_id)
     return ScheduleView(
         schedule=schedule,
         event=db.get_one(EventoVisibleDB, schedule.event_id),
         generated_by=db.get_one(User, schedule.generated_by_id).name,
+        waves=schedule_waves(
+            build_waves(segmentation.ranked_total, segmentation.percentile_step),
+            asegurar_utc(schedule.opening_at),
+            asegurar_utc(schedule.closing_at),
+        ),
     )
 
 
