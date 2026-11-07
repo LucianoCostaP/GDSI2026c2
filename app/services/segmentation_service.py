@@ -127,11 +127,19 @@ def get_segmentation(
     return _view(db, segmentation)
 
 
-def _segmentable_event(
-    db: Session, club_id: uuid.UUID, event_id: str, now: datetime
+def upcoming_partido(
+    db: Session,
+    club_id: uuid.UUID,
+    event_id: str,
+    now: datetime,
+    *,
+    action: str = "generar las olas",
+    started: str = "no se pueden generar olas",
 ) -> EventoVisibleDB:
-    """El Partido publicado y no empezado del club (escenario 6). Lo bloquea mientras se
-    genera, para que dos pedidos simultáneos no se pisen."""
+    """El Partido publicado y no empezado del club (HU-36 escenario 6, HU-37). Lo bloquea
+    mientras se genera, para que dos pedidos simultáneos no se pisen.
+
+    `action` y `started` adaptan los mensajes a quien lo usa (olas o cronograma)."""
     event = db.scalar(
         select(EventoVisibleDB)
         .where(
@@ -151,7 +159,7 @@ def _segmentable_event(
             raise error(
                 status.HTTP_409_CONFLICT,
                 "EVENT_NOT_PUBLISHED",
-                "El evento todavía no está publicado: publicalo antes de generar las olas.",
+                f"El evento todavía no está publicado: publicalo antes de {action}.",
             )
         raise error(
             status.HTTP_404_NOT_FOUND,
@@ -168,7 +176,7 @@ def _segmentable_event(
         raise error(
             status.HTTP_409_CONFLICT,
             "EVENT_ALREADY_STARTED",
-            "El partido ya empezó: no se pueden generar olas.",
+            f"El partido ya empezó: {started}.",
         )
     return event
 
@@ -205,7 +213,7 @@ def generate(
     now: datetime | None = None,
 ) -> tuple[SegmentationView, bool]:
     """Genera o regenera las olas del Partido. Devuelve la vista y si reemplazó una anterior."""
-    event = _segmentable_event(db, club_id, event_id, _now(now))
+    event = upcoming_partido(db, club_id, event_id, _now(now))
     ranking, ranked_total = _ranking_to_use(db, club_id)
 
     segmentation = _segmentation_of(db, event.id_interno)
