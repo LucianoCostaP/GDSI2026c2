@@ -16,6 +16,8 @@ from app.models import (
     EventoPendienteDB,
     RankingState,
     User,
+    WaveSchedule,
+    WaveScheduleStatus,
     WaveSegmentation,
     utcnow,
 )
@@ -374,6 +376,53 @@ def test_after_the_first_wave_opened_it_cannot_be_regenerated(
 
     assert response.status_code == 409
     assert code_of(response) == "SEGMENTATION_LOCKED"
+
+
+def schedule_for(
+    db: Session, admin: User, status: WaveScheduleStatus, opening: datetime
+) -> WaveSchedule:
+    """Un cronograma (HU-37) de las olas ya generadas, con la apertura indicada."""
+    segmentation = db.scalars(select(WaveSegmentation)).one()
+    schedule = WaveSchedule(
+        club_id=BOCA_ID,
+        event_id=segmentation.event_id,
+        segmentation_id=segmentation.id,
+        opening_at=opening,
+        closing_at=opening + DAY,
+        status=status,
+        generated_by_id=admin.id,
+    )
+    db.add(schedule)
+    db.commit()
+    return schedule
+
+
+def test_with_a_confirmed_schedule_already_open_the_waves_are_locked(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    # Sin mock: el bloqueo sale del cronograma confirmado de HU-37.
+    ranking_with(db, admin, 5)
+    event = partido(db)
+    generate(client, boca, event)
+    schedule_for(db, admin, WaveScheduleStatus.CONFIRMED, utcnow() - HOUR)
+
+    response = generate(client, boca, event, confirmed=True)
+
+    assert response.status_code == 409
+    assert code_of(response) == "SEGMENTATION_LOCKED"
+
+
+def test_a_draft_schedule_past_its_opening_does_not_lock_the_waves(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    ranking_with(db, admin, 5)
+    event = partido(db)
+    generate(client, boca, event)
+    schedule_for(db, admin, WaveScheduleStatus.DRAFT, utcnow() - HOUR)
+
+    response = generate(client, boca, event, confirmed=True)
+
+    assert response.status_code == 200
 
 
 # Escenario 9

@@ -21,7 +21,7 @@ from app.models import (
     WaveSegmentation,
     utcnow,
 )
-from app.services import wave_schedule_service
+from app.services import segmentation_service, wave_schedule_service
 from tests.conftest import BOCA_ID, RIVER_ID, MakeMember, Outbox, bearer, member_token
 from tests.hu25_helpers import headers_for, publish_rules
 from tests.hu36_helpers import DAY, HOUR, code_of, partido, ranking_with
@@ -726,6 +726,139 @@ def test_the_first_generation_answers_201_even_with_confirmation(
 
     assert response.status_code == 201
     assert [a.action for a in audits(db)] == ["wave_schedule.generated"]
+
+
+# Escenario 7
+
+
+def open_first_wave(db: Session) -> WaveSchedule:
+    """Mueve la apertura del único cronograma un minuto al pasado."""
+    (schedule,) = schedules(db)
+    schedule.opening_at = utcnow() - MINUTE
+    db.commit()
+    return schedule
+
+
+def the_segmentation(db: Session) -> WaveSegmentation:
+    return db.scalars(select(WaveSegmentation)).one()
+
+
+def test_without_schedule_the_first_wave_has_not_opened(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    segmented(client, db, admin, boca)
+
+    assert not segmentation_service.first_wave_opened(
+        db, the_segmentation(db), utcnow() + 30 * DAY
+    )
+
+
+def test_a_draft_past_its_opening_has_not_opened_any_wave(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca)
+    generate_schedule(client, boca, event)
+    open_first_wave(db)
+
+    assert not segmentation_service.first_wave_opened(
+        db, the_segmentation(db), utcnow()
+    )
+
+
+def test_the_first_wave_opens_at_the_opening_of_a_confirmed_schedule(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    _, opening = confirmed_at_2030(client, db, admin, boca)
+    segmentation = the_segmentation(db)
+
+    assert not segmentation_service.first_wave_opened(
+        db, segmentation, opening - timedelta(seconds=1)
+    )
+    assert segmentation_service.first_wave_opened(db, segmentation, opening)
+
+
+def test_after_the_first_wave_opened_the_schedule_cannot_be_regenerated(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca)
+    generate_schedule(client, boca, event)
+    confirm_schedule(client, boca, event)
+    schedule = open_first_wave(db)
+    opened_at = schedule.opening_at
+
+    response = generate_schedule(
+        client, boca, event, opening=utcnow() + 3 * DAY, confirmed=True
+    )
+
+    assert response.status_code == 409
+    assert code_of(response) == "SCHEDULE_LOCKED"
+    db.refresh(schedule)
+    assert schedule.opening_at == opened_at
+    assert schedule.status == WaveScheduleStatus.CONFIRMED
+    assert "wave_schedule.regenerated" not in [a.action for a in audits(db)]
+
+
+def test_the_lock_uses_the_injected_clock(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event, opening = confirmed_at_2030(client, db, admin, boca)
+
+    with pytest.raises(HTTPException) as locked:
+        wave_schedule_service.generate(
+            db,
+            admin,
+            BOCA_ID,
+            event.id_interno,
+            opening_at=opening + HOUR,
+            closing_at=opening + 6 * HOUR,
+            confirmed=True,
+            now=opening,
+        )
+    _, replaced = wave_schedule_service.generate(
+        db,
+        admin,
+        BOCA_ID,
+        event.id_interno,
+        opening_at=opening + HOUR,
+        closing_at=opening + 6 * HOUR,
+        confirmed=True,
+        now=opening - timedelta(seconds=1),
+    )
+
+    assert locked.value.detail["code"] == "SCHEDULE_LOCKED"
+    assert replaced is True
+
+
+def test_a_draft_past_its_opening_can_be_regenerated(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca)
+    generate_schedule(client, boca, event)
+    open_first_wave(db)
+
+    response = generate_schedule(
+        client, boca, event, opening=utcnow() + 3 * DAY, confirmed=True
+    )
+
+    assert response.status_code == 200
+    assert response.json()["locked"] is False
+
+
+def test_the_schedule_reports_whether_it_is_locked(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event, opening = confirmed_at_2030(client, db, admin, boca)
+
+    before = wave_schedule_service.get_schedule(
+        db, BOCA_ID, event.id_interno, now=opening - timedelta(seconds=1)
+    )
+    after = wave_schedule_service.get_schedule(
+        db, BOCA_ID, event.id_interno, now=opening
+    )
+
+    assert before.locked is False
+    assert after.locked is True
+    assert client.get(schedule_url(event), headers=boca).json()["locked"] is False
 
 
 # Casos borde: solo Partidos publicados, futuros y del club del Admin

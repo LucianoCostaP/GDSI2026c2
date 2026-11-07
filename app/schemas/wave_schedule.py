@@ -42,6 +42,8 @@ class WaveScheduleOut(BaseModel):
     step_seconds: int
     # Mínimo vigente entre oleadas (setting), para mostrarlo al Admin.
     min_step_minutes: int
+    # La primera ola ya abrió: no se pueden regenerar ni el cronograma ni las olas.
+    locked: bool
     generated_at: datetime
     generated_by: str
     # Solo con `status = confirmed`: desde ahí lo ven los socios.

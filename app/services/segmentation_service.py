@@ -23,9 +23,12 @@ from ..models import (
     RulesVersion,
     TipoEvento,
     User,
+    WaveSchedule,
+    WaveScheduleStatus,
     WaveSegmentation,
     utcnow,
 )
+from ..scoring.wave_schedule import first_wave_open
 from ..scoring.waves import Wave, build_waves
 from . import ranking_preflight_service
 from .formula_service import error
@@ -51,9 +54,18 @@ class SegmentableEvent:
     segmentation: WaveSegmentation | None
 
 
-def first_wave_opened(segmentation: WaveSegmentation) -> bool:
-    """Si la primera ola ya abrió. Sin cronograma (HU-37) ninguna ola abre todavía."""
-    return False
+def first_wave_opened(
+    db: Session, segmentation: WaveSegmentation, now: datetime
+) -> bool:
+    """Si la primera ola ya abrió: hay un cronograma confirmado (HU-37) y llegó su
+    apertura. Un borrador no abre ninguna ola, aunque su apertura haya pasado."""
+    opening_at = db.scalar(
+        select(WaveSchedule.opening_at).where(
+            WaveSchedule.event_id == segmentation.event_id,
+            WaveSchedule.status == WaveScheduleStatus.CONFIRMED,
+        )
+    )
+    return opening_at is not None and first_wave_open(asegurar_utc(opening_at), now)
 
 
 def _now(now: datetime | None) -> datetime:
@@ -213,13 +225,14 @@ def generate(
     now: datetime | None = None,
 ) -> tuple[SegmentationView, bool]:
     """Genera o regenera las olas del Partido. Devuelve la vista y si reemplazó una anterior."""
-    event = upcoming_partido(db, club_id, event_id, _now(now))
+    current = _now(now)
+    event = upcoming_partido(db, club_id, event_id, current)
     ranking, ranked_total = _ranking_to_use(db, club_id)
 
     segmentation = _segmentation_of(db, event.id_interno)
     previous = None
     if segmentation is not None:
-        if first_wave_opened(segmentation):
+        if first_wave_opened(db, segmentation, current):
             raise error(
                 status.HTTP_409_CONFLICT,
                 "SEGMENTATION_LOCKED",

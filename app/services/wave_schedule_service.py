@@ -45,6 +45,8 @@ class ScheduleView:
     # Estado de cada ola con el reloj del servidor; `None` mientras no está confirmado,
     # porque un borrador o un cronograma invalidado no abre ninguna ola.
     states: list[WaveState | None]
+    # La primera ola ya abrió: no se puede regenerar (escenario 7, FR-007).
+    locked: bool
 
 
 def _now(now: datetime | None) -> datetime:
@@ -75,6 +77,7 @@ def _view(db: Session, schedule: WaveSchedule, now: datetime) -> ScheduleView:
         ),
         waves=waves,
         states=states,
+        locked=segmentation_service.first_wave_opened(db, segmentation, now),
     )
 
 
@@ -184,6 +187,12 @@ def generate(
         started="no se puede generar el cronograma",
     )
     segmentation = _segmentation_required(db, event)
+    if segmentation_service.first_wave_opened(db, segmentation, current):
+        raise error(
+            status.HTTP_409_CONFLICT,
+            "SCHEDULE_LOCKED",
+            "La primera ola ya abrió: no se puede regenerar el cronograma.",
+        )
     _validated_period(event, segmentation, opening_at, closing_at, current)
 
     schedule = db.scalar(

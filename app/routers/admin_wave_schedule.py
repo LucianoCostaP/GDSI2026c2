@@ -45,6 +45,7 @@ def _schedule_out(view: wave_schedule_service.ScheduleView) -> WaveScheduleOut:
             len(view.waves),
         ),
         min_step_minutes=settings.wave_min_step_minutes,
+        locked=view.locked,
         generated_at=schedule.generated_at,
         generated_by=view.generated_by,
         confirmed_at=schedule.confirmed_at,
