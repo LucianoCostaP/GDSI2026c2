@@ -155,6 +155,10 @@ def _validated_period(
         )
 
 
+def _audit_previous(schedule: WaveSchedule) -> dict[str, Any]:
+    return {"status": schedule.status.value, **_audit_values(schedule)}
+
+
 def generate(
     db: Session,
     admin: User,
@@ -163,9 +167,11 @@ def generate(
     *,
     opening_at: datetime,
     closing_at: datetime,
+    confirmed: bool = False,
     now: datetime | None = None,
-) -> ScheduleView:
-    """Genera el cronograma del Partido en borrador."""
+) -> tuple[ScheduleView, bool]:
+    """Genera el cronograma del Partido en borrador. Si ya tenía uno, lo reemplaza solo
+    con `confirmed` (escenario 6). Devuelve la vista y si reemplazó uno anterior."""
     current = _now(now)
     opening_at = asegurar_utc(opening_at)
     closing_at = asegurar_utc(closing_at)
@@ -180,30 +186,50 @@ def generate(
     segmentation = _segmentation_required(db, event)
     _validated_period(event, segmentation, opening_at, closing_at, current)
 
-    schedule = WaveSchedule(
-        club_id=club_id,
-        event_id=event.id_interno,
-        segmentation_id=segmentation.id,
-        opening_at=opening_at,
-        closing_at=closing_at,
-        status=WaveScheduleStatus.DRAFT,
-        generated_at=utcnow(),
-        generated_by_id=admin.id,
+    schedule = db.scalar(
+        select(WaveSchedule).where(WaveSchedule.event_id == event.id_interno)
     )
-    db.add(schedule)
+    previous = None
+    if schedule is not None:
+        if not confirmed:
+            raise error(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "CONFIRMATION_REQUIRED",
+                "Este partido ya tiene un cronograma. Confirmá para reemplazarlo.",
+            )
+        previous = _audit_previous(schedule)
+
+    values: dict[str, Any] = {
+        "segmentation_id": segmentation.id,
+        "opening_at": opening_at,
+        "closing_at": closing_at,
+        # Un cronograma regenerado vuelve a borrador: hay que confirmarlo de nuevo.
+        "status": WaveScheduleStatus.DRAFT,
+        "generated_at": utcnow(),
+        "generated_by_id": admin.id,
+        "confirmed_at": None,
+        "confirmed_by_id": None,
+    }
+    if schedule is None:
+        schedule = WaveSchedule(club_id=club_id, event_id=event.id_interno, **values)
+        db.add(schedule)
+    else:
+        for field, value in values.items():
+            setattr(schedule, field, value)
     db.flush()
 
     audit.record(
         db,
-        "wave_schedule.generated",
+        "wave_schedule.regenerated" if previous else "wave_schedule.generated",
         actor_id=admin.id,
         entity="wave_schedule",
         entity_id=schedule.id,
         event_id=event.id_interno,
+        previous=previous,
         new=_audit_values(schedule),
     )
     db.commit()
-    return _view(db, schedule, current)
+    return _view(db, schedule, current), previous is not None
 
 
 def confirm(

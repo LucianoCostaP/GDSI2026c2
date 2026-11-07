@@ -599,6 +599,135 @@ def test_a_draft_does_not_open_any_wave(
     assert view.states == [None] * 5
 
 
+# Escenario 6
+
+
+def confirm_schedule(
+    client: TestClient, headers: dict[str, str], event: EventoVisibleDB
+) -> None:
+    assert client.post(confirm_url(event), headers=headers).status_code == 200
+
+
+@pytest.mark.parametrize("confirm_first", [False, True], ids=["draft", "confirmed"])
+def test_regenerating_requires_confirmation(
+    client: TestClient,
+    db: Session,
+    admin: User,
+    boca: dict[str, str],
+    confirm_first: bool,
+) -> None:
+    event = segmented(client, db, admin, boca)
+    first = generate_schedule(client, boca, event).json()
+    if confirm_first:
+        confirm_schedule(client, boca, event)
+    opening = utcnow() + 3 * DAY
+
+    response = generate_schedule(client, boca, event, opening=opening)
+
+    assert response.status_code == 422
+    assert code_of(response) == "CONFIRMATION_REQUIRED"
+    (schedule,) = schedules(db)
+    assert as_utc(first["opening_at"]) == asegurar_utc(schedule.opening_at)
+    assert "wave_schedule.regenerated" not in [a.action for a in audits(db)]
+
+
+def test_regenerating_with_confirmation_replaces_the_schedule(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca)
+    generate_schedule(client, boca, event)
+    opening = utcnow() + 3 * DAY
+    closing = opening + 5 * HOUR
+
+    response = generate_schedule(
+        client, boca, event, opening=opening, closing=closing, confirmed=True
+    )
+
+    assert response.status_code == 200
+    assert as_utc(response.json()["opening_at"]) == opening
+    assert as_utc(response.json()["closing_at"]) == closing
+    assert as_utc(response.json()["waves"][1]["starts_at"]) == opening + HOUR
+    (schedule,) = schedules(db)
+    assert asegurar_utc(schedule.opening_at) == opening
+
+
+def test_replacing_a_confirmed_schedule_returns_it_to_draft(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca)
+    generate_schedule(client, boca, event)
+    confirm_schedule(client, boca, event)
+
+    body = generate_schedule(
+        client, boca, event, opening=utcnow() + 3 * DAY, confirmed=True
+    ).json()
+
+    assert body["status"] == "draft"
+    assert body["confirmed_at"] is None
+    assert body["confirmed_by"] is None
+    assert [w["state"] for w in body["waves"]] == [None] * 5
+    assert wave_schedule_service.visible_schedule(db, event.id_interno) is None
+
+
+def test_regeneration_is_audited_with_the_previous_period(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(
+        client, db, admin, boca, when=datetime(2030, 3, 2, 21, 0, tzinfo=UTC)
+    )
+    first = datetime(2030, 3, 1, 18, 0, tzinfo=UTC)
+    second = datetime(2030, 3, 1, 20, 0, tzinfo=UTC)
+    generate_schedule(client, boca, event, opening=first, closing=first + 5 * HOUR)
+    confirm_schedule(client, boca, event)
+
+    generate_schedule(
+        client, boca, event, opening=second, closing=second + 5 * HOUR, confirmed=True
+    )
+
+    regenerated = audits(db)[-1]
+    segmentation_id = db.scalars(select(WaveSegmentation)).one().id
+    assert regenerated.action == "wave_schedule.regenerated"
+    assert regenerated.actor_user_id == admin.id
+    assert regenerated.details["previous"] == {
+        "status": "confirmed",
+        "segmentation_id": segmentation_id,
+        "opening_at": "2030-03-01T18:00:00+00:00",
+        "closing_at": "2030-03-01T23:00:00+00:00",
+    }
+    assert regenerated.details["new"] == {
+        "segmentation_id": segmentation_id,
+        "opening_at": "2030-03-01T20:00:00+00:00",
+        "closing_at": "2030-03-02T01:00:00+00:00",
+    }
+
+
+def test_the_new_period_is_validated_like_the_first_one(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca)
+    first = generate_schedule(client, boca, event).json()
+
+    response = generate_schedule(
+        client, boca, event, opening=utcnow() - MINUTE, confirmed=True
+    )
+
+    assert response.status_code == 422
+    assert code_of(response) == "OPENING_NOT_IN_FUTURE"
+    (schedule,) = schedules(db)
+    assert as_utc(first["opening_at"]) == asegurar_utc(schedule.opening_at)
+
+
+def test_the_first_generation_answers_201_even_with_confirmation(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    event = segmented(client, db, admin, boca)
+
+    response = generate_schedule(client, boca, event, confirmed=True)
+
+    assert response.status_code == 201
+    assert [a.action for a in audits(db)] == ["wave_schedule.generated"]
+
+
 # Casos borde: solo Partidos publicados, futuros y del club del Admin
 
 
@@ -667,7 +796,7 @@ def test_the_start_is_compared_with_the_injected_clock(
             closing_at=kickoff,
             now=kickoff,
         )
-    view = wave_schedule_service.generate(
+    view, replaced = wave_schedule_service.generate(
         db,
         admin,
         BOCA_ID,
@@ -680,6 +809,7 @@ def test_the_start_is_compared_with_the_injected_clock(
     assert started.value.status_code == 409
     assert started.value.detail["code"] == "EVENT_ALREADY_STARTED"
     assert view.schedule.event_id == event.id_interno
+    assert replaced is False
 
 
 def test_an_event_that_does_not_exist_answers_404(

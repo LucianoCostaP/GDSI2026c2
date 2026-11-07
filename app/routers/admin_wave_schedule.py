@@ -6,7 +6,7 @@ La hora es siempre la del servidor.
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from ..auth import CurrentAdmin, CurrentAdminClub
@@ -74,21 +74,25 @@ def get_schedule(event_id: str, club_id: CurrentAdminClub, db: Db) -> WaveSchedu
 def generate_schedule(
     event_id: str,
     body: GenerateScheduleIn,
+    response: Response,
     admin: CurrentAdmin,
     club_id: CurrentAdminClub,
     db: Db,
 ) -> WaveScheduleOut:
-    """Genera el cronograma del Partido en borrador."""
-    return _schedule_out(
-        wave_schedule_service.generate(
-            db,
-            admin,
-            club_id,
-            event_id,
-            opening_at=body.opening_at,
-            closing_at=body.closing_at,
-        )
+    """Genera el cronograma en borrador: `201` la primera vez; `200` cuando reemplaza uno
+    anterior (con `confirmed`)."""
+    view, replaced = wave_schedule_service.generate(
+        db,
+        admin,
+        club_id,
+        event_id,
+        opening_at=body.opening_at,
+        closing_at=body.closing_at,
+        confirmed=body.confirmed,
     )
+    if replaced:
+        response.status_code = status.HTTP_200_OK
+    return _schedule_out(view)
 
 
 @router.post("/admin/events/{event_id}/schedule/confirm")
