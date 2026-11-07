@@ -69,6 +69,11 @@ Lo que **no** hace falta instalar a mano:
    ```bash
    uv run python -m app.seed_simulator
    ```
+   (para levantar segmentacion seteada en vez de default para poder probar oleadas)
+   ```bash
+   WAVE_PERCENTILE_STEP=25 uv run uvicorn app.main:app --reload
+
+   ```
 5. Levantar el back:
    ```bash
    uv run uvicorn app.main:app --reload

@@ -44,7 +44,7 @@ class PreflightWarning:
     data_as_of: datetime | None
 
 
-def _roster_warning(db: Session, club: Club, now: datetime) -> PreflightWarning | None:
+def roster_warning(db: Session, club: Club, now: datetime) -> PreflightWarning | None:
     freshness = CargaService.obtener_frescura_padron(club, db, now=now)
     if not freshness.esta_desactualizado:
         return None
@@ -88,7 +88,7 @@ def _attendance_warning(
     )
 
 
-def _loads_after_ranking_warning(db: Session, club: Club) -> PreflightWarning | None:
+def loads_after_ranking_warning(db: Session, club: Club) -> PreflightWarning | None:
     in_force = get_ranking_in_force(db, club.id)
     if in_force is None:
         return None
@@ -126,8 +126,8 @@ def _loads_after_ranking_warning(db: Session, club: Club) -> PreflightWarning | 
 def build_preflight(db: Session, club: Club, now: datetime) -> list[PreflightWarning]:
     """Las advertencias que corresponden antes de calcular el ranking del club."""
     candidates = (
-        _roster_warning(db, club, now),
+        roster_warning(db, club, now),
         _attendance_warning(db, club, now),
-        _loads_after_ranking_warning(db, club),
+        loads_after_ranking_warning(db, club),
     )
     return [warning for warning in candidates if warning is not None]
