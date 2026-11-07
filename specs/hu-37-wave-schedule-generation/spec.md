@@ -36,6 +36,11 @@ As an Admin, I want to automatically generate the enablement dates of each segme
 - **Only for Partido events**: institutional/amateur events have no waves.
 - **Segmentation regenerated** (HU-36): the schedule is invalidated and must be generated again.
 - **Scope of "access"**: in the MVP the schedule is informative. The club's external ticketing platform manages availability and purchase; this system does not take or enforce reservations (HU-40 is outside the MVP).
+- **Boundaries of the period**: the opening must be strictly after now; a closing equal to the event start is accepted ("not after"). The minimum step is checked as `closing − opening ≥ N × minimum` (no rounding). When several rules fail, only the first one is reported, in this order: opening in the future, closing after opening, closing not after the event start, minimum step.
+- **Input time zone**: dates are sent as ISO-8601 with offset; a date without offset is read in America/Argentina/Buenos_Aires (cross-cutting section 1).
+- **Stale draft**: a draft can only be confirmed while its opening is still in the future; otherwise it must be regenerated.
+- **Regenerating a confirmed schedule** returns it to `draft`: Socios stop seeing it until the Admin confirms again.
+- **First wave opened** means a `confirmed` schedule whose opening has passed. A draft past its opening does not lock regeneration (Socios never saw it).
 
 ## Requirements *(mandatory)*
 
@@ -52,8 +57,41 @@ As an Admin, I want to automatically generate the enablement dates of each segme
 
 ### Key Entities
 
-- **WaveSchedule**: event, segmentation, opening, closing, status (`draft` / `confirmed` / `invalidated`).
+- **WaveSchedule**: event, segmentation, opening, closing, status (`draft` / `confirmed` / `invalidated`), generated at/by, confirmed at/by. Wave start times are derived, not stored.
 - **Wave**: as in HU-36, plus enablement date/time.
+
+## API
+
+Admin only. The club always comes from the Admin's account, as in HU-36.
+
+| Method and path | Body | Response |
+|---|---|---|
+| `GET /admin/events/{event_id}/schedule` | — | `200 WaveScheduleOut` |
+| `POST /admin/events/{event_id}/schedule` | `{ opening_at, closing_at, confirmed = false }` | `201` created as `draft` · `200` replaced (requires `confirmed`) |
+| `POST /admin/events/{event_id}/schedule/confirm` | — | `200 WaveScheduleOut` (`confirmed`) |
+
+`WaveScheduleOut`: `event { id_interno, titulo, fecha_hora, lugar }`, `status` (`draft` / `confirmed` / `invalidated`), `opening_at`, `closing_at`, `step_seconds`, `min_step_minutes`, `locked` (first wave opened), `generated_at`, `generated_by`, `confirmed_at`, `confirmed_by`, `waves [{ order, percentile_from, percentile_to, position_from, position_to, socios, starts_at, state }]`, with `state` in `pending` / `open` / `closed`.
+
+### Errors
+
+| HTTP | Code | Message |
+|---|---|---|
+| 404 | `EVENT_NOT_FOUND` | No encontramos el evento. |
+| 409 | `NOT_A_PARTIDO` | Las olas son solo para partidos: este evento no es un partido. |
+| 409 | `EVENT_ALREADY_STARTED` | El partido ya empezó: no se puede generar el cronograma. |
+| 409 | `SEGMENTATION_REQUIRED` | Este partido todavía no tiene olas: generalas antes de armar el cronograma. |
+| 422 | `OPENING_NOT_IN_FUTURE` | La apertura tiene que ser posterior a este momento. |
+| 422 | `CLOSING_NOT_AFTER_OPENING` | El cierre tiene que ser posterior a la apertura. |
+| 422 | `CLOSING_AFTER_EVENT_START` | El cierre no puede ser posterior al inicio del partido. |
+| 422 | `WAVE_STEP_TOO_SHORT` | Entre oleadas tiene que haber al menos {m} minutos: con {N} oleadas, el período tiene que durar al menos {N·m} minutos. |
+| 422 | `CONFIRMATION_REQUIRED` | Este partido ya tiene un cronograma. Confirmá para reemplazarlo. |
+| 409 | `SCHEDULE_LOCKED` | La primera ola ya abrió: no se puede regenerar el cronograma. |
+| 404 | `SCHEDULE_NOT_FOUND` | Este partido todavía no tiene cronograma. |
+| 409 | `SCHEDULE_ALREADY_CONFIRMED` | El cronograma ya está confirmado. |
+| 409 | `SCHEDULE_INVALIDATED` | Las olas se regeneraron: generá el cronograma de nuevo. |
+| 409 | `OPENING_ALREADY_PASSED` | La apertura ya pasó: regenerá el cronograma con otro período. |
+
+Audit (`entity = "wave_schedule"`): `wave_schedule.generated`, `wave_schedule.regenerated` (with `previous`), `wave_schedule.confirmed`, `wave_schedule.invalidated`.
 
 ## Success Criteria *(mandatory)*
 
@@ -73,3 +111,4 @@ As an Admin, I want to automatically generate the enablement dates of each segme
 
 - Defined the formula, validations, draft/confirm visibility, regeneration limits, and stated that access is informative in the MVP.
 - v3: only for Partido events; empty waves omitted.
+- v4: API contract, error codes and messages; period boundaries and rule order; input time zone; stale drafts; regenerating a confirmed schedule returns it to draft; definition of "first wave opened".

@@ -50,6 +50,7 @@ from .enums import (
 from .ranking import Ranking, RankingEntry, RankingState
 from .rules import FormulaLock, FormulaLockState, RulesVersion, RulesVersionState
 from .segmentation import WaveSegmentation
+from .wave_schedule import WaveSchedule, WaveScheduleStatus
 
 __all__ = [
     "AccessCode",
@@ -100,6 +101,8 @@ __all__ = [
     "TipoParticipacion",
     "User",
     "UserSession",
+    "WaveSchedule",
+    "WaveScheduleStatus",
     "WaveSegmentation",
     "pg_enum",
     "utcnow",
