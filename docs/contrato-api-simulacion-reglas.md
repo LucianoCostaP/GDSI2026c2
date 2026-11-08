@@ -1,6 +1,6 @@
 # Contrato de la API propia: simulación de cambio de reglas y análisis de equidad (HU-29 y HU-30)
 
-**Estado**: en implementación. Hecho: `GET /admin/rules-simulation` (escenarios 1, 2, 3 y 5) y parte de `POST /admin/rules-simulation` (escenarios 3 a 14: acceso, `NO_BASELINE`, `EMPTY_RANKING`, `INVALID_VALUES`, sin mirar bloqueo ni corte de temporada, recálculo desde la instantánea, `NO_CHANGES`, un solo ranking por resultado, histograma, estadísticas, movimiento y saturación). Por ahora responde `ranking`, `baseline_text`, `status`, `message`, `changed_parameters`, `factors_changed`, `summary`, `movement`, `histogram` y `saturation`; el resto de 5.2 (`labels`, `derived_values`, `alerts`, `components`, `breakdown`, `equity`) llega con los escenarios 15 y 16, el desglose y HU-30 | **Fecha**: 2026-11-07
+**Estado**: en implementación. Hecho: `GET /admin/rules-simulation` (escenarios 1, 2, 3 y 5) y parte de `POST /admin/rules-simulation` (escenarios 3 a 16: acceso, `NO_BASELINE`, `EMPTY_RANKING`, `INVALID_VALUES`, sin mirar bloqueo ni corte de temporada, recálculo desde la instantánea, `NO_CHANGES`, un solo ranking por resultado, histograma, estadísticas, movimiento, saturación, alertas y cambio por componente). Por ahora responde `ranking`, `baseline_text`, `status`, `message`, `changed_parameters`, `factors_changed`, `summary`, `movement`, `histogram`, `saturation`, `alerts` y `components`; el resto de 5.2 (`labels`, `derived_values`, `breakdown`, `equity`) llega con el desglose (escenarios 17 a 22) y HU-30 | **Fecha**: 2026-11-07
 **Specs**: `specs/hu-29-rules-change-impact-simulation/spec.md` (v4) y `specs/hu-30-equity-analysis/spec.md` (v2). Sus tablas de "Messages and codes", sus "Calculation definitions", las "Bands" y el "Export" mandan sobre este resumen. Ver también `specs/_shared/scoring-model.md` (reglas 1 a 5), `specs/_shared/cross-cutting.md` (secciones 5, 6 y 9) y las decisiones 44 a 49 de `specs/README.md`.
 **Es el contrato entre el backend y el frontend (`../tp_gestion_reactjs`).** Sigue las convenciones de `docs/contrato-api-reglas.md` (sección 1): una sola ruta por endpoint, club tomado de la cuenta, decimales como string, textos en español.
 
@@ -192,7 +192,7 @@ Con `no_changes` igual se mandan todas las secciones (el escenario 9 dice que la
 ```
 (Los números son ilustrativos; el `histogram` real trae siempre los 20 bins.)
 
-**Alertas** (escenario 15, `alerts` puede traer las dos o ninguna; ninguna bloquea):
+**Alertas** (escenario 15, `alerts` puede traer las dos o ninguna, en este orden; ninguna bloquea). Se deciden con los valores exactos: la de concentración compara las varianzas como enteros (`σ_sim ≤ 0,8·σ_ranking` ⇔ `var_sim ≤ 0,64·var_ranking`); `drop_percent` y el número del texto van con un decimal, mitad hacia arriba:
 ```json
 [
   { "code": "SATURATION_ALERT", "text": "Con estos valores 152 socios llegarían al tope de 100 (hoy 18). Entre ellos el orden lo definirían la antigüedad y la edad.", "at_cap_after": 152, "at_cap_before": 18 },
@@ -419,7 +419,7 @@ Respetando el principio 1 de la constitución: **un solo motor**.
 |---|---|---|
 | 1 | Desglose en un endpoint aparte, llamado por el front después del resultado principal | Escenario 21 pide no bloquear el resultado; dos pedidos sin estado evitan jobs y almacenamiento (nada se guarda) |
 | 2 | `breakdown` y `export` llevan `ranking_id`; si ya no es un ranking `completed` del club, `409 BASELINE_NOT_FOUND` | Escenario 10: el desglose y el CSV tienen que ser del mismo ranking que la pantalla. El código y su texto **no están en el spec**: hay que agregarlos a la tabla de HU-29 |
-| 3 | Las seis diferencias de componentes suman la del total **con valores exactos**; mostradas a 2 decimales pueden diferir en 0,01 | Redondear cada promedio por separado no conserva la suma. **A confirmar con el spec** (escenario 16, SC-007): o se acepta la diferencia de presentación, o se reparte el redondeo |
+| 3 | Las seis diferencias de componentes suman la del total **con valores exactos** (el backend promedia con fracciones, sin redondeo intermedio); mostradas a 2 decimales pueden diferir en 0,01 | Redondear cada promedio por separado no conserva la suma. **A confirmar con el spec** (escenario 16, SC-007): o se acepta la diferencia de presentación, o se reparte el redondeo |
 | 4 | `GET` con `EMPTY_RANKING` responde 200 | El spec pone `EMPTY_RANKING` al pedir una simulación, no al abrir |
 | 5 | `club_id` en el cuerpo se ignora (no `422`) | Lo pide el escenario 5 de HU-29 |
 | 6 | Etiquetas de los factores y de los atributos (`distancia`, `antigüedad`, `edad`), y `share` con un decimal | El spec no las fija. **A confirmar** |

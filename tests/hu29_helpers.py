@@ -43,6 +43,9 @@ TO_THE_CAP = {
     "t_max": "365",
 }
 
+# Concentra los puntajes: el desvío baja a menos del 80 % (alerta de concentración).
+FLATTER = {**DEFAULTS, "w_a": "0.2", "w_p": "0.2", "w_t": "0.6"}
+
 
 @dataclass
 class VariedClub:
@@ -141,3 +144,17 @@ def add_star_newcomer(db: Session) -> Socio:
         hasta=date(2026, 10, 28),
     )
     return star
+
+
+def make_saturation_club(db: Session) -> None:
+    """11 socios: el club variado (7), el socio estrella y dos grupos de empatados.
+
+    Sin asistencias ni actividades, el total depende solo de las fechas: un socio común empata
+    con los dos gemelos (grupo de 3) y dos socios con otra fecha de alta empatan entre sí
+    (grupo de 2).
+    """
+    make_varied_club(db)
+    add_star_newcomer(db)
+    make_socio(db, distancia_km=Decimal("7.00"))
+    make_socio(db, fecha_alta=date(2010, 3, 1))
+    make_socio(db, fecha_alta=date(2010, 3, 1))

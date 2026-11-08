@@ -7,7 +7,6 @@ the size of the largest tie." Contrato: `docs/contrato-api-simulacion-reglas.md`
 """
 
 from collections import Counter
-from datetime import date
 from decimal import Decimal
 from typing import Any
 
@@ -23,14 +22,12 @@ from tests.hu25_helpers import (
     adjust_rules,
     entries_of,
     headers_for,
-    make_socio,
     publish_rules,
 )
 from tests.hu29_helpers import (
     SIMULATOR,
     TO_THE_CAP,
-    add_star_newcomer,
-    make_varied_club,
+    make_saturation_club,
     run_ranking,
 )
 
@@ -44,17 +41,7 @@ def boca(client: TestClient, outbox: Outbox, admin: User) -> dict[str, str]:
 
 @pytest.fixture
 def ranking(db: Session, admin: User, boca: dict[str, str]) -> Ranking:
-    """10 socios: el club variado, el socio estrella y dos grupos de empatados.
-
-    Sin asistencias ni actividades, el total depende solo de las fechas: un socio común empata
-    con los dos gemelos (grupo de 3) y dos socios con otra fecha de alta empatan entre sí
-    (grupo de 2).
-    """
-    make_varied_club(db)
-    add_star_newcomer(db)
-    make_socio(db, distancia_km=Decimal("7.00"))
-    make_socio(db, fecha_alta=date(2010, 3, 1))
-    make_socio(db, fecha_alta=date(2010, 3, 1))
+    make_saturation_club(db)
     return run_ranking(db, admin)
 
 

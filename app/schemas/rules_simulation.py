@@ -5,7 +5,7 @@ texto, nunca como número de coma flotante.
 """
 
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -149,12 +149,43 @@ class HistogramBinOut(BaseModel):
     after: int
 
 
+class SaturationAlertOut(BaseModel):
+    """Escenario 15: con los valores hipotéticos muchos más socios llegan a 100."""
+
+    code: Literal["SATURATION_ALERT"] = "SATURATION_ALERT"
+    text: str
+    at_cap_after: int
+    at_cap_before: int
+
+
+class FlatnessAlertOut(BaseModel):
+    """Escenario 15: el desvío baja al 80 % o menos del del ranking."""
+
+    code: Literal["FLATNESS_ALERT"] = "FLATNESS_ALERT"
+    text: str
+    # Un decimal, mitad hacia arriba; en `text` va con coma.
+    drop_percent: str
+
+
+class ComponentChangeOut(BaseModel):
+    """Promedio de un componente (o del total) en el ranking y en la simulación (escenario 16).
+
+    La diferencia se calcula con los valores exactos y se redondea al final.
+    """
+
+    key: str
+    label: str
+    before: str
+    after: str
+    difference: str
+
+
 class RulesSimulationResultOut(BaseModel):
     """`POST /admin/rules-simulation`: resultado principal (contrato §5).
 
     Por ahora trae la base, si hubo cambios, los parámetros cambiados, las estadísticas, el
-    movimiento de posiciones, el histograma y la saturación; las demás secciones (alertas,
-    componentes, equidad) llegan con los escenarios 15 y 16 y HU-30.
+    movimiento de posiciones, el histograma, la saturación, las alertas y el cambio por
+    componente; faltan el desglose por factor y la equidad (HU-30).
     """
 
     ranking: BaselineRankingOut
@@ -169,3 +200,7 @@ class RulesSimulationResultOut(BaseModel):
     # Siempre los 20 bins, del más bajo al más alto.
     histogram: list[HistogramBinOut]
     saturation: SaturationOut
+    # Ninguna, una o las dos (saturación primero); ninguna bloquea nada.
+    alerts: list[SaturationAlertOut | FlatnessAlertOut]
+    # Los seis componentes en el orden de HU-16 y el total al final.
+    components: list[ComponentChangeOut]

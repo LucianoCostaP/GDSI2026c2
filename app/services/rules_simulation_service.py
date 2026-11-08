@@ -38,6 +38,11 @@ relevantes (al menos el 1 % del ranking).
 
 Escenario 14: socios en el tope, con ajuste por tope, empatados y el empate más grande, en las
 dos situaciones.
+
+Escenario 15: las alertas de saturación y de concentración, calculadas con los valores exactos.
+
+Escenario 16: el promedio de cada componente y del total en las dos situaciones; las seis
+diferencias suman exactamente la del total.
 """
 
 import uuid
@@ -55,13 +60,16 @@ from ..models import Ranking, RankingEntry, RulesVersion
 from ..schemas.rules_simulation import (
     BaselineRankingOut,
     ChangedParameterOut,
+    ComponentChangeOut,
     DerivedValueOut,
+    FlatnessAlertOut,
     HistogramBinOut,
     MessageOut,
     MovementOut,
     RulesInForceOut,
     RulesSimulationFormOut,
     RulesSimulationResultOut,
+    SaturationAlertOut,
     SaturationCountsOut,
     SaturationOut,
     StatsOut,
@@ -72,10 +80,18 @@ from ..scoring.components import COMPONENT_KEYS
 from ..scoring.derived import derived_values
 from ..scoring.distribution import (
     BINS,
+    TOTAL,
+    ComponentChange,
+    FlatnessAlert,
     Saturation,
+    SaturationAlert,
     Summary,
+    component_changes,
+    flatness_alert,
+    fraction_to_decimal,
     histogram,
     saturation,
+    saturation_alert,
     summary,
 )
 from ..scoring.engine import ScoringParameters
@@ -92,7 +108,7 @@ from ..scoring.rules_simulation import (
 )
 from ..scoring.validation import validate_values
 from .formula_service import descriptor_out, error, get_in_force, violations_out
-from .ranking_service import get_ranking_in_force
+from .ranking_service import COMPONENT_NAMES, get_ranking_in_force
 
 NO_BASELINE_MESSAGE = (
     "Todavía no hay un ranking calculado, así que no hay con qué comparar. "
@@ -102,6 +118,14 @@ EMPTY_RANKING_MESSAGE = "El último ranking no tiene socios: no hay nada para si
 INVALID_VALUES_MESSAGE = (
     "Hay valores que no se pueden simular. Corregilos y volvé a intentar."
 )
+SATURATION_ALERT_MESSAGE = (
+    "Con estos valores {a} socios llegarían al tope de 100 (hoy {b}). "
+    "Entre ellos el orden lo definirían la antigüedad y la edad."
+)
+FLATNESS_ALERT_MESSAGE = (
+    "Con estos valores los puntajes se concentran: la dispersión baja un {x} %."
+)
+TOTAL_LABEL = "total"
 NO_CHANGES_MESSAGE = (
     "Los valores son iguales a los del ranking: no hay diferencias para mostrar."
 )
@@ -252,6 +276,8 @@ def simulate(
     moved = movement(before, after)
     totals_before = [entry.total for entry in before]
     totals_after = [entry.total for entry in after]
+    saturated_before = saturation(totals_before, _cap_adjustments(before))
+    saturated_after = saturation(totals_after, _cap_adjustments(after))
 
     descriptor = _descriptor_of(rules)
     parameters = {p.key: p for p in descriptor.parameters}
@@ -279,9 +305,58 @@ def simulate(
         movement=_movement_out(moved),
         histogram=_histogram_out(histogram(totals_before), histogram(totals_after)),
         saturation=SaturationOut(
-            before=_saturation_out(saturation(totals_before, _cap_adjustments(before))),
-            after=_saturation_out(saturation(totals_after, _cap_adjustments(after))),
+            before=_saturation_out(saturated_before),
+            after=_saturation_out(saturated_after),
         ),
+        alerts=_alerts_out(
+            saturation_alert(
+                saturated_before, saturated_after, moved.relevant_threshold
+            ),
+            flatness_alert(totals_before, totals_after),
+        ),
+        components=[
+            _component_out(change)
+            for change in component_changes(
+                COMPONENT_KEYS,
+                ([e.components for e in before], totals_before),
+                ([e.components for e in after], totals_after),
+            )
+        ],
+    )
+
+
+def _alerts_out(
+    saturated: SaturationAlert | None, flat: FlatnessAlert | None
+) -> list[SaturationAlertOut | FlatnessAlertOut]:
+    alerts: list[SaturationAlertOut | FlatnessAlertOut] = []
+    if saturated:
+        alerts.append(
+            SaturationAlertOut(
+                text=SATURATION_ALERT_MESSAGE.format(
+                    a=saturated.at_cap_after, b=saturated.at_cap_before
+                ),
+                at_cap_after=saturated.at_cap_after,
+                at_cap_before=saturated.at_cap_before,
+            )
+        )
+    if flat:
+        drop = decimal_fixed(flat.drop_percent, 1)
+        alerts.append(
+            FlatnessAlertOut(
+                text=FLATNESS_ALERT_MESSAGE.format(x=drop.replace(".", ",")),
+                drop_percent=drop,
+            )
+        )
+    return alerts
+
+
+def _component_out(change: ComponentChange) -> ComponentChangeOut:
+    return ComponentChangeOut(
+        key=change.key,
+        label=TOTAL_LABEL if change.key == TOTAL else COMPONENT_NAMES[change.key],
+        before=decimal_fixed(fraction_to_decimal(change.before), 2),
+        after=decimal_fixed(fraction_to_decimal(change.after), 2),
+        difference=decimal_fixed(fraction_to_decimal(change.difference), 2),
     )
 
 
