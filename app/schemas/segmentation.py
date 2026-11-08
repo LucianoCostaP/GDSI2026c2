@@ -36,6 +36,9 @@ class SegmentationOut(BaseModel):
     ranking: SegmentationRankingOut
     ranked_total: int
     percentile_step: int
+    # Mínimo vigente entre las aperturas de dos oleadas (setting de HU-37), para que el
+    # front lo muestre antes de que exista un cronograma.
+    min_step_minutes: int
     generated_at: datetime
     generated_by: str
     waves: list[WaveOut]

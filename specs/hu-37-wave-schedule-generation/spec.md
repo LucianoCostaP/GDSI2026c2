@@ -72,7 +72,7 @@ Admin only. The club always comes from the Admin's account, as in HU-36.
 
 `WaveScheduleOut`: `event { id_interno, titulo, fecha_hora, lugar }`, `status` (`draft` / `confirmed` / `invalidated`), `opening_at`, `closing_at`, `step_seconds`, `min_step_minutes`, `locked` (first wave opened), `generated_at`, `generated_by`, `confirmed_at`, `confirmed_by`, `waves [{ order, percentile_from, percentile_to, position_from, position_to, socios, starts_at, state }]`, with `state` in `pending` / `open` / `closed`.
 
-The list of upcoming Partidos of HU-36 (`GET /admin/segmentation/events`) adds `schedule: { status, opening_at, closing_at } | null` to each item.
+The list of upcoming Partidos of HU-36 (`GET /admin/segmentation/events`) adds `schedule: { status, opening_at, closing_at } | null` to each item, and the waves of a Partido (`GET` and `POST /admin/events/{event_id}/segmentation`) add `min_step_minutes`, so the Admin sees the minimum before a schedule exists.
 
 ### Errors
 
@@ -115,4 +115,4 @@ Audit (`entity = "wave_schedule"`): `wave_schedule.generated`, `wave_schedule.re
 - Defined the formula, validations, draft/confirm visibility, regeneration limits, and stated that access is informative in the MVP.
 - v3: only for Partido events; empty waves omitted.
 - v4: API contract, error codes and messages; period boundaries and rule order; input time zone; stale drafts; regenerating a confirmed schedule returns it to draft; definition of "first wave opened".
-- v5: wave state (`pending` / `open` / `closed`) only for confirmed schedules; `locked` in the response; regenerating the waves (HU-36) invalidates the schedule and a new one needs no confirmation; schedule summary in the HU-36 list; `EVENT_NOT_PUBLISHED` for a Partido pending publication.
+- v5: wave state (`pending` / `open` / `closed`) only for confirmed schedules; `locked` in the response; regenerating the waves (HU-36) invalidates the schedule and a new one needs no confirmation; schedule summary in the HU-36 list; `EVENT_NOT_PUBLISHED` for a Partido pending publication; `min_step_minutes` in the HU-36 waves response.

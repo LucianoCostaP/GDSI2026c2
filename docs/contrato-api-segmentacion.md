@@ -45,6 +45,7 @@ Las mismas que `docs/contrato-api-reglas.md`: una sola ruta por endpoint, `Autho
   "ranking": { "id": 7, "completed_at": "2026-11-05T15:00:03Z", "rules_version": 3 },
   "ranked_total": 103,
   "percentile_step": 20,
+  "min_step_minutes": 5,
   "generated_at": "2026-11-07T14:00:00Z",
   "generated_by": "Flor Admin",
   "waves": [
@@ -52,6 +53,7 @@ Las mismas que `docs/contrato-api-reglas.md`: una sola ruta por endpoint, `Autho
   ]
 }
 ```
+- `min_step_minutes` es el mínimo vigente entre las aperturas de dos oleadas (`WAVE_MIN_STEP_MINUTES`, 5 por defecto). No se guarda con las olas: es el valor con que está levantado el back, y el cronograma (HU-37) lo usa para validar el período.
 - `ranking` es el ranking que se usó al generar, no necesariamente el vigente: las olas no cambian si después se recalcula (escenario 9).
 - Con pocos socios, las bandas vacías no aparecen y las olas se numeran de 1 a N; cada una conserva su rango de percentil original. Ejemplo con 3 socios: olas 1 (20–40 %), 2 (60–80 %) y 3 (80–100 %).
 

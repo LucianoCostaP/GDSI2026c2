@@ -78,9 +78,27 @@ def test_generates_for_a_published_partido_and_stores_the_ranking_used(
     assert body["ranking"]["rules_version"] == 1
     assert body["ranked_total"] == 10
     assert body["percentile_step"] == 20
+    assert body["min_step_minutes"] == 5
     assert body["generated_by"] == admin.name
     stored = db.scalars(select(WaveSegmentation)).one()
     assert (stored.event_id, stored.ranking_id) == (event.id_interno, ranking.id)
+
+
+def test_the_waves_show_the_minimum_step_of_the_setting(
+    client: TestClient,
+    db: Session,
+    admin: User,
+    boca: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ranking_with(db, admin, 10)
+    event = partido(db)
+    generate(client, boca, event)
+    monkeypatch.setattr(settings, "wave_min_step_minutes", 10)
+
+    body = client.get(segmentation_url(event), headers=boca).json()
+
+    assert body["min_step_minutes"] == 10
 
 
 def test_every_generation_is_audited(
