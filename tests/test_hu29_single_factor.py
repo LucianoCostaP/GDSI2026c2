@@ -69,7 +69,7 @@ def ranking(db: Session, admin: User, boca: dict[str, str]) -> Ranking:
 
 @pytest.fixture
 def simulations(monkeypatch: pytest.MonkeyPatch) -> list[int]:
-    """Cuenta los recálculos completos del ranking que hace el servicio."""
+    """Cuenta los recálculos del ranking que hace el servicio, completos o por pilares."""
     calls: list[int] = []
     original: Callable[..., Any] = rules_simulation.simulate_entries
 
@@ -77,7 +77,13 @@ def simulations(monkeypatch: pytest.MonkeyPatch) -> list[int]:
         calls.append(1)
         return original(*args)
 
+    class CountingSimulator(rules_simulation.PillarSimulator):
+        def run(self, params: Any) -> Any:
+            calls.append(1)
+            return super().run(params)
+
     monkeypatch.setattr(rules_simulation_service, "simulate_entries", counting)
+    monkeypatch.setattr(rules_simulation_service, "PillarSimulator", CountingSimulator)
     return calls
 
 

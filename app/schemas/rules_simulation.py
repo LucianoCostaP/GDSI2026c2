@@ -262,11 +262,12 @@ class BreakdownOut(BaseModel):
 
     `available` con una entrada por factor aislado, ordenadas de la que más mueve a la que
     menos, el resto y la nota de no aditividad; `single_factor` o `no_changes` sin ninguna,
-    con `remainder` y `non_additive_note` en `null` (escenario 20).
+    con `remainder` y `non_additive_note` en `null` (escenario 20); `unavailable` con
+    `BREAKDOWN_UNAVAILABLE` si falló o superó su tiempo máximo (escenario 21).
     """
 
     ranking_id: int
-    status: Literal["available", "single_factor", "no_changes"]
+    status: Literal["available", "single_factor", "no_changes", "unavailable"]
     code: str | None
     message: str | None
     factors: list[FactorEffectOut]

@@ -11,7 +11,7 @@ componente se redondea a 2 decimales (mitad hacia arriba) y el total es la suma 
 componentes ya redondeados (regla 1 del modelo).
 """
 
-from collections.abc import Mapping
+from collections.abc import Hashable, Mapping
 from dataclasses import dataclass, fields
 from decimal import ROUND_HALF_UP, Context, Decimal, localcontext
 from typing import Any
@@ -224,36 +224,91 @@ def new_member_bonus(
     return params.b_max * max(Decimal(0), remaining)
 
 
-# --- Puntaje -------------------------------------------------------------------------------
+# --- Pilares por separado (atajo de HU-29, escenario 22) ----------------------------------
+
+# Parámetros de los que depende cada pilar. Los pesos y `αA` no cambian ningún pilar: solo
+# los combinan (`combine_pillars`).
+PILLAR_PARAMETERS: Mapping[str, tuple[str, ...]] = {
+    "frequency": (),
+    "distance": ("d_sat",),
+    "institutional": ("p_inst_max",),
+    "seniority_age": ("alpha_t", "t_ref", "e_ref", "gamma"),
+    "new_member_bonus": ("b_max", "t_max", "t_carencia"),
+}
 
 
-def calculate_score(inputs: ScoringInputs, params: ScoringParameters) -> ScoreResult:
-    """Puntaje de un socio: seis componentes redondeados y su total (reglas 1 a 3)."""
+@dataclass(frozen=True)
+class Pillars:
+    """Los cinco pilares de un socio, sin ponderar ni redondear."""
+
+    frequency: Decimal
+    distance: Decimal
+    institutional: Decimal
+    seniority_age: Decimal
+    new_member_bonus: Decimal
+
+
+def pillar(name: str, inputs: ScoringInputs, params: ScoringParameters) -> Decimal:
+    """Un pilar sin ponderar ni redondear; solo usa los parámetros de `PILLAR_PARAMETERS`."""
     with localcontext(_CONTEXT):
-        attended_matches = sum(inputs.attended_by_class.values())
-        frequency = frequency_score(inputs.matches_by_class, inputs.attended_by_class)
-        distance = distance_score(inputs.distance_km, attended_matches, params.d_sat)
-        institutional = institutional_score(
-            inputs.institutional_points, params.p_inst_max
-        )
-        seniority_age = seniority_age_score(
-            inputs.seniority_years, inputs.age_years, params
-        )
+        if name == "frequency":
+            return frequency_score(inputs.matches_by_class, inputs.attended_by_class)
+        if name == "distance":
+            attended_matches = sum(inputs.attended_by_class.values())
+            return distance_score(inputs.distance_km, attended_matches, params.d_sat)
+        if name == "institutional":
+            return institutional_score(inputs.institutional_points, params.p_inst_max)
+        if name == "seniority_age":
+            return seniority_age_score(inputs.seniority_years, inputs.age_years, params)
+        if name == "new_member_bonus":
+            return new_member_bonus(
+                inputs.days_since_alta, inputs.days_since_previous_baja, params
+            )
+    raise ValueError(f"Pilar desconocido: {name}.")
 
+
+def pillar_inputs(name: str, inputs: ScoringInputs) -> Hashable:
+    """Los insumos de los que depende el pilar `name` (además de sus parámetros).
+
+    Dos socios con los mismos insumos tienen el mismo pilar: el atajo de HU-29 lo calcula una
+    sola vez. Tiene que nombrar todo lo que lee `pillar` para ese pilar.
+    """
+    if name == "frequency":
+        return (
+            tuple(inputs.matches_by_class[c] for c in MATCH_CLASSES),
+            tuple(inputs.attended_by_class[c] for c in MATCH_CLASSES),
+        )
+    if name == "distance":
+        return (inputs.distance_km, sum(inputs.attended_by_class.values()) == 0)
+    if name == "institutional":
+        return inputs.institutional_points
+    if name == "seniority_age":
+        return (inputs.seniority_years, inputs.age_years)
+    if name == "new_member_bonus":
+        return (inputs.days_since_alta, inputs.days_since_previous_baja)
+    raise ValueError(f"Pilar desconocido: {name}.")
+
+
+def score_pillars(inputs: ScoringInputs, params: ScoringParameters) -> Pillars:
+    return Pillars(**{name: pillar(name, inputs, params) for name in PILLAR_PARAMETERS})
+
+
+def combine_pillars(pillars: Pillars, params: ScoringParameters) -> ScoreResult:
+    """Pondera, redondea cada componente y aplica el tope (reglas 1 a 3).
+
+    Solo usa los pesos, `αA` y los pilares; el resto de los parámetros ya está en ellos.
+    """
+    with localcontext(_CONTEXT):
         components = {
             "attendance_frequency": round_component(
-                params.w_a * (1 - params.alpha_a) * frequency
+                params.w_a * (1 - params.alpha_a) * pillars.frequency
             ),
             "attendance_distance": round_component(
-                params.w_a * params.alpha_a * distance
+                params.w_a * params.alpha_a * pillars.distance
             ),
-            "institutional": round_component(params.w_p * institutional),
-            "seniority_age": round_component(params.w_t * seniority_age),
-            "new_member_bonus": round_component(
-                new_member_bonus(
-                    inputs.days_since_alta, inputs.days_since_previous_baja, params
-                )
-            ),
+            "institutional": round_component(params.w_p * pillars.institutional),
+            "seniority_age": round_component(params.w_t * pillars.seniority_age),
+            "new_member_bonus": round_component(pillars.new_member_bonus),
         }
         subtotal = sum(components.values(), _ZERO)
         # Regla 2: si la suma pasa de 100, el ajuste negativo deja el total en 100.
@@ -261,3 +316,15 @@ def calculate_score(inputs: ScoringInputs, params: ScoringParameters) -> ScoreRe
             _FULL_SCORE - subtotal if subtotal > _FULL_SCORE else _ZERO
         )
         return ScoreResult(components=components, total=total_of(components))
+
+
+# --- Puntaje -------------------------------------------------------------------------------
+
+
+def calculate_score(inputs: ScoringInputs, params: ScoringParameters) -> ScoreResult:
+    """Puntaje de un socio: seis componentes redondeados y su total (reglas 1 a 3).
+
+    Es, por definición, la combinación de sus pilares: el atajo de HU-29 (calcular los pilares
+    una vez y combinarlos con otros pesos) no puede dar otra cosa.
+    """
+    return combine_pillars(score_pillars(inputs, params), params)

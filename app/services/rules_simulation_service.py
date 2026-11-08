@@ -58,12 +58,22 @@ y la nota de que los efectos no se suman.
 
 Escenario 20: con un solo factor cambiado no se corre ninguna simulación aislada y el resultado
 dice `SINGLE_FACTOR`; sin cambios, vale el escenario 9.
+
+Escenario 21: el resultado principal no espera al desglose (que es otro pedido). Si el desglose
+falla o supera su tiempo máximo (9 s hasta 50.000 socios, 30 s hasta 500.000), responde
+`BREAKDOWN_UNAVAILABLE` y el resultado principal sigue valiendo.
+
+Escenario 22: cada simulación aislada pasa la misma validación, usa el mismo motor y el mismo
+desempate; el atajo por pilares (`PillarSimulator`) da exactamente el cálculo completo.
 """
 
+import logging
+import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from decimal import Decimal
+from fractions import Fraction
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -117,10 +127,14 @@ from ..scoring.engine import ScoringParameters
 from ..scoring.formatting import decimal_fixed, decimal_to_str
 from ..scoring.rules_simulation import (
     OTHER,
+    BreakdownTimeout,
+    Deadline,
     FactorEffect,
     Movement,
+    PillarSimulator,
     SimulatedEntry,
     StoredEntry,
+    breakdown_budget,
     changed_keys,
     factor_of,
     factors_changed,
@@ -135,6 +149,8 @@ from ..scoring.rules_simulation import (
 from ..scoring.validation import validate_values
 from .formula_service import descriptor_out, error, get_in_force, violations_out
 from .ranking_service import COMPONENT_NAMES, get_ranking_in_force
+
+logger = logging.getLogger(__name__)
 
 NO_BASELINE_MESSAGE = (
     "Todavía no hay un ranking calculado, así que no hay con qué comparar. "
@@ -164,6 +180,7 @@ SINGLE_FACTOR_MESSAGE = (
 BREAKDOWN_PENDING_MESSAGE = "Calculando el efecto de cada parámetro…"
 WEIGHS_MOST_MESSAGE = "Es el que más mueve el ranking."
 REMAINDER_LABEL = "Resto: otros parámetros e interacciones"
+BREAKDOWN_UNAVAILABLE_MESSAGE = "No pudimos calcular el efecto de cada parámetro. El resultado general sigue siendo válido."
 NON_ADDITIVE_NOTE = "Los efectos de cada grupo no se suman: al combinarlos interactúan."
 # El spec no las fija (contrato §9, punto 6).
 FACTOR_LABELS = {
@@ -406,7 +423,11 @@ def _ranking_of(db: Session, club_id: uuid.UUID, ranking_id: int) -> Ranking:
 
 
 def breakdown(
-    db: Session, club_id: uuid.UUID, ranking_id: int, raw_values: dict[str, Any]
+    db: Session,
+    club_id: uuid.UUID,
+    ranking_id: int,
+    raw_values: dict[str, Any],
+    clock: Callable[[], float] | None = None,
 ) -> BreakdownOut:
     """`POST /admin/rules-simulation/breakdown`: una simulación por cada factor aislado
     (escenario 18) y el resto (escenario 19).
@@ -415,7 +436,9 @@ def breakdown(
     ranking, con el mismo recálculo, desempate y validación que el resultado principal. El
     resto es el cambio de la simulación completa menos la suma de los aislados, con los
     valores exactos. Con un solo factor o ninguno no se simula nada más (escenario 20).
-    Rechazos: `BASELINE_NOT_FOUND`, `EMPTY_RANKING` y `INVALID_VALUES`, en ese orden.
+    Rechazos: `BASELINE_NOT_FOUND`, `EMPTY_RANKING` y `INVALID_VALUES`, en ese orden. Si el
+    cálculo falla o supera su tiempo máximo (SC-006, medido con `clock` desde que llega el
+    pedido), responde `unavailable` con `BREAKDOWN_UNAVAILABLE` (escenario 21).
     """
     ranking = _ranking_of(db, club_id, ranking_id)
     rules = db.get_one(RulesVersion, ranking.rules_version_id)
@@ -435,20 +458,24 @@ def breakdown(
             non_additive_note=None,
         )
 
+    deadline = Deadline(
+        breakdown_budget(ranking.population_size), clock or time.monotonic
+    )
     before = stored_entries(db, ranking.id)
-    full = simulate_entries(before, ScoringParameters.from_values(hypothetical))
-    effects = []
-    for factor in isolated:
-        values = isolated_values(before_values, hypothetical, factor)
-        after = simulate_entries(before, ScoringParameters.from_values(values))
-        effects.append(
-            FactorEffect(
-                factor=factor,
-                parameters=tuple(k for k in changed if factor_of(k) == factor),
-                mean_total_change=mean_total_change(before, after),
-                movement=movement(before, after),
-            )
+    try:
+        full_change, effects = _isolated_effects(
+            _descriptor_of(rules), before, before_values, hypothetical, deadline
         )
+    except BreakdownTimeout:
+        logger.warning(
+            "El desglose del ranking %s superó su tiempo máximo.", ranking.id
+        )
+        return _breakdown_unavailable(ranking.id)
+    except Exception:
+        # Escenario 21: el resultado principal ya está en pantalla y sigue valiendo.
+        logger.exception("Falló el desglose del ranking %s.", ranking.id)
+        return _breakdown_unavailable(ranking.id)
+
     return BreakdownOut(
         ranking_id=ranking.id,
         status="available",
@@ -461,14 +488,55 @@ def breakdown(
         remainder=RemainderOut(
             label=REMAINDER_LABEL,
             mean_total_change=decimal_fixed(
-                fraction_to_decimal(
-                    remainder_change(mean_total_change(before, full), effects)
-                ),
-                2,
+                fraction_to_decimal(remainder_change(full_change, effects)), 2
             ),
             parameters=[k for k in changed if factor_of(k) == OTHER],
         ),
         non_additive_note=NON_ADDITIVE_NOTE,
+    )
+
+
+def _isolated_effects(
+    descriptor: FormulaDescriptor,
+    before: list[StoredEntry],
+    before_values: dict[str, Decimal],
+    hypothetical: dict[str, Decimal],
+    deadline: Deadline,
+) -> tuple[Fraction, list[FactorEffect]]:
+    """El cambio del total medio de la simulación completa y el efecto de cada factor aislado.
+
+    Todas reusan los pilares (`PillarSimulator`, escenario 22). Cada juego de valores aislado
+    pasa la misma validación que los del Admin; uno inválido es una falla del desglose.
+    """
+    changed = changed_keys(before_values, hypothetical)
+    simulator = PillarSimulator(before, deadline.check)
+    full = simulator.run(ScoringParameters.from_values(hypothetical))
+    effects = []
+    for factor in factors_to_isolate(factors_changed(changed)):
+        values = isolated_values(before_values, hypothetical, factor)
+        if not validate_values(descriptor, values).valid:
+            raise RuntimeError(f"Los valores aislados de {factor} no son válidos.")
+        after = simulator.run(ScoringParameters.from_values(values))
+        effects.append(
+            FactorEffect(
+                factor=factor,
+                parameters=tuple(k for k in changed if factor_of(k) == factor),
+                mean_total_change=mean_total_change(before, after),
+                movement=movement(before, after),
+            )
+        )
+    return mean_total_change(before, full), effects
+
+
+def _breakdown_unavailable(ranking_id: int) -> BreakdownOut:
+    return BreakdownOut(
+        ranking_id=ranking_id,
+        status="unavailable",
+        code="BREAKDOWN_UNAVAILABLE",
+        message=BREAKDOWN_UNAVAILABLE_MESSAGE,
+        factors=[],
+        remainder=None,
+        non_additive_note=None,
     )
 
 
