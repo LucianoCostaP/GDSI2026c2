@@ -46,6 +46,24 @@ TO_THE_CAP = {
 # Concentra los puntajes: el desvío baja a menos del 80 % (alerta de concentración).
 FLATTER = {**DEFAULTS, "w_a": "0.2", "w_p": "0.2", "w_t": "0.6"}
 
+# Con `make_saturation_club`, cambia los cuatro factores; cada uno solo mueve el ranking
+# distinto, y en un orden que no es el del desempate: αA (1,5 posiciones de cambio medio),
+# dsat (0,4) y los pesos (0,2).
+SPREAD = {
+    **DEFAULTS,
+    "w_a": "0.5",
+    "w_p": "0.3",
+    "alpha_a": "1",
+    "d_sat": "100",
+    "b_max": "20",
+}
+# Cada factor solo, sobre los valores del ranking.
+ISOLATED = {
+    "pillar_weights": {"w_a": "0.5", "w_p": "0.3", "w_t": "0.2"},
+    "alpha_a": {"alpha_a": "1"},
+    "d_sat": {"d_sat": "100"},
+}
+
 
 @dataclass
 class VariedClub:

@@ -213,3 +213,11 @@ def rank_effects(effects: Sequence[FactorEffect]) -> list[FactorEffect]:
         effects,
         key=lambda e: (-e.movement.mean_abs_position_change, FACTORS.index(e.factor)),
     )
+
+
+def remainder_change(
+    full_change: Fraction, effects: Sequence[FactorEffect]
+) -> Fraction:
+    """Escenario 19: cambio del total medio de la simulación completa menos la suma de los
+    aislados. Junta los otros parámetros y las interacciones: los efectos no se suman."""
+    return full_change - sum((e.mean_total_change for e in effects), Fraction(0))

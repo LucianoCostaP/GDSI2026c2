@@ -244,11 +244,25 @@ class FactorEffectOut(BaseModel):
     weighs_most_text: str | None
 
 
+class RemainderOut(BaseModel):
+    """Escenario 19: lo que no explican los factores aislados.
+
+    `mean_total_change` = cambio de la simulación completa − suma de los aislados (2 decimales,
+    calculado con los valores exactos). `parameters`: los otros parámetros cambiados; vacío si
+    el resto es solo interacción.
+    """
+
+    label: str
+    mean_total_change: str
+    parameters: list[str]
+
+
 class BreakdownOut(BaseModel):
     """`POST /admin/rules-simulation/breakdown`: efecto de cada factor (contrato §6).
 
     `available` con una entrada por factor aislado, ordenadas de la que más mueve a la que
-    menos; `single_factor` o `no_changes` sin ninguna.
+    menos, el resto y la nota de no aditividad; `single_factor` o `no_changes` sin ninguna,
+    con `remainder` y `non_additive_note` en `null` (escenario 20).
     """
 
     ranking_id: int
@@ -256,3 +270,5 @@ class BreakdownOut(BaseModel):
     code: str | None
     message: str | None
     factors: list[FactorEffectOut]
+    remainder: RemainderOut | None
+    non_additive_note: str | None

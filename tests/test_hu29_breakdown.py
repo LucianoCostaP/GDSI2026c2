@@ -48,29 +48,20 @@ from tests.hu25_helpers import (
     make_socio,
     publish_rules,
 )
-from tests.hu29_helpers import CHANGED, SIMULATOR, make_saturation_club, run_ranking
+from tests.hu29_helpers import (
+    CHANGED,
+    ISOLATED,
+    SIMULATOR,
+    SPREAD,
+    make_saturation_club,
+    run_ranking,
+)
 
 BREAKDOWN = f"{SIMULATOR}/breakdown"
 LABELS = {
     "pillar_weights": "Pesos de los pilares",
     "alpha_a": "Peso de la distancia (αA)",
     "d_sat": "Punto de inflexión de la distancia (dsat)",
-}
-# Cambia los cuatro factores; cada uno mueve el ranking distinto, y en un orden que no es el
-# del desempate: αA (1,5 posiciones de cambio medio), dsat (0,4) y los pesos (0,2).
-SPREAD = {
-    **DEFAULTS,
-    "w_a": "0.5",
-    "w_p": "0.3",
-    "alpha_a": "1",
-    "d_sat": "100",
-    "b_max": "20",
-}
-# Cada factor solo, sobre los valores del ranking.
-ISOLATED = {
-    "pillar_weights": {"w_a": "0.5", "w_p": "0.3", "w_t": "0.2"},
-    "alpha_a": {"alpha_a": "1"},
-    "d_sat": {"d_sat": "100"},
 }
 PARAMETERS = {
     "pillar_weights": ["w_a", "w_p"],
@@ -363,52 +354,6 @@ def test_the_ranking_of_another_club_is_not_found_for_its_admin(
 
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "BASELINE_NOT_FOUND"
-
-
-# --- Sin desglose: un solo factor o ninguno ------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "values",
-    [ISOLATED["pillar_weights"], {"d_sat": "600"}, {"b_max": "20", "gamma": "0.9"}],
-    ids=["pillar-weights", "d-sat", "other"],
-)
-def test_with_a_single_factor_no_isolated_simulation_is_run(
-    client: TestClient,
-    boca: dict[str, str],
-    ranking: Ranking,
-    values: dict[str, str],
-) -> None:
-    single = {**DEFAULTS, **values}
-    message = (
-        "Cambiaste un solo grupo de parámetros: su efecto es el del resultado total."
-    )
-
-    main = client.post(SIMULATOR, json={"values": single}, headers=boca).json()
-    body = breakdown(client, boca, ranking.id, single)
-
-    assert main["breakdown"] == {
-        "status": "single_factor",
-        "code": "SINGLE_FACTOR",
-        "message": message,
-    }
-    assert body == {
-        "ranking_id": ranking.id,
-        "status": "single_factor",
-        "code": "SINGLE_FACTOR",
-        "message": message,
-        "factors": [],
-    }
-
-
-def test_without_changes_there_is_no_breakdown(
-    client: TestClient, boca: dict[str, str], ranking: Ranking
-) -> None:
-    main = client.post(SIMULATOR, json={"values": DEFAULTS}, headers=boca).json()
-    body = breakdown(client, boca, ranking.id, DEFAULTS)
-
-    assert main["breakdown"] == {"status": "no_changes", "code": None, "message": None}
-    assert (body["status"], body["code"], body["factors"]) == ("no_changes", None, [])
 
 
 # --- Unitarias -----------------------------------------------------------------------------

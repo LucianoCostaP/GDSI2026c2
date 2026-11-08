@@ -51,6 +51,13 @@ Escenario 18: con dos o más factores cambiados, el resultado principal avisa qu
 está pendiente y el front lo pide aparte (`breakdown`, contrato §6): una simulación por cada
 factor cambiado entre pesos, `αA` y `dsat`, con solo sus valores sobre los del ranking,
 ordenadas por cuánto mueven el ranking.
+
+Escenario 19: junto a los aislados, la fila "Resto: otros parámetros e interacciones" con el
+cambio de la simulación completa menos la suma de los aislados, los otros parámetros cambiados
+y la nota de que los efectos no se suman.
+
+Escenario 20: con un solo factor cambiado no se corre ninguna simulación aislada y el resultado
+dice `SINGLE_FACTOR`; sin cambios, vale el escenario 9.
 """
 
 import uuid
@@ -77,6 +84,7 @@ from ..schemas.rules_simulation import (
     HistogramBinOut,
     MessageOut,
     MovementOut,
+    RemainderOut,
     RulesInForceOut,
     RulesSimulationFormOut,
     RulesSimulationResultOut,
@@ -108,6 +116,7 @@ from ..scoring.distribution import (
 from ..scoring.engine import ScoringParameters
 from ..scoring.formatting import decimal_fixed, decimal_to_str
 from ..scoring.rules_simulation import (
+    OTHER,
     FactorEffect,
     Movement,
     SimulatedEntry,
@@ -120,6 +129,7 @@ from ..scoring.rules_simulation import (
     mean_total_change,
     movement,
     rank_effects,
+    remainder_change,
     simulate_entries,
 )
 from ..scoring.validation import validate_values
@@ -153,6 +163,8 @@ SINGLE_FACTOR_MESSAGE = (
 )
 BREAKDOWN_PENDING_MESSAGE = "Calculando el efecto de cada parámetro…"
 WEIGHS_MOST_MESSAGE = "Es el que más mueve el ranking."
+REMAINDER_LABEL = "Resto: otros parámetros e interacciones"
+NON_ADDITIVE_NOTE = "Los efectos de cada grupo no se suman: al combinarlos interactúan."
 # El spec no las fija (contrato §9, punto 6).
 FACTOR_LABELS = {
     "pillar_weights": "Pesos de los pilares",
@@ -397,10 +409,12 @@ def breakdown(
     db: Session, club_id: uuid.UUID, ranking_id: int, raw_values: dict[str, Any]
 ) -> BreakdownOut:
     """`POST /admin/rules-simulation/breakdown`: una simulación por cada factor aislado
-    (escenario 18).
+    (escenario 18) y el resto (escenario 19).
 
     Cada una aplica solo los valores hipotéticos de su factor sobre los de las reglas del
-    ranking, con el mismo recálculo, desempate y validación que el resultado principal.
+    ranking, con el mismo recálculo, desempate y validación que el resultado principal. El
+    resto es el cambio de la simulación completa menos la suma de los aislados, con los
+    valores exactos. Con un solo factor o ninguno no se simula nada más (escenario 20).
     Rechazos: `BASELINE_NOT_FOUND`, `EMPTY_RANKING` y `INVALID_VALUES`, en ese orden.
     """
     ranking = _ranking_of(db, club_id, ranking_id)
@@ -417,9 +431,12 @@ def breakdown(
             code=state.code,
             message=state.message,
             factors=[],
+            remainder=None,
+            non_additive_note=None,
         )
 
     before = stored_entries(db, ranking.id)
+    full = simulate_entries(before, ScoringParameters.from_values(hypothetical))
     effects = []
     for factor in isolated:
         values = isolated_values(before_values, hypothetical, factor)
@@ -441,6 +458,17 @@ def breakdown(
             _factor_effect_out(effect, weighs_most=index == 0)
             for index, effect in enumerate(rank_effects(effects))
         ],
+        remainder=RemainderOut(
+            label=REMAINDER_LABEL,
+            mean_total_change=decimal_fixed(
+                fraction_to_decimal(
+                    remainder_change(mean_total_change(before, full), effects)
+                ),
+                2,
+            ),
+            parameters=[k for k in changed if factor_of(k) == OTHER],
+        ),
+        non_additive_note=NON_ADDITIVE_NOTE,
     )
 
 
