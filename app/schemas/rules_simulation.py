@@ -68,12 +68,49 @@ class SimulationRequest(BaseModel):
     values: dict[str, Any]
 
 
+class MessageOut(BaseModel):
+    """Mensaje del resultado con su código (por ejemplo `NO_CHANGES`)."""
+
+    code: str
+    text: str
+
+
+class ChangedParameterOut(BaseModel):
+    """Un parámetro cuyo valor hipotético difiere del de las reglas del ranking (esc. 17)."""
+
+    key: str
+    symbol: str
+    name: str
+    # `pillar_weights` | `alpha_a` | `d_sat` | `other`.
+    factor: str
+    before: str
+    after: str
+
+
+class MovementOut(BaseModel):
+    """Socios que suben, bajan o quedan igual frente al ranking (escenario 13).
+
+    `up + down + unchanged` es la población del ranking.
+    """
+
+    up: int
+    down: int
+    unchanged: int
+
+
 class RulesSimulationResultOut(BaseModel):
     """`POST /admin/rules-simulation`: resultado principal (contrato §5).
 
-    Por ahora trae solo la base contra la que se compara; el resto de las secciones llega con
-    los escenarios de cálculo (8 en adelante).
+    Por ahora trae la base, si hubo cambios, los parámetros cambiados y el movimiento de
+    posiciones; las demás secciones (distribución, saturación, componentes, equidad) llegan
+    con los escenarios 11 a 16 y HU-30.
     """
 
     ranking: BaselineRankingOut
     baseline_text: str
+    # `changed` | `no_changes` (ningún valor difiere del ranking, escenario 9).
+    status: str
+    message: MessageOut | None
+    changed_parameters: list[ChangedParameterOut]
+    factors_changed: list[str]
+    movement: MovementOut

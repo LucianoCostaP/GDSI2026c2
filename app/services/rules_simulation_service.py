@@ -22,6 +22,13 @@ violaciones vuelven juntas en un `422 INVALID_VALUES` y no se calcula nada.
 
 Escenario 7: el bloqueo de la fórmula (HU-27) y el corte de temporada (HU-28) gobiernan el
 **guardado** de reglas oficiales, no la vista previa: simular no los consulta.
+
+Escenario 8: cada entrada del ranking se recalcula desde su instantánea con el motor de HU-25
+y se reordena con su desempate (`scoring.rules_simulation`). Solo se leen las entradas del
+ranking: ni el padrón, ni las asistencias, ni las actividades.
+
+Escenario 9: con los valores del ranking, todo da igual que lo guardado y el resultado lo dice
+con `NO_CHANGES`.
 """
 
 import uuid
@@ -30,20 +37,34 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..core.date_utils import a_hora_buenos_aires
-from ..models import Ranking, RulesVersion
+from ..models import Ranking, RankingEntry, RulesVersion
 from ..schemas.rules_simulation import (
     BaselineRankingOut,
+    ChangedParameterOut,
     DerivedValueOut,
+    MessageOut,
+    MovementOut,
     RulesInForceOut,
     RulesSimulationFormOut,
     RulesSimulationResultOut,
 )
 from ..scoring.catalog import FormulaDescriptor, get_descriptor
+from ..scoring.components import COMPONENT_KEYS
 from ..scoring.derived import derived_values
+from ..scoring.engine import ScoringParameters
 from ..scoring.formatting import decimal_to_str
+from ..scoring.rules_simulation import (
+    StoredEntry,
+    changed_keys,
+    factor_of,
+    factors_changed,
+    movement,
+    simulate_entries,
+)
 from ..scoring.validation import validate_values
 from .formula_service import descriptor_out, error, get_in_force, violations_out
 from .ranking_service import get_ranking_in_force
@@ -55,6 +76,9 @@ NO_BASELINE_MESSAGE = (
 EMPTY_RANKING_MESSAGE = "El último ranking no tiene socios: no hay nada para simular."
 INVALID_VALUES_MESSAGE = (
     "Hay valores que no se pueden simular. Corregilos y volvé a intentar."
+)
+NO_CHANGES_MESSAGE = (
+    "Los valores son iguales a los del ranking: no hay diferencias para mostrar."
 )
 
 
@@ -194,8 +218,65 @@ def simulate(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             violations=violations_out(validation.violations),
         )
+    hypothetical = validation.values
+    before_values = _values_of(rules)
+    changed = changed_keys(before_values, hypothetical)
+
+    before = stored_entries(db, ranking.id)
+    after = simulate_entries(before, ScoringParameters.from_values(hypothetical))
+    moved = movement(before, after)
+
+    descriptor = _descriptor_of(rules)
+    parameters = {p.key: p for p in descriptor.parameters}
     baseline = _baseline_out(ranking, rules)
     return RulesSimulationResultOut(
         ranking=baseline,
         baseline_text=baseline_text(baseline.completed_at, rules.number),
+        status="changed" if changed else "no_changes",
+        message=None
+        if changed
+        else MessageOut(code="NO_CHANGES", text=NO_CHANGES_MESSAGE),
+        changed_parameters=[
+            ChangedParameterOut(
+                key=key,
+                symbol=parameters[key].symbol,
+                name=parameters[key].name,
+                factor=factor_of(key),
+                before=decimal_to_str(before_values[key]),
+                after=decimal_to_str(hypothetical[key]),
+            )
+            for key in changed
+        ],
+        factors_changed=factors_changed(changed),
+        movement=MovementOut(up=moved.up, down=moved.down, unchanged=moved.unchanged),
     )
+
+
+def stored_entries(db: Session, ranking_id: int) -> list[StoredEntry]:
+    """Las entradas del ranking tal como se guardaron, en orden de posición.
+
+    Es lo único que lee la simulación (escenario 8): componentes, total, posición y la
+    instantánea de insumos de cada socio.
+    """
+    columns = [getattr(RankingEntry, key) for key in COMPONENT_KEYS]
+    rows = db.execute(
+        select(
+            RankingEntry.socio_id,
+            RankingEntry.position,
+            RankingEntry.total,
+            RankingEntry.inputs,
+            *columns,
+        )
+        .where(RankingEntry.ranking_id == ranking_id)
+        .order_by(RankingEntry.position)
+    )
+    return [
+        StoredEntry(
+            socio_id=row.socio_id,
+            position=row.position,
+            components={key: getattr(row, key) for key in COMPONENT_KEYS},
+            total=row.total,
+            snapshot=row.inputs,
+        )
+        for row in rows
+    ]
