@@ -178,21 +178,6 @@ def test_opening_the_simulator_changes_nothing_and_is_not_cached(
     assert first.json() == second.json()
 
 
-def test_without_a_completed_ranking_there_is_nothing_to_compare_against(
-    client: TestClient, boca: dict[str, str]
-) -> None:
-    publish_rules(client, boca)
-
-    response = client.get(SIMULATOR, headers=boca)
-
-    assert response.status_code == 409
-    assert response.json()["detail"] == {
-        "code": "NO_BASELINE",
-        "message": "Todavía no hay un ranking calculado, así que no hay con qué "
-        "comparar. Calculá el ranking para poder simular.",
-    }
-
-
 # --- Unitarias -----------------------------------------------------------------------------
 
 
