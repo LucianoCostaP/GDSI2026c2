@@ -69,14 +69,13 @@ Lo que **no** hace falta instalar a mano:
    ```bash
    uv run python -m app.seed_simulator
    ```
-   (para levantar segmentacion seteada en vez de default para poder probar oleadas)
-   ```bash
-   WAVE_PERCENTILE_STEP=25 uv run uvicorn app.main:app --reload
-
-   ```
 5. Levantar el back:
    ```bash
    uv run uvicorn app.main:app --reload
+   ```
+   O, para probar las olas con otro paso de percentil (20 por defecto; tiene que dividir a 100):
+   ```bash
+   WAVE_PERCENTILE_STEP=25 uv run uvicorn app.main:app --reload
    ```
 6. Verificar:
    - http://localhost:8000/healthz → `{"status":"ok"}`

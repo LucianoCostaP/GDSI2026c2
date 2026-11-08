@@ -1,7 +1,7 @@
 # Feature Specification: Automatic Wave Schedule Generation
 
 **Feature Branch**: `hu-37-wave-schedule-generation`
-**Created**: 2026-10-11 | **Revised**: 2026-10-13 (v3)
+**Created**: 2026-10-11 | **Revised**: 2026-11-07 (v5)
 **Status**: Draft
 **Backlog Reference**: HU-37 (Estimate: 3, Priority: Alta, MVP: Yes)
 **Shared rules**: [cross-cutting](../_shared/cross-cutting.md)
@@ -79,6 +79,7 @@ The list of upcoming Partidos of HU-36 (`GET /admin/segmentation/events`) adds `
 | HTTP | Code | Message |
 |---|---|---|
 | 404 | `EVENT_NOT_FOUND` | No encontramos el evento. |
+| 409 | `EVENT_NOT_PUBLISHED` | El evento todavía no está publicado: publicalo antes de armar el cronograma. |
 | 409 | `NOT_A_PARTIDO` | Las olas son solo para partidos: este evento no es un partido. |
 | 409 | `EVENT_ALREADY_STARTED` | El partido ya empezó: no se puede generar el cronograma. |
 | 409 | `SEGMENTATION_REQUIRED` | Este partido todavía no tiene olas: generalas antes de armar el cronograma. |
@@ -114,5 +115,4 @@ Audit (`entity = "wave_schedule"`): `wave_schedule.generated`, `wave_schedule.re
 - Defined the formula, validations, draft/confirm visibility, regeneration limits, and stated that access is informative in the MVP.
 - v3: only for Partido events; empty waves omitted.
 - v4: API contract, error codes and messages; period boundaries and rule order; input time zone; stale drafts; regenerating a confirmed schedule returns it to draft; definition of "first wave opened".
-
-- v5: wave state (`pending` / `open` / `closed`) only for confirmed schedules; `locked` in the response; regenerating the waves (HU-36) invalidates the schedule and a new one needs no confirmation; schedule summary in the HU-36 list.
+- v5: wave state (`pending` / `open` / `closed`) only for confirmed schedules; `locked` in the response; regenerating the waves (HU-36) invalidates the schedule and a new one needs no confirmation; schedule summary in the HU-36 list; `EVENT_NOT_PUBLISHED` for a Partido pending publication.
