@@ -74,22 +74,26 @@ class VariedClub:
 
 
 def make_varied_club(db: Session) -> VariedClub:
+    """Los socios llevan documento fijo: el desempate final es el DNI, y con algunas reglas
+    varios empatan; al azar, las posiciones cambiarían de una corrida a otra."""
     club = VariedClub(
-        far_fan=make_socio(db, distancia_km=Decimal("900.00")),
-        near_fan=make_socio(db, distancia_km=Decimal("5.00")),
+        far_fan=make_socio(db, dni="11000000", distancia_km=Decimal("900.00")),
+        near_fan=make_socio(db, dni="12000000", distancia_km=Decimal("5.00")),
         veteran=make_socio(
             db,
+            dni="13000000",
             fecha_nacimiento=date(1940, 5, 1),
             fecha_alta=date(1965, 1, 1),
             distancia_km=Decimal("15.00"),
         ),
         newcomer=make_socio(
             db,
+            dni="14000000",
             fecha_nacimiento=date(2000, 1, 1),
             fecha_alta=date(2026, 9, 15),
             distancia_km=Decimal("300.00"),
         ),
-        institutional=make_socio(db, distancia_km=Decimal("40.00")),
+        institutional=make_socio(db, dni="15000000", distancia_km=Decimal("40.00")),
         twin_low_dni=make_socio(db, dni="4000000", distancia_km=Decimal("60.00")),
         twin_high_dni=make_socio(db, dni="30000001", distancia_km=Decimal("60.00")),
     )
@@ -130,6 +134,7 @@ def add_star_newcomer(db: Session) -> Socio:
     Se agrega después de `make_varied_club`."""
     star = make_socio(
         db,
+        dni="16000000",
         fecha_nacimiento=date(1990, 1, 1),
         fecha_alta=date(2026, 10, 25),
         distancia_km=Decimal("900.00"),
@@ -151,10 +156,10 @@ def make_saturation_club(db: Session) -> None:
 
     Sin asistencias ni actividades, el total depende solo de las fechas: un socio común empata
     con los dos gemelos (grupo de 3) y dos socios con otra fecha de alta empatan entre sí
-    (grupo de 2).
+    (grupo de 2). Documentos fijos, como en `make_varied_club`.
     """
     make_varied_club(db)
     add_star_newcomer(db)
-    make_socio(db, distancia_km=Decimal("7.00"))
-    make_socio(db, fecha_alta=date(2010, 3, 1))
-    make_socio(db, fecha_alta=date(2010, 3, 1))
+    make_socio(db, dni="20000000", distancia_km=Decimal("7.00"))
+    make_socio(db, dni="10000000", fecha_alta=date(2010, 3, 1))
+    make_socio(db, dni="25000000", fecha_alta=date(2010, 3, 1))

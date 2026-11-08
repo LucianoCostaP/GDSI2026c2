@@ -43,6 +43,14 @@ Escenario 15: las alertas de saturación y de concentración, calculadas con los
 
 Escenario 16: el promedio de cada componente y del total en las dos situaciones; las seis
 diferencias suman exactamente la del total.
+
+Escenario 17: los parámetros cambiados, con los dos valores y su factor (pesos de los pilares,
+`αA`, `dsat` u otros parámetros).
+
+Escenario 18: con dos o más factores cambiados, el resultado principal avisa que el desglose
+está pendiente y el front lo pide aparte (`breakdown`, contrato §6): una simulación por cada
+factor cambiado entre pesos, `αA` y `dsat`, con solo sus valores sobre los del ranking,
+ordenadas por cuánto mueven el ranking.
 """
 
 import uuid
@@ -56,12 +64,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..core.date_utils import a_hora_buenos_aires
-from ..models import Ranking, RankingEntry, RulesVersion
+from ..models import Ranking, RankingEntry, RankingState, RulesVersion
 from ..schemas.rules_simulation import (
     BaselineRankingOut,
+    BreakdownOut,
+    BreakdownStatusOut,
     ChangedParameterOut,
     ComponentChangeOut,
     DerivedValueOut,
+    FactorEffectOut,
     FlatnessAlertOut,
     HistogramBinOut,
     MessageOut,
@@ -97,13 +108,18 @@ from ..scoring.distribution import (
 from ..scoring.engine import ScoringParameters
 from ..scoring.formatting import decimal_fixed, decimal_to_str
 from ..scoring.rules_simulation import (
+    FactorEffect,
     Movement,
     SimulatedEntry,
     StoredEntry,
     changed_keys,
     factor_of,
     factors_changed,
+    factors_to_isolate,
+    isolated_values,
+    mean_total_change,
     movement,
+    rank_effects,
     simulate_entries,
 )
 from ..scoring.validation import validate_values
@@ -129,6 +145,20 @@ TOTAL_LABEL = "total"
 NO_CHANGES_MESSAGE = (
     "Los valores son iguales a los del ranking: no hay diferencias para mostrar."
 )
+BASELINE_NOT_FOUND_MESSAGE = (
+    "El ranking de esta simulación ya no está disponible. Volvé a simular."
+)
+SINGLE_FACTOR_MESSAGE = (
+    "Cambiaste un solo grupo de parámetros: su efecto es el del resultado total."
+)
+BREAKDOWN_PENDING_MESSAGE = "Calculando el efecto de cada parámetro…"
+WEIGHS_MOST_MESSAGE = "Es el que más mueve el ranking."
+# El spec no las fija (contrato §9, punto 6).
+FACTOR_LABELS = {
+    "pillar_weights": "Pesos de los pilares",
+    "alpha_a": "Peso de la distancia (αA)",
+    "d_sat": "Punto de inflexión de la distancia (dsat)",
+}
 
 
 def rules_in_force_notice(in_force_version: int, ranking_version: int) -> str:
@@ -256,18 +286,7 @@ def simulate(
     después la validación de los valores (escenario 6).
     """
     ranking, rules = _baseline(db, club_id)
-    if ranking.population_size == 0:
-        raise _rejection("EMPTY_RANKING", EMPTY_RANKING_MESSAGE)
-    # Límites y regla de la suma: los de la fórmula de las reglas del ranking (escenario 7).
-    validation = validate_values(_descriptor_of(rules), raw_values)
-    if not validation.valid:
-        raise _rejection(
-            "INVALID_VALUES",
-            INVALID_VALUES_MESSAGE,
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            violations=violations_out(validation.violations),
-        )
-    hypothetical = validation.values
+    hypothetical = _hypothetical_values(ranking, rules, raw_values)
     before_values = _values_of(rules)
     changed = changed_keys(before_values, hypothetical)
 
@@ -322,6 +341,124 @@ def simulate(
                 ([e.components for e in after], totals_after),
             )
         ],
+        breakdown=_breakdown_status(changed),
+    )
+
+
+def _hypothetical_values(
+    ranking: Ranking, rules: RulesVersion, raw_values: dict[str, Any]
+) -> dict[str, Decimal]:
+    """`EMPTY_RANKING` (escenario 4) y después la validación de los valores (escenario 6)."""
+    if ranking.population_size == 0:
+        raise _rejection("EMPTY_RANKING", EMPTY_RANKING_MESSAGE)
+    # Límites y regla de la suma: los de la fórmula de las reglas del ranking (escenario 7).
+    validation = validate_values(_descriptor_of(rules), raw_values)
+    if not validation.valid:
+        raise _rejection(
+            "INVALID_VALUES",
+            INVALID_VALUES_MESSAGE,
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            violations=violations_out(validation.violations),
+        )
+    return validation.values
+
+
+def _breakdown_status(changed: list[str]) -> BreakdownStatusOut:
+    """Si el front tiene que pedir el efecto de cada factor (escenarios 18 y 20)."""
+    if not changed:
+        return BreakdownStatusOut(status="no_changes", code=None, message=None)
+    if not factors_to_isolate(factors_changed(changed)):
+        return BreakdownStatusOut(
+            status="single_factor", code="SINGLE_FACTOR", message=SINGLE_FACTOR_MESSAGE
+        )
+    return BreakdownStatusOut(
+        status="pending", code=None, message=BREAKDOWN_PENDING_MESSAGE
+    )
+
+
+def _ranking_of(db: Session, club_id: uuid.UUID, ranking_id: int) -> Ranking:
+    """El ranking del resultado principal, si sigue siendo un ranking completado del club.
+
+    Aunque mientras tanto se haya completado otro, se usa este (escenario 10).
+    """
+    ranking = db.scalar(
+        select(Ranking).where(
+            Ranking.id == ranking_id,
+            Ranking.club_id == club_id,
+            Ranking.status == RankingState.COMPLETED,
+        )
+    )
+    if ranking is None:
+        raise _rejection("BASELINE_NOT_FOUND", BASELINE_NOT_FOUND_MESSAGE)
+    return ranking
+
+
+def breakdown(
+    db: Session, club_id: uuid.UUID, ranking_id: int, raw_values: dict[str, Any]
+) -> BreakdownOut:
+    """`POST /admin/rules-simulation/breakdown`: una simulación por cada factor aislado
+    (escenario 18).
+
+    Cada una aplica solo los valores hipotéticos de su factor sobre los de las reglas del
+    ranking, con el mismo recálculo, desempate y validación que el resultado principal.
+    Rechazos: `BASELINE_NOT_FOUND`, `EMPTY_RANKING` y `INVALID_VALUES`, en ese orden.
+    """
+    ranking = _ranking_of(db, club_id, ranking_id)
+    rules = db.get_one(RulesVersion, ranking.rules_version_id)
+    hypothetical = _hypothetical_values(ranking, rules, raw_values)
+    before_values = _values_of(rules)
+    changed = changed_keys(before_values, hypothetical)
+    isolated = factors_to_isolate(factors_changed(changed))
+    if not isolated:
+        state = _breakdown_status(changed)
+        return BreakdownOut(
+            ranking_id=ranking.id,
+            status="no_changes" if state.status == "no_changes" else "single_factor",
+            code=state.code,
+            message=state.message,
+            factors=[],
+        )
+
+    before = stored_entries(db, ranking.id)
+    effects = []
+    for factor in isolated:
+        values = isolated_values(before_values, hypothetical, factor)
+        after = simulate_entries(before, ScoringParameters.from_values(values))
+        effects.append(
+            FactorEffect(
+                factor=factor,
+                parameters=tuple(k for k in changed if factor_of(k) == factor),
+                mean_total_change=mean_total_change(before, after),
+                movement=movement(before, after),
+            )
+        )
+    return BreakdownOut(
+        ranking_id=ranking.id,
+        status="available",
+        code=None,
+        message=None,
+        factors=[
+            _factor_effect_out(effect, weighs_most=index == 0)
+            for index, effect in enumerate(rank_effects(effects))
+        ],
+    )
+
+
+def _factor_effect_out(effect: FactorEffect, *, weighs_most: bool) -> FactorEffectOut:
+    return FactorEffectOut(
+        factor=effect.factor,
+        label=FACTOR_LABELS[effect.factor],
+        parameters=list(effect.parameters),
+        mean_total_change=decimal_fixed(
+            fraction_to_decimal(effect.mean_total_change), 2
+        ),
+        up=effect.movement.up,
+        down=effect.movement.down,
+        mean_abs_position_change=decimal_fixed(
+            effect.movement.mean_abs_position_change, 1
+        ),
+        weighs_most=weighs_most,
+        weighs_most_text=WEIGHS_MOST_MESSAGE if weighs_most else None,
     )
 
 

@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session
 from ..auth import CurrentAdmin, CurrentAdminClub
 from ..db import get_db
 from ..schemas.rules_simulation import (
+    BreakdownOut,
+    BreakdownRequest,
     RulesSimulationFormOut,
     RulesSimulationResultOut,
     SimulationRequest,
@@ -50,3 +52,20 @@ def run_simulation(
     """
     response.headers["Cache-Control"] = "no-store"
     return rules_simulation_service.simulate(db, club_id, body.values)
+
+
+@router.post("/breakdown", response_model=BreakdownOut)
+def run_breakdown(
+    body: BreakdownRequest,
+    _: CurrentAdmin,
+    club_id: CurrentAdminClub,
+    db: Db,
+    response: Response,
+) -> BreakdownOut:
+    """Efecto de cada factor por separado, pedido después del resultado principal.
+
+    Lleva los mismos valores y el `ranking_id` de ese resultado. Responde
+    `409 BASELINE_NOT_FOUND` si ese ranking ya no es un ranking completado del club.
+    """
+    response.headers["Cache-Control"] = "no-store"
+    return rules_simulation_service.breakdown(db, club_id, body.ranking_id, body.values)

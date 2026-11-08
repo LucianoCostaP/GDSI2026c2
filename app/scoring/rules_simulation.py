@@ -11,6 +11,7 @@ import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
+from fractions import Fraction
 from typing import Any
 
 from .engine import ScoringParameters, calculate_score
@@ -152,3 +153,63 @@ def factors_changed(keys: Sequence[str]) -> list[str]:
     """Factores con al menos un parámetro cambiado, en el orden de `FACTORS`."""
     touched = {factor_of(key) for key in keys}
     return [factor for factor in FACTORS if factor in touched]
+
+
+# --- Efecto de cada factor por separado (escenario 18) -------------------------------------
+
+# Los factores que se simulan solos; "otros parámetros" nunca se aísla.
+ISOLATED_FACTORS: tuple[str, ...] = (PILLAR_WEIGHTS, "alpha_a", "d_sat")
+
+
+def factors_to_isolate(factors: Sequence[str]) -> list[str]:
+    """Factores que llevan una simulación propia: solo si cambiaron dos o más factores, y solo
+    entre pesos de los pilares, `αA` y `dsat` (como mucho tres simulaciones más)."""
+    if len(factors) < 2:
+        return []
+    return [factor for factor in ISOLATED_FACTORS if factor in factors]
+
+
+def isolated_values(
+    before: Mapping[str, Decimal], hypothetical: Mapping[str, Decimal], factor: str
+) -> dict[str, Decimal]:
+    """Los valores del ranking con solo los de `factor` tomados de los hipotéticos.
+
+    Siguen siendo válidos: los tres pesos vienen siempre del mismo juego de valores (los dos
+    suman 1) y cada valor suelto ya pasó sus límites.
+    """
+    return {
+        key: hypothetical[key] if factor_of(key) == factor else value
+        for key, value in before.items()
+    }
+
+
+def mean_total_change(
+    before: Sequence[StoredEntry], after: Sequence[SimulatedEntry]
+) -> Fraction:
+    """Cambio exacto del total medio (simulación − ranking), sobre los mismos socios."""
+    if len(before) != len(after) or not before:
+        raise ValueError("Las dos situaciones necesitan los mismos socios.")
+    difference = sum((a.total - b.total for b, a in zip(before, after)), Decimal(0))
+    return Fraction(difference) / len(before)
+
+
+@dataclass(frozen=True)
+class FactorEffect:
+    """Lo que mueve un factor por sí solo frente al ranking."""
+
+    factor: str
+    parameters: tuple[str, ...]
+    mean_total_change: Fraction
+    movement: Movement
+
+
+def rank_effects(effects: Sequence[FactorEffect]) -> list[FactorEffect]:
+    """De mayor a menor cambio absoluto medio de posición; empate: el orden de `FACTORS`.
+
+    Todas las simulaciones tienen los mismos `N` socios: comparar los promedios es comparar
+    sumas de enteros, sin pérdida.
+    """
+    return sorted(
+        effects,
+        key=lambda e: (-e.movement.mean_abs_position_change, FACTORS.index(e.factor)),
+    )

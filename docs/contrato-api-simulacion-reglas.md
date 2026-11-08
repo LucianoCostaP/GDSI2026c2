@@ -1,6 +1,6 @@
 # Contrato de la API propia: simulación de cambio de reglas y análisis de equidad (HU-29 y HU-30)
 
-**Estado**: en implementación. Hecho: `GET /admin/rules-simulation` (escenarios 1, 2, 3 y 5) y parte de `POST /admin/rules-simulation` (escenarios 3 a 16: acceso, `NO_BASELINE`, `EMPTY_RANKING`, `INVALID_VALUES`, sin mirar bloqueo ni corte de temporada, recálculo desde la instantánea, `NO_CHANGES`, un solo ranking por resultado, histograma, estadísticas, movimiento, saturación, alertas y cambio por componente). Por ahora responde `ranking`, `baseline_text`, `status`, `message`, `changed_parameters`, `factors_changed`, `summary`, `movement`, `histogram`, `saturation`, `alerts` y `components`; el resto de 5.2 (`labels`, `derived_values`, `breakdown`, `equity`) llega con el desglose (escenarios 17 a 22) y HU-30 | **Fecha**: 2026-11-07
+**Estado**: en implementación. Hecho: `GET /admin/rules-simulation` (escenarios 1, 2, 3 y 5), `POST /admin/rules-simulation` (escenarios 3 a 18: acceso, `NO_BASELINE`, `EMPTY_RANKING`, `INVALID_VALUES`, sin mirar bloqueo ni corte de temporada, recálculo desde la instantánea, `NO_CHANGES`, un solo ranking por resultado, histograma, estadísticas, movimiento, saturación, alertas, cambio por componente, parámetros cambiados con su factor y `breakdown`) y `POST /admin/rules-simulation/breakdown` (escenario 18: una simulación por factor aislado, ordenadas, con `weighs_most`; además `BASELINE_NOT_FOUND`, `single_factor` y `no_changes`). Falta en el `POST` principal `labels`, `derived_values` y `equity` (escenario 23 y HU-30); en `/breakdown`, `remainder` y `non_additive_note` (escenario 19) y `unavailable` (escenario 21) | **Fecha**: 2026-11-08
 **Specs**: `specs/hu-29-rules-change-impact-simulation/spec.md` (v4) y `specs/hu-30-equity-analysis/spec.md` (v2). Sus tablas de "Messages and codes", sus "Calculation definitions", las "Bands" y el "Export" mandan sobre este resumen. Ver también `specs/_shared/scoring-model.md` (reglas 1 a 5), `specs/_shared/cross-cutting.md` (secciones 5, 6 y 9) y las decisiones 44 a 49 de `specs/README.md`.
 **Es el contrato entre el backend y el frontend (`../tp_gestion_reactjs`).** Sigue las convenciones de `docs/contrato-api-reglas.md` (sección 1): una sola ruta por endpoint, club tomado de la cuenta, decimales como string, textos en español.
 
@@ -318,7 +318,7 @@ Lo mismo dentro de una variable: `class_c_attendance` con menos de 10 socios con
 
 ## 6. `POST /admin/rules-simulation/breakdown`: efecto por parámetro
 
-Cuerpo: `{"ranking_id": 42, "values": {...}}`, con los **mismos** `values` del resultado principal. Calcula sobre ese ranking, aunque mientras tanto se haya completado otro, para no mezclar rankings (escenario 10). Si `ranking_id` no es un ranking `completed` del club, `409 BASELINE_NOT_FOUND`.
+Cuerpo: `{"ranking_id": 42, "values": {...}}`, con los **mismos** `values` del resultado principal. Calcula sobre ese ranking y con **sus** reglas, aunque mientras tanto se haya completado otro o cambiado las vigentes, para no mezclar rankings (escenario 10). Si `ranking_id` no es un ranking `completed` del club (no existe, es de otro club, o está `running`/`failed`), `409 BASELINE_NOT_FOUND`. Orden de los rechazos: `BASELINE_NOT_FOUND`, `EMPTY_RANKING`, `INVALID_VALUES` (con las mismas `violations` que el `POST` principal).
 
 Corre una simulación por cada factor cambiado **entre** `pillar_weights`, `alpha_a` y `d_sat` (máximo tres), cada una con solo los valores de ese factor sobre los del ranking. Mismo motor, mismo desempate y misma validación (escenario 22).
 
@@ -354,7 +354,8 @@ Corre una simulación por cada factor cambiado **entre** `pillar_weights`, `alph
 
 | Campo | Regla |
 |---|---|
-| `factors` | Ordenados por `mean_abs_position_change` de mayor a menor (exacto); empate: pillar_weights, alpha_a, d_sat. El primero lleva `weighs_most: true` |
+| `factors` | Ordenados por `mean_abs_position_change` de mayor a menor (exacto); empate: pillar_weights, alpha_a, d_sat. El primero lleva `weighs_most: true`. Solo hay desglose si cambiaron dos o más factores; "otros parámetros" cuenta como factor pero nunca se simula solo (pesos + `Bmax` da una sola entrada, la de los pesos) |
+| `factors[].mean_total_change` | Promedio exacto (fracción) de total simulado − total del ranking sobre los `N` socios, 2 decimales mitad hacia arriba solo al mostrar. `up`, `down` y `mean_abs_position_change` como en `movement` |
 | `factors[].parameters` | Los parámetros cambiados de ese factor |
 | `remainder.mean_total_change` | Cambio del total medio de la simulación completa − suma de los de `factors` |
 | `remainder.parameters` | Los cambiados del factor `other` (puede venir vacío: el resto es entonces solo interacción) |

@@ -180,12 +180,24 @@ class ComponentChangeOut(BaseModel):
     difference: str
 
 
+class BreakdownStatusOut(BaseModel):
+    """Qué pasa con el efecto de cada factor (escenarios 18 y 20).
+
+    `pending`: cambiaron dos o más factores y el front pide `POST /breakdown`;
+    `single_factor`: cambió uno solo (código `SINGLE_FACTOR`); `no_changes`: no cambió nada.
+    """
+
+    status: Literal["pending", "single_factor", "no_changes"]
+    code: str | None
+    message: str | None
+
+
 class RulesSimulationResultOut(BaseModel):
     """`POST /admin/rules-simulation`: resultado principal (contrato §5).
 
     Por ahora trae la base, si hubo cambios, los parámetros cambiados, las estadísticas, el
-    movimiento de posiciones, el histograma, la saturación, las alertas y el cambio por
-    componente; faltan el desglose por factor y la equidad (HU-30).
+    movimiento de posiciones, el histograma, la saturación, las alertas, el cambio por
+    componente y si hay que pedir el desglose por factor; falta la equidad (HU-30).
     """
 
     ranking: BaselineRankingOut
@@ -204,3 +216,43 @@ class RulesSimulationResultOut(BaseModel):
     alerts: list[SaturationAlertOut | FlatnessAlertOut]
     # Los seis componentes en el orden de HU-16 y el total al final.
     components: list[ComponentChangeOut]
+    breakdown: BreakdownStatusOut
+
+
+class BreakdownRequest(SimulationRequest):
+    """Cuerpo de `POST /breakdown` (contrato §6): los mismos valores del resultado principal y
+    el ranking de ese resultado, para no mezclar rankings (escenario 10)."""
+
+    ranking_id: int
+
+
+class FactorEffectOut(BaseModel):
+    """Lo que mueve un factor solo, sobre los valores del ranking (escenario 18)."""
+
+    factor: str
+    label: str
+    # Los parámetros cambiados de ese factor.
+    parameters: list[str]
+    # Cambio del total medio (simulación − ranking), 2 decimales.
+    mean_total_change: str
+    up: int
+    down: int
+    # Un decimal, mitad hacia arriba.
+    mean_abs_position_change: str
+    # Solo el primero: el que más mueve el ranking.
+    weighs_most: bool
+    weighs_most_text: str | None
+
+
+class BreakdownOut(BaseModel):
+    """`POST /admin/rules-simulation/breakdown`: efecto de cada factor (contrato §6).
+
+    `available` con una entrada por factor aislado, ordenadas de la que más mueve a la que
+    menos; `single_factor` o `no_changes` sin ninguna.
+    """
+
+    ranking_id: int
+    status: Literal["available", "single_factor", "no_changes"]
+    code: str | None
+    message: str | None
+    factors: list[FactorEffectOut]
