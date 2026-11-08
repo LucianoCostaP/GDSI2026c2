@@ -172,6 +172,12 @@ def frequency_score(
     return 100 * attended / total
 
 
+def distance_slope(d_sat: Decimal) -> Decimal:
+    """`b = 4,356 / dsat`: pendiente de la curva de distancia (valor derivado del catálogo)."""
+    with localcontext(_CONTEXT):
+        return GOMPERTZ_SLOPE / d_sat
+
+
 def distance_score(
     distance_km: Decimal, attended_matches: int, d_sat: Decimal
 ) -> Decimal:
@@ -182,7 +188,7 @@ def distance_score(
     """
     if attended_matches == 0:
         return Decimal(0)
-    slope = GOMPERTZ_SLOPE / d_sat
+    slope = distance_slope(d_sat)
     inner = (-slope * (distance_km - d_sat)).exp()
     return 100 * (-inner).exp()
 

@@ -1,6 +1,6 @@
 # Contrato de la API propia: simulación de cambio de reglas y análisis de equidad (HU-29 y HU-30)
 
-**Estado**: propuesto, sin implementar | **Fecha**: 2026-11-07
+**Estado**: en implementación. Hecho: `GET /admin/rules-simulation` (escenario 1), todavía sin `rules_in_force` (llega con el escenario 2) | **Fecha**: 2026-11-07
 **Specs**: `specs/hu-29-rules-change-impact-simulation/spec.md` (v4) y `specs/hu-30-equity-analysis/spec.md` (v2). Sus tablas de "Messages and codes", sus "Calculation definitions", las "Bands" y el "Export" mandan sobre este resumen. Ver también `specs/_shared/scoring-model.md` (reglas 1 a 5), `specs/_shared/cross-cutting.md` (secciones 5, 6 y 9) y las decisiones 44 a 49 de `specs/README.md`.
 **Es el contrato entre el backend y el frontend (`../tp_gestion_reactjs`).** Sigue las convenciones de `docs/contrato-api-reglas.md` (sección 1): una sola ruta por endpoint, club tomado de la cuenta, decimales como string, textos en español.
 
@@ -56,9 +56,9 @@ Ningún endpoint **guarda** nada ni escribe en la auditoría (HU-29 FR-011, SC-0
   "baseline_text": "Comparado con el ranking calculado el 29/10/2026 12:00 (reglas versión 1).",
   "formula": { "id": "scoring-model", "version": 1, "name": "Modelo de puntaje base", "parameters": [ "..." ], "derived_values": [ "..." ], "constraints": [ "..." ] },
   "values": {
-    "w_a": "0.60", "w_p": "0.20", "w_t": "0.20", "alpha_a": "0.20", "d_sat": "1200",
-    "p_inst_max": "100", "alpha_t": "0.70", "t_ref": "50", "e_ref": "80", "gamma": "1.0",
-    "b_max": "15.0", "t_max": "180", "t_carencia": "365"
+    "w_a": "0.6", "w_p": "0.2", "w_t": "0.2", "alpha_a": "0.2", "d_sat": "1200",
+    "p_inst_max": "100", "alpha_t": "0.7", "t_ref": "50", "e_ref": "80", "gamma": "1",
+    "b_max": "15", "t_max": "180", "t_carencia": "365"
   },
   "derived_values": [
     { "symbol": "b", "name": "Pendiente de la curva de distancia", "expression": "b = 4,356 / dsat", "value": "0.00363" }
@@ -77,8 +77,8 @@ Ningún endpoint **guarda** nada ni escribe en la auditoría (HU-29 FR-011, SC-0
 | `ranking` | El **último ranking `completed`** del club (`ranking_service.get_ranking_in_force`). `rules_version` es el número de **su** versión de reglas, no el de la vigente |
 | `baseline_text` | Texto exacto del spec. Fecha y hora de `completed_at` en hora de Buenos Aires, `dd/mm/aaaa hh:mm` |
 | `formula` | El descriptor de la fórmula de la versión de reglas del ranking, con la forma de `formula_service._descriptor_out` (límites, unidades, nombres, restricción de suma). El front no conoce los parámetros: arma el formulario con esto |
-| `values` | Los valores guardados en esa versión de reglas (escenario 1) |
-| `derived_values[].value` | Calculado por el backend para los valores precargados; el front lo muestra como solo lectura. Para los valores simulados viene en la respuesta del `POST` (sección 5.2) |
+| `values` | Los valores guardados en esa versión de reglas (escenario 1), en forma canónica sin ceros de más (`"0.6"`, `"1"`), igual que `GET /admin/formulas/{id}/{version}` |
+| `derived_values[].value` | Calculado por el backend para los valores precargados con la misma función del motor (`engine.distance_slope`), redondeado a 6 decimales solo para mostrar (`"0.00363"`, `"0.005445"`); `null` si la fórmula no tiene cálculo conocido. El front lo muestra como solo lectura. Para los valores simulados viene en la respuesta del `POST` (sección 5.2) |
 | `rules_in_force` | `differs: false` y el resto `null` cuando las vigentes son las del ranking |
 
 El lock de la fórmula y el corte de temporada **no** aparecen ni bloquean nada (escenario 7, decisión 44).
