@@ -7,6 +7,10 @@ en la auditoría (decisión 48).
 Escenario 1: al abrir el simulador se muestran todos los parámetros de la fórmula, precargados
 con los valores de la versión de reglas **del ranking** (no la vigente), con sus límites, los
 valores derivados como solo lectura y la línea que dice contra qué ranking se compara.
+
+Escenario 2: si las reglas vigentes no son las del ranking (por ejemplo, justo después de un
+ajuste de HU-28), se avisa con las dos versiones y se mandan los valores vigentes para que el
+front los cargue en el formulario. Cargarlos no simula ni cambia nada.
 """
 
 import uuid
@@ -21,18 +25,28 @@ from ..models import Ranking, RulesVersion
 from ..schemas.rules_simulation import (
     BaselineRankingOut,
     DerivedValueOut,
+    RulesInForceOut,
     RulesSimulationFormOut,
 )
 from ..scoring.catalog import FormulaDescriptor, get_descriptor
 from ..scoring.derived import derived_values
 from ..scoring.formatting import decimal_to_str
-from .formula_service import descriptor_out, error
+from .formula_service import descriptor_out, error, get_in_force
 from .ranking_service import get_ranking_in_force
 
 NO_BASELINE_MESSAGE = (
     "Todavía no hay un ranking calculado, así que no hay con qué comparar. "
     "Calculá el ranking para poder simular."
 )
+
+
+def rules_in_force_notice(in_force_version: int, ranking_version: int) -> str:
+    """Aviso de que las reglas vigentes no son las del ranking (texto del spec)."""
+    return (
+        f"Las reglas vigentes (versión {in_force_version}) son distintas de las del ranking "
+        f"(versión {ranking_version}). Podés cargarlas acá para ver cómo cambiaría el "
+        "ranking en el próximo cálculo."
+    )
 
 
 def baseline_text(completed_at: datetime, rules_version: int) -> str:
@@ -60,14 +74,46 @@ def _descriptor_of(rules: RulesVersion) -> FormulaDescriptor:
     return descriptor
 
 
+def _values_of(rules: RulesVersion) -> dict[str, Decimal]:
+    """Valores de una versión de reglas, en el orden de los parámetros de su fórmula.
+
+    JSONB no conserva el orden de las claves; el formulario sí lo necesita.
+    """
+    descriptor = _descriptor_of(rules)
+    return {p.key: Decimal(rules.values[p.key]) for p in descriptor.parameters}
+
+
+def _as_text(values: dict[str, Decimal]) -> dict[str, str]:
+    return {key: decimal_to_str(value) for key, value in values.items()}
+
+
+def _rules_in_force(
+    db: Session, club_id: uuid.UUID, ranking_rules: RulesVersion
+) -> RulesInForceOut:
+    """Las reglas vigentes si no son las del ranking (escenario 2).
+
+    Cada ajuste (HU-28) o publicación (HU-27) crea una versión nueva y nunca repite los
+    valores de la anterior, así que basta con comparar la versión.
+    """
+    in_force = get_in_force(db, club_id)
+    if in_force is None or in_force.id == ranking_rules.id:
+        return RulesInForceOut(differs=False)
+    return RulesInForceOut(
+        differs=True,
+        version=in_force.number,
+        values=_as_text(_values_of(in_force)),
+        notice=rules_in_force_notice(in_force.number, ranking_rules.number),
+    )
+
+
 def simulator_form(db: Session, club_id: uuid.UUID) -> RulesSimulationFormOut:
-    """`GET /admin/rules-simulation`: base, formulario precargado y derivados (escenario 1)."""
+    """`GET /admin/rules-simulation`: base, formulario precargado y derivados (escenario 1),
+    y las reglas vigentes cuando no son las del ranking (escenario 2)."""
     ranking, rules = _baseline(db, club_id)
     # Una corrida completada siempre tiene `completed_at` (`Ranking.mark_completed`).
     assert ranking.completed_at is not None
     descriptor = _descriptor_of(rules)
-    # En el orden de los parámetros de la fórmula: JSONB no conserva el orden de las claves.
-    values = {p.key: Decimal(rules.values[p.key]) for p in descriptor.parameters}
+    values = _values_of(rules)
     derived = derived_values(descriptor, values)
 
     return RulesSimulationFormOut(
@@ -80,7 +126,7 @@ def simulator_form(db: Session, club_id: uuid.UUID) -> RulesSimulationFormOut:
         ),
         baseline_text=baseline_text(ranking.completed_at, rules.number),
         formula=descriptor_out(descriptor),
-        values={key: decimal_to_str(value) for key, value in values.items()},
+        values=_as_text(values),
         derived_values=[
             DerivedValueOut(
                 symbol=d.symbol,
@@ -92,4 +138,5 @@ def simulator_form(db: Session, club_id: uuid.UUID) -> RulesSimulationFormOut:
             )
             for d in descriptor.derived_values
         ],
+        rules_in_force=_rules_in_force(db, club_id, rules),
     )

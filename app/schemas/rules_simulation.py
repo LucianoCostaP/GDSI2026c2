@@ -31,6 +31,19 @@ class DerivedValueOut(BaseModel):
     value: str | None
 
 
+class RulesInForceOut(BaseModel):
+    """Las reglas vigentes, cuando no son las del ranking (escenario 2).
+
+    El front ofrece "Cargar reglas vigentes", que solo copia `values` al formulario: no
+    simula ni cambia nada. Si son las mismas reglas, `differs` es `false` y el resto `null`.
+    """
+
+    differs: bool
+    version: int | None = None
+    values: dict[str, str] | None = None
+    notice: str | None = None
+
+
 class RulesSimulationFormOut(BaseModel):
     """`GET /admin/rules-simulation`: lo necesario para abrir el simulador (contrato §3)."""
 
@@ -42,3 +55,4 @@ class RulesSimulationFormOut(BaseModel):
     # Valores de la versión de reglas del ranking, por clave de parámetro.
     values: dict[str, str]
     derived_values: list[DerivedValueOut]
+    rules_in_force: RulesInForceOut
