@@ -75,6 +75,28 @@ class MessageOut(BaseModel):
     text: str
 
 
+class LabelsOut(BaseModel):
+    """Títulos de las dos columnas del resultado (escenario 23).
+
+    `before`: "Ranking actual" con la versión de reglas y la fecha del ranking; `after`:
+    "Simulación" (los parámetros cambiados viajan en `changed_parameters`).
+    """
+
+    before: str
+    after: str
+
+
+class DerivedChangeOut(BaseModel):
+    """Un valor derivado de la fórmula con los valores del ranking y con los hipotéticos.
+
+    `null` en los dos si la fórmula no tiene cálculo conocido para ese derivado.
+    """
+
+    symbol: str
+    before: str | None
+    after: str | None
+
+
 class ChangedParameterOut(BaseModel):
     """Un parámetro cuyo valor hipotético difiere del de las reglas del ranking (esc. 17)."""
 
@@ -195,9 +217,10 @@ class BreakdownStatusOut(BaseModel):
 class RulesSimulationResultOut(BaseModel):
     """`POST /admin/rules-simulation`: resultado principal (contrato §5).
 
-    Por ahora trae la base, si hubo cambios, los parámetros cambiados, las estadísticas, el
-    movimiento de posiciones, el histograma, la saturación, las alertas, el cambio por
-    componente y si hay que pedir el desglose por factor; falta la equidad (HU-30).
+    Por ahora trae la base, si hubo cambios, los títulos de las dos columnas, los parámetros
+    cambiados, los valores derivados, las estadísticas, el movimiento de posiciones, el
+    histograma, la saturación, las alertas, el cambio por componente y si hay que pedir el
+    desglose por factor; falta la equidad (HU-30).
     """
 
     ranking: BaselineRankingOut
@@ -205,8 +228,10 @@ class RulesSimulationResultOut(BaseModel):
     # `changed` | `no_changes` (ningún valor difiere del ranking, escenario 9).
     status: str
     message: MessageOut | None
+    labels: LabelsOut
     changed_parameters: list[ChangedParameterOut]
     factors_changed: list[str]
+    derived_values: list[DerivedChangeOut]
     summary: SummaryOut
     movement: MovementOut
     # Siempre los 20 bins, del más bajo al más alto.

@@ -1,6 +1,6 @@
 # Contrato de la API propia: simulación de cambio de reglas y análisis de equidad (HU-29 y HU-30)
 
-**Estado**: en implementación. Hecho: `GET /admin/rules-simulation` (escenarios 1, 2, 3 y 5), `POST /admin/rules-simulation` (escenarios 3 a 22: acceso, `NO_BASELINE`, `EMPTY_RANKING`, `INVALID_VALUES`, sin mirar bloqueo ni corte de temporada, recálculo desde la instantánea, `NO_CHANGES`, un solo ranking por resultado, histograma, estadísticas, movimiento, saturación, alertas, cambio por componente, parámetros cambiados con su factor y `breakdown`) y `POST /admin/rules-simulation/breakdown` (escenarios 18 a 22: una simulación por factor aislado, ordenadas, con `weighs_most`, el resto y la nota de no aditividad; `single_factor` y `no_changes` sin simular nada más; `unavailable` si falla o pasa su tiempo máximo; atajo por pilares con test de paridad; `BASELINE_NOT_FOUND`). Falta en el `POST` principal `labels`, `derived_values` y `equity` (escenario 23 y HU-30) | **Fecha**: 2026-11-08
+**Estado**: en implementación. Hecho: `GET /admin/rules-simulation` (escenarios 1, 2, 3 y 5), `POST /admin/rules-simulation` (escenarios 3 a 24: acceso, `NO_BASELINE`, `EMPTY_RANKING`, `INVALID_VALUES`, sin mirar bloqueo ni corte de temporada, recálculo desde la instantánea, `NO_CHANGES`, un solo ranking por resultado, histograma, estadísticas, movimiento, saturación, alertas, cambio por componente, parámetros cambiados con su factor, `breakdown`, `labels` y `derived_values`; repetir no acumula nada) y `POST /admin/rules-simulation/breakdown` (escenarios 18 a 22: una simulación por factor aislado, ordenadas, con `weighs_most`, el resto y la nota de no aditividad; `single_factor` y `no_changes` sin simular nada más; `unavailable` si falla o pasa su tiempo máximo; atajo por pilares con test de paridad; `BASELINE_NOT_FOUND`). Falta `equity` en el `POST` principal (HU-30), el CSV (escenario 26) y HU-30 entero | **Fecha**: 2026-11-08
 **Specs**: `specs/hu-29-rules-change-impact-simulation/spec.md` (v4) y `specs/hu-30-equity-analysis/spec.md` (v2). Sus tablas de "Messages and codes", sus "Calculation definitions", las "Bands" y el "Export" mandan sobre este resumen. Ver también `specs/_shared/scoring-model.md` (reglas 1 a 5), `specs/_shared/cross-cutting.md` (secciones 5, 6 y 9) y las decisiones 44 a 49 de `specs/README.md`.
 **Es el contrato entre el backend y el frontend (`../tp_gestion_reactjs`).** Sigue las convenciones de `docs/contrato-api-reglas.md` (sección 1): una sola ruta por endpoint, club tomado de la cuenta, decimales como string, textos en español.
 
@@ -289,6 +289,9 @@ Lo mismo dentro de una variable: `class_c_attendance` con menos de 10 socios con
 | Campo | Tipo | Regla |
 |---|---|---|
 | `status` | string | `"changed"` \| `"no_changes"` (ningún valor difiere del ranking) |
+| `labels.before` | string | `"Ranking actual (reglas versión {n}, {dd/mm/aaaa})"`: versión de reglas **del ranking** y el día de `completed_at` en hora de Buenos Aires, el mismo de `baseline_text` (escenario 23, sección 9 punto 10). Viene también con `no_changes` (SC-002) |
+| `labels.after` | string | `"Simulación"`; los parámetros cambiados son los de `changed_parameters` |
+| `derived_values[]` | objetos | Uno por derivado del descriptor, en su orden: `symbol`, `before` (con los valores del ranking) y `after` (con los hipotéticos), calculados como en la sección 3 (6 decimales, sin ceros de más). `null` en los dos si la fórmula no tiene cálculo conocido |
 | `changed_parameters[].factor` | string | `"pillar_weights"` (`w_a`, `w_p`, `w_t`) \| `"alpha_a"` \| `"d_sat"` \| `"other"` (resto) (escenario 17). Orden: el del descriptor |
 | `factors_changed` | string[] | Los factores con al menos un parámetro cambiado, en el orden pillar_weights, alpha_a, d_sat, other |
 | `summary.*` | string `"0.00"` | Sobre los totales de 2 decimales. Desvío poblacional (divisor `N`); mediana con `N` par = promedio de los dos del medio; percentil por rango más cercano (`ceil(p/100·N)`). Redondeo mitad hacia arriba a 2 decimales **solo para mostrar**: alertas y umbrales usan los valores exactos. `difference` = simulación − ranking, calculada con los valores exactos y redondeada al final (puede diferir en 0,01 de restar los dos valores mostrados); nunca viaja `"-0.00"` |
@@ -427,6 +430,7 @@ Respetando el principio 1 de la constitución: **un solo motor**.
 | 7 | `POST` para el CSV, bajado como `blob` | Necesita el cuerpo con los valores y el `Authorization`; un enlace directo no los lleva |
 | 8 | `no_changes` igual trae todas las secciones | El escenario 9 dice que son iguales, no que se oculten |
 | 9 | El documento del socio forma parte de la instantánea (`tiebreak.dni`) | Decisión 49: el desempate completo sale de la instantánea, sin releer `socios` |
+| 10 | La fecha de `labels.before` es el día de `completed_at` en Buenos Aires, no `calculation_date` | Así coincide con la línea de la base de la misma pantalla. Las dos solo difieren si el cálculo cruza la medianoche. **A confirmar** si el spec quiere la fecha de la instantánea |
 
 ## 10. Qué falta en el frontend
 

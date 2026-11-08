@@ -65,6 +65,13 @@ falla o supera su tiempo máximo (9 s hasta 50.000 socios, 30 s hasta 500.000), 
 
 Escenario 22: cada simulación aislada pasa la misma validación, usa el mismo motor y el mismo
 desempate; el atajo por pilares (`PillarSimulator`) da exactamente el cálculo completo.
+
+Escenario 23: el resultado va lado a lado con la situación actual: "Ranking actual" con su
+versión de reglas y su fecha, y "Simulación" con los parámetros cambiados y los valores
+derivados de antes y después. (El análisis de equidad de HU-30 todavía no está.)
+
+Escenario 24: cada simulación es independiente. Nada se guarda entre pedidos ni dentro del
+proceso: cada uno lee el ranking, recalcula y responde.
 """
 
 import logging
@@ -88,10 +95,12 @@ from ..schemas.rules_simulation import (
     BreakdownStatusOut,
     ChangedParameterOut,
     ComponentChangeOut,
+    DerivedChangeOut,
     DerivedValueOut,
     FactorEffectOut,
     FlatnessAlertOut,
     HistogramBinOut,
+    LabelsOut,
     MessageOut,
     MovementOut,
     RemainderOut,
@@ -177,6 +186,7 @@ BASELINE_NOT_FOUND_MESSAGE = (
 SINGLE_FACTOR_MESSAGE = (
     "Cambiaste un solo grupo de parámetros: su efecto es el del resultado total."
 )
+AFTER_LABEL = "Simulación"
 BREAKDOWN_PENDING_MESSAGE = "Calculando el efecto de cada parámetro…"
 WEIGHS_MOST_MESSAGE = "Es el que más mueve el ranking."
 REMAINDER_LABEL = "Resto: otros parámetros e interacciones"
@@ -203,6 +213,20 @@ def baseline_text(completed_at: datetime, rules_version: int) -> str:
     """Línea de la base (texto del spec), con la hora de Buenos Aires."""
     moment = a_hora_buenos_aires(completed_at).strftime("%d/%m/%Y %H:%M")
     return f"Comparado con el ranking calculado el {moment} (reglas versión {rules_version})."
+
+
+def labels(completed_at: datetime, rules_version: int) -> LabelsOut:
+    """Títulos de las columnas (escenario 23). La fecha es la de la línea de la base: la del
+    cálculo del ranking en hora de Buenos Aires, así la pantalla no muestra dos fechas."""
+    day = a_hora_buenos_aires(completed_at).strftime("%d/%m/%Y")
+    return LabelsOut(
+        before=f"Ranking actual (reglas versión {rules_version}, {day})",
+        after=AFTER_LABEL,
+    )
+
+
+def _derived_text(derived: dict[str, Decimal], symbol: str) -> str | None:
+    return decimal_to_str(derived[symbol]) if symbol in derived else None
 
 
 def _rejection(
@@ -296,9 +320,7 @@ def simulator_form(db: Session, club_id: uuid.UUID) -> RulesSimulationFormOut:
                 symbol=d.symbol,
                 name=d.name,
                 expression=d.expression,
-                value=(
-                    decimal_to_str(derived[d.symbol]) if d.symbol in derived else None
-                ),
+                value=_derived_text(derived, d.symbol),
             )
             for d in descriptor.derived_values
         ],
@@ -329,6 +351,8 @@ def simulate(
 
     descriptor = _descriptor_of(rules)
     parameters = {p.key: p for p in descriptor.parameters}
+    derived_before = derived_values(descriptor, before_values)
+    derived_after = derived_values(descriptor, hypothetical)
     baseline = _baseline_out(ranking, rules)
     return RulesSimulationResultOut(
         ranking=baseline,
@@ -337,6 +361,7 @@ def simulate(
         message=None
         if changed
         else MessageOut(code="NO_CHANGES", text=NO_CHANGES_MESSAGE),
+        labels=labels(baseline.completed_at, rules.number),
         changed_parameters=[
             ChangedParameterOut(
                 key=key,
@@ -349,6 +374,14 @@ def simulate(
             for key in changed
         ],
         factors_changed=factors_changed(changed),
+        derived_values=[
+            DerivedChangeOut(
+                symbol=d.symbol,
+                before=_derived_text(derived_before, d.symbol),
+                after=_derived_text(derived_after, d.symbol),
+            )
+            for d in descriptor.derived_values
+        ],
         summary=_summary_out(summary(totals_before), summary(totals_after)),
         movement=_movement_out(moved),
         histogram=_histogram_out(histogram(totals_before), histogram(totals_after)),
