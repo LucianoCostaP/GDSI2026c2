@@ -10,11 +10,13 @@ from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from ..auth import CurrentAdmin, CurrentAdminClub
+from ..config import settings
 from ..db import get_db
 from ..models import EventoVisibleDB
 from ..schemas.ranking import PreflightWarningOut
 from ..schemas.segmentation import (
     GenerateSegmentationIn,
+    ScheduleSummaryOut,
     SegmentableEventOut,
     SegmentationEventOut,
     SegmentationOut,
@@ -51,6 +53,7 @@ def _segmentation_out(view: segmentation_service.SegmentationView) -> Segmentati
         ),
         ranked_total=segmentation.ranked_total,
         percentile_step=segmentation.percentile_step,
+        min_step_minutes=settings.wave_min_step_minutes,
         generated_at=segmentation.generated_at,
         generated_by=view.generated_by,
         waves=[
@@ -84,6 +87,15 @@ def segmentable_events(club_id: CurrentAdminClub, db: Db) -> list[SegmentableEve
                     ),
                 )
                 if item.segmentation
+                else None
+            ),
+            schedule=(
+                ScheduleSummaryOut(
+                    status=item.schedule.status,
+                    opening_at=item.schedule.opening_at,
+                    closing_at=item.schedule.closing_at,
+                )
+                if item.schedule
                 else None
             ),
         )

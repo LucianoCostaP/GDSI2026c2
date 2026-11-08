@@ -1,7 +1,7 @@
 # Contrato de la API propia: segmentación en olas (HU-36)
 
 **Estado**: alineado con lo implementado | **Fecha**: 2026-11-07
-**Spec**: `specs/hu-36-wave-segmentation/spec.md` (manda sobre este resumen) y su `plan.md`.
+**Spec**: `specs/hu-36-wave-segmentation/spec.md` (manda sobre este resumen). El cronograma de las olas es HU-37: `specs/hu-37-wave-schedule-generation/spec.md`.
 **Es el contrato entre el backend y el frontend (React).**
 
 ## 1. Convenciones
@@ -12,21 +12,22 @@ Las mismas que `docs/contrato-api-reglas.md`: una sola ruta por endpoint, `Autho
 
 | Método y ruta | Para qué | Escenarios |
 |---|---|---|
-| `GET /admin/segmentation/events` | Partidos publicados del club que todavía no empezaron, ordenados por fecha, con un resumen de sus olas si ya se generaron | 1 |
+| `GET /admin/segmentation/events` | Partidos publicados del club que todavía no empezaron, ordenados por fecha, con un resumen de sus olas y de su cronograma (HU-37) si ya existen | 1 |
 | `GET /admin/segmentation/preflight` | Advertencias antes de generar. No bloquean | 10 |
 | `GET /admin/events/{id_interno}/segmentation` | Las olas de un Partido, o `404 SEGMENTATION_NOT_FOUND` si todavía no se generaron | 5, 9 |
-| `POST /admin/events/{id_interno}/segmentation` | `{ "confirmed": bool }` → `201` la primera vez, `200` cuando reemplaza las anteriores | 1 a 8 |
+| `POST /admin/events/{id_interno}/segmentation` | `{ "confirmed": bool }` → `201` la primera vez, `200` cuando reemplaza las anteriores (y deja el cronograma vigente en `invalidated`) | 1 a 8 |
 
 **Lista de partidos**
 ```json
 [
   {
     "event": { "id_interno": "...", "titulo": "Boca vs. Racing", "fecha_hora": "2026-12-01T21:00:00Z", "lugar": "La Bombonera" },
-    "segmentation": { "generated_at": "2026-11-07T14:00:00Z", "waves_count": 5 }
+    "segmentation": { "generated_at": "2026-11-07T14:00:00Z", "waves_count": 5 },
+    "schedule": { "status": "confirmed", "opening_at": "2026-11-30T21:00:00Z", "closing_at": "2026-12-01T18:00:00Z" }
   }
 ]
 ```
-`segmentation` es `null` si el partido todavía no tiene olas.
+`segmentation` es `null` si el partido todavía no tiene olas. `schedule` es `null` si todavía no tiene cronograma; `status` es `draft`, `confirmed` o `invalidated` (las olas se regeneraron y hay que generarlo de nuevo).
 
 **Advertencias**: el mismo formato que `GET /admin/ranking/preflight`.
 ```json
@@ -44,6 +45,7 @@ Las mismas que `docs/contrato-api-reglas.md`: una sola ruta por endpoint, `Autho
   "ranking": { "id": 7, "completed_at": "2026-11-05T15:00:03Z", "rules_version": 3 },
   "ranked_total": 103,
   "percentile_step": 20,
+  "min_step_minutes": 5,
   "generated_at": "2026-11-07T14:00:00Z",
   "generated_by": "Flor Admin",
   "waves": [
@@ -51,6 +53,7 @@ Las mismas que `docs/contrato-api-reglas.md`: una sola ruta por endpoint, `Autho
   ]
 }
 ```
+- `min_step_minutes` es el mínimo vigente entre las aperturas de dos oleadas (`WAVE_MIN_STEP_MINUTES`, 5 por defecto). No se guarda con las olas: es el valor con que está levantado el back, y el cronograma (HU-37) lo usa para validar el período.
 - `ranking` es el ranking que se usó al generar, no necesariamente el vigente: las olas no cambian si después se recalcula (escenario 9).
 - Con pocos socios, las bandas vacías no aparecen y las olas se numeran de 1 a N; cada una conserva su rango de percentil original. Ejemplo con 3 socios: olas 1 (20–40 %), 2 (60–80 %) y 3 (80–100 %).
 
@@ -66,7 +69,7 @@ Se controlan en este orden:
 | `EVENT_ALREADY_STARTED` | `409` | El partido ya empezó |
 | `NO_COMPLETED_RANKING` | `409` | El club no tiene ningún ranking completado |
 | `RANKING_WITHOUT_SOCIOS` | `409` | El ranking vigente no tiene socios |
-| `SEGMENTATION_LOCKED` | `409` | La primera ola ya abrió (con HU-37) |
+| `SEGMENTATION_LOCKED` | `409` | La primera ola ya abrió: hay un cronograma confirmado (HU-37) cuya apertura ya pasó. Un borrador no bloquea |
 | `CONFIRMATION_REQUIRED` | `422` | El partido ya tiene olas y `confirmed` es `false` |
 
 ## 4. Qué hay en el frontend

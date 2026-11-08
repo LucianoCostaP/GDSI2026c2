@@ -63,6 +63,17 @@ class Settings(BaseSettings):
             raise ValueError("wave_percentile_step tiene que dividir a 100")
         return value
 
+    # Minutos mínimos entre las aperturas de dos oleadas seguidas (HU-37, cross-cutting
+    # sección 8).
+    wave_min_step_minutes: int = 5
+
+    @field_validator("wave_min_step_minutes")
+    @classmethod
+    def _wave_min_step_positive(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("wave_min_step_minutes tiene que ser mayor que 0")
+        return value
+
     # Compatibilidad con alias en mayúsculas
     @property
     def APP_NAME(self) -> str:

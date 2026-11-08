@@ -1,8 +1,7 @@
 """HU-36: generación de las olas de un Partido por la API del Admin (escenarios 1 a 10)."""
 
 import uuid
-from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -15,12 +14,10 @@ from app.config import settings
 from app.models import (
     AuditLog,
     EventoPendienteDB,
-    EventoVisibleDB,
-    Ranking,
-    RankingEntry,
     RankingState,
-    Socio,
     User,
+    WaveSchedule,
+    WaveScheduleStatus,
     WaveSegmentation,
     utcnow,
 )
@@ -28,21 +25,22 @@ from app.services import segmentation_service
 from tests.conftest import BOCA_ID, RIVER_ID, MakeMember, Outbox, bearer, member_token
 from tests.hu25_helpers import (
     headers_for,
-    make_event,
     make_ranking,
     make_roster_load,
     publish_rules,
 )
+from tests.hu36_helpers import (
+    DAY,
+    HOUR,
+    code_of,
+    generate,
+    partido,
+    ranking_with,
+    segmentation_url,
+)
 
 EVENTS = "/admin/segmentation/events"
 PREFLIGHT = "/admin/segmentation/preflight"
-DAY = timedelta(days=1)
-HOUR = timedelta(hours=1)
-
-
-def segmentation_url(event: EventoVisibleDB | str) -> str:
-    event_id = event if isinstance(event, str) else event.id_interno
-    return f"/admin/events/{event_id}/segmentation"
 
 
 @pytest.fixture
@@ -50,81 +48,6 @@ def boca(client: TestClient, outbox: Outbox, admin: User) -> dict[str, str]:
     headers = headers_for(client, outbox, admin)
     publish_rules(client, headers)
     return headers
-
-
-def partido(
-    db: Session,
-    *,
-    when: datetime | None = None,
-    tipo: str = "Partido",
-    club_id: uuid.UUID = BOCA_ID,
-) -> EventoVisibleDB:
-    return make_event(
-        db,
-        id_externo=f"P-{uuid.uuid4().hex[:8]}",
-        when=when or utcnow() + 10 * DAY,
-        tipo=tipo,
-        club_id=club_id,
-    )
-
-
-def ranking_with(
-    db: Session, admin: User, socios: int, *, at: datetime | None = None
-) -> Ranking:
-    """Un ranking completado del club de Boca con `socios` posiciones."""
-    moment = at or utcnow() - HOUR
-    ranking = make_ranking(
-        db, admin, RankingState.COMPLETED, calculated_at=moment, completed_at=moment
-    )
-    zero = Decimal("0.00")
-    for position in range(1, socios + 1):
-        suffix = uuid.uuid4().hex[:8]
-        socio = Socio(
-            club_id=BOCA_ID,
-            id_externo=f"ext-{suffix}",
-            dni=str(uuid.uuid4().int)[:8],
-            numero_socio=f"N-{suffix}",
-            nombre="Ana Socia",
-            fecha_nacimiento=date(1980, 1, 1),
-            fecha_alta=date(2015, 3, 1),
-            estado_cuota="al_dia",
-            email=f"{suffix}@example.com",
-            distancia_km=Decimal("10.00"),
-        )
-        db.add(socio)
-        db.flush()
-        db.add(
-            RankingEntry(
-                ranking_id=ranking.id,
-                socio_id=socio.id,
-                position=position,
-                attendance_frequency=zero,
-                attendance_distance=zero,
-                institutional=zero,
-                seniority_age=zero,
-                new_member_bonus=zero,
-                cap_adjustment=zero,
-                total=zero,
-                inputs={},
-            )
-        )
-    db.commit()
-    return ranking
-
-
-def generate(
-    client: TestClient,
-    headers: dict[str, str],
-    event: EventoVisibleDB | str,
-    confirmed: bool = False,
-):
-    return client.post(
-        segmentation_url(event), json={"confirmed": confirmed}, headers=headers
-    )
-
-
-def code_of(response) -> str:
-    return response.json()["detail"]["code"]
 
 
 def audits(db: Session) -> list[AuditLog]:
@@ -155,9 +78,27 @@ def test_generates_for_a_published_partido_and_stores_the_ranking_used(
     assert body["ranking"]["rules_version"] == 1
     assert body["ranked_total"] == 10
     assert body["percentile_step"] == 20
+    assert body["min_step_minutes"] == 5
     assert body["generated_by"] == admin.name
     stored = db.scalars(select(WaveSegmentation)).one()
     assert (stored.event_id, stored.ranking_id) == (event.id_interno, ranking.id)
+
+
+def test_the_waves_show_the_minimum_step_of_the_setting(
+    client: TestClient,
+    db: Session,
+    admin: User,
+    boca: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ranking_with(db, admin, 10)
+    event = partido(db)
+    generate(client, boca, event)
+    monkeypatch.setattr(settings, "wave_min_step_minutes", 10)
+
+    body = client.get(segmentation_url(event), headers=boca).json()
+
+    assert body["min_step_minutes"] == 10
 
 
 def test_every_generation_is_audited(
@@ -453,6 +394,68 @@ def test_after_the_first_wave_opened_it_cannot_be_regenerated(
 
     assert response.status_code == 409
     assert code_of(response) == "SEGMENTATION_LOCKED"
+
+
+def schedule_for(
+    db: Session, admin: User, status: WaveScheduleStatus, opening: datetime
+) -> WaveSchedule:
+    """Un cronograma (HU-37) de las olas ya generadas, con la apertura indicada."""
+    segmentation = db.scalars(select(WaveSegmentation)).one()
+    schedule = WaveSchedule(
+        club_id=BOCA_ID,
+        event_id=segmentation.event_id,
+        segmentation_id=segmentation.id,
+        opening_at=opening,
+        closing_at=opening + DAY,
+        status=status,
+        generated_by_id=admin.id,
+    )
+    db.add(schedule)
+    db.commit()
+    return schedule
+
+
+def test_with_a_confirmed_schedule_already_open_the_waves_are_locked(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    # Sin mock: el bloqueo sale del cronograma confirmado de HU-37.
+    ranking_with(db, admin, 5)
+    event = partido(db)
+    generate(client, boca, event)
+    schedule_for(db, admin, WaveScheduleStatus.CONFIRMED, utcnow() - HOUR)
+
+    response = generate(client, boca, event, confirmed=True)
+
+    assert response.status_code == 409
+    assert code_of(response) == "SEGMENTATION_LOCKED"
+
+
+def test_a_draft_schedule_past_its_opening_does_not_lock_the_waves(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    ranking_with(db, admin, 5)
+    event = partido(db)
+    generate(client, boca, event)
+    schedule_for(db, admin, WaveScheduleStatus.DRAFT, utcnow() - HOUR)
+
+    response = generate(client, boca, event, confirmed=True)
+
+    assert response.status_code == 200
+
+
+def test_regenerating_the_waves_invalidates_the_schedule(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    ranking_with(db, admin, 5)
+    event = partido(db)
+    generate(client, boca, event)
+    schedule = schedule_for(db, admin, WaveScheduleStatus.CONFIRMED, utcnow() + DAY)
+
+    response = generate(client, boca, event, confirmed=True)
+
+    assert response.status_code == 200
+    db.refresh(schedule)
+    assert schedule.status == WaveScheduleStatus.INVALIDATED
 
 
 # Escenario 9

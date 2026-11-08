@@ -23,9 +23,12 @@ from ..models import (
     RulesVersion,
     TipoEvento,
     User,
+    WaveSchedule,
+    WaveScheduleStatus,
     WaveSegmentation,
     utcnow,
 )
+from ..scoring.wave_schedule import first_wave_open
 from ..scoring.waves import Wave, build_waves
 from . import ranking_preflight_service
 from .formula_service import error
@@ -49,11 +52,47 @@ class SegmentationView:
 class SegmentableEvent:
     event: EventoVisibleDB
     segmentation: WaveSegmentation | None
+    # Cronograma de las olas (HU-37), si ya se generó.
+    schedule: WaveSchedule | None
 
 
-def first_wave_opened(segmentation: WaveSegmentation) -> bool:
-    """Si la primera ola ya abrió. Sin cronograma (HU-37) ninguna ola abre todavía."""
-    return False
+def first_wave_opened(
+    db: Session, segmentation: WaveSegmentation, now: datetime
+) -> bool:
+    """Si la primera ola ya abrió: hay un cronograma confirmado (HU-37) y llegó su
+    apertura. Un borrador no abre ninguna ola, aunque su apertura haya pasado."""
+    opening_at = db.scalar(
+        select(WaveSchedule.opening_at).where(
+            WaveSchedule.event_id == segmentation.event_id,
+            WaveSchedule.status == WaveScheduleStatus.CONFIRMED,
+        )
+    )
+    return opening_at is not None and first_wave_open(asegurar_utc(opening_at), now)
+
+
+def invalidate_schedule(db: Session, event_id: str, actor: User) -> None:
+    """Regenerar las olas invalida el cronograma vigente del Partido (HU-36 FR-007, HU-37):
+    sus horas ya no corresponden a las olas nuevas y hay que generarlo de nuevo."""
+    schedule = db.scalar(
+        select(WaveSchedule).where(
+            WaveSchedule.event_id == event_id,
+            WaveSchedule.status != WaveScheduleStatus.INVALIDATED,
+        )
+    )
+    if schedule is None:
+        return
+    previous_status = schedule.status.value
+    schedule.status = WaveScheduleStatus.INVALIDATED
+    audit.record(
+        db,
+        "wave_schedule.invalidated",
+        actor_id=actor.id,
+        entity="wave_schedule",
+        entity_id=schedule.id,
+        event_id=event_id,
+        previous={"status": previous_status},
+        new={"status": WaveScheduleStatus.INVALIDATED.value},
+    )
 
 
 def _now(now: datetime | None) -> datetime:
@@ -81,12 +120,14 @@ def _view(db: Session, segmentation: WaveSegmentation) -> SegmentationView:
 def list_segmentable_events(
     db: Session, club_id: uuid.UUID, now: datetime | None = None
 ) -> list[SegmentableEvent]:
-    """Los Partidos publicados del club que todavía no empezaron, con su segmentación."""
+    """Los Partidos publicados del club que todavía no empezaron, con su segmentación y
+    su cronograma (HU-37)."""
     rows = db.execute(
-        select(EventoVisibleDB, WaveSegmentation)
+        select(EventoVisibleDB, WaveSegmentation, WaveSchedule)
         .outerjoin(
             WaveSegmentation, WaveSegmentation.event_id == EventoVisibleDB.id_interno
         )
+        .outerjoin(WaveSchedule, WaveSchedule.event_id == EventoVisibleDB.id_interno)
         .where(
             EventoVisibleDB.club_id == club_id,
             EventoVisibleDB.tipo == PARTIDO,
@@ -94,7 +135,10 @@ def list_segmentable_events(
         )
         .order_by(EventoVisibleDB.fecha_hora, EventoVisibleDB.id_interno)
     ).all()
-    return [SegmentableEvent(event, segmentation) for event, segmentation in rows]
+    return [
+        SegmentableEvent(event, segmentation, schedule)
+        for event, segmentation, schedule in rows
+    ]
 
 
 def build_preflight(
@@ -127,11 +171,19 @@ def get_segmentation(
     return _view(db, segmentation)
 
 
-def _segmentable_event(
-    db: Session, club_id: uuid.UUID, event_id: str, now: datetime
+def upcoming_partido(
+    db: Session,
+    club_id: uuid.UUID,
+    event_id: str,
+    now: datetime,
+    *,
+    action: str = "generar las olas",
+    started: str = "no se pueden generar olas",
 ) -> EventoVisibleDB:
-    """El Partido publicado y no empezado del club (escenario 6). Lo bloquea mientras se
-    genera, para que dos pedidos simultáneos no se pisen."""
+    """El Partido publicado y no empezado del club (HU-36 escenario 6, HU-37). Lo bloquea
+    mientras se genera, para que dos pedidos simultáneos no se pisen.
+
+    `action` y `started` adaptan los mensajes a quien lo usa (olas o cronograma)."""
     event = db.scalar(
         select(EventoVisibleDB)
         .where(
@@ -151,7 +203,7 @@ def _segmentable_event(
             raise error(
                 status.HTTP_409_CONFLICT,
                 "EVENT_NOT_PUBLISHED",
-                "El evento todavía no está publicado: publicalo antes de generar las olas.",
+                f"El evento todavía no está publicado: publicalo antes de {action}.",
             )
         raise error(
             status.HTTP_404_NOT_FOUND,
@@ -168,7 +220,7 @@ def _segmentable_event(
         raise error(
             status.HTTP_409_CONFLICT,
             "EVENT_ALREADY_STARTED",
-            "El partido ya empezó: no se pueden generar olas.",
+            f"El partido ya empezó: {started}.",
         )
     return event
 
@@ -205,13 +257,14 @@ def generate(
     now: datetime | None = None,
 ) -> tuple[SegmentationView, bool]:
     """Genera o regenera las olas del Partido. Devuelve la vista y si reemplazó una anterior."""
-    event = _segmentable_event(db, club_id, event_id, _now(now))
+    current = _now(now)
+    event = upcoming_partido(db, club_id, event_id, current)
     ranking, ranked_total = _ranking_to_use(db, club_id)
 
     segmentation = _segmentation_of(db, event.id_interno)
     previous = None
     if segmentation is not None:
-        if first_wave_opened(segmentation):
+        if first_wave_opened(db, segmentation, current):
             raise error(
                 status.HTTP_409_CONFLICT,
                 "SEGMENTATION_LOCKED",
@@ -243,6 +296,7 @@ def generate(
     else:
         for field, value in values.items():
             setattr(segmentation, field, value)
+        invalidate_schedule(db, event.id_interno, admin)
     db.flush()
 
     audit.record(

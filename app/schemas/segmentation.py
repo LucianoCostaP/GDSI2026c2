@@ -4,6 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from ..models import WaveScheduleStatus
 from .ranking import PreflightWarningOut
 
 
@@ -35,6 +36,9 @@ class SegmentationOut(BaseModel):
     ranking: SegmentationRankingOut
     ranked_total: int
     percentile_step: int
+    # Mínimo vigente entre las aperturas de dos oleadas (setting de HU-37), para que el
+    # front lo muestre antes de que exista un cronograma.
+    min_step_minutes: int
     generated_at: datetime
     generated_by: str
     waves: list[WaveOut]
@@ -45,9 +49,17 @@ class SegmentationSummaryOut(BaseModel):
     waves_count: int
 
 
+class ScheduleSummaryOut(BaseModel):
+    # Cronograma de las olas (HU-37): estado y período de reserva.
+    status: WaveScheduleStatus
+    opening_at: datetime
+    closing_at: datetime
+
+
 class SegmentableEventOut(BaseModel):
     event: SegmentationEventOut
     segmentation: SegmentationSummaryOut | None
+    schedule: ScheduleSummaryOut | None
 
 
 class SegmentationPreflightOut(BaseModel):
