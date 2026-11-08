@@ -124,6 +124,21 @@ def test_the_download_is_a_csv_file_named_with_the_buenos_aires_time(
     assert response.headers["cache-control"] == "no-store"
 
 
+def test_the_front_can_read_the_file_name_from_another_origin(
+    client: TestClient, boca: dict[str, str], ranking: Ranking
+) -> None:
+    # El front en producción está en otro origen: sin exponer el header no ve el nombre.
+    response = client.post(
+        EXPORT,
+        json={"ranking_id": ranking.id, "values": SPREAD},
+        headers={**boca, "Origin": "http://localhost:5173"},
+    )
+
+    assert response.status_code == 200, response.text
+    exposed = response.headers["access-control-expose-headers"].lower()
+    assert "content-disposition" in exposed
+
+
 def test_the_file_has_the_sections_in_the_order_of_the_screen(
     client: TestClient, boca: dict[str, str], ranking: Ranking
 ) -> None:

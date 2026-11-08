@@ -381,6 +381,7 @@ Cache-Control: no-store
 ```
 
 - UTF-8 con BOM, una fila de encabezado, punto decimal y coma como separador. Nombre con la hora de Buenos Aires de la descarga (reloj inyectable `now`).
+- `Content-Disposition` está en `Access-Control-Expose-Headers` (CORS): el front lo puede leer aunque esté en otro origen.
 - Columnas: `seccion,elemento,antes,despues,diferencia`. Una fila por cifra de la pantalla, en el orden de la pantalla; vacías donde no aplica.
 - Secciones, en este orden: `contexto`, `parametros`, `resumen`, `histograma`, `saturacion`, `componentes`, `parametro_aislado` (con la fila "Resto"), `perfil`, `segmento`, `veredicto`.
 - Una sección que no estuvo disponible se omite: `parametro_aislado` si el desglose da `unavailable`, `single_factor` o `no_changes`; `perfil`, `segmento` y `veredicto` si el análisis da `EQUITY_UNAVAILABLE`. Un grupo chico aparece con su cantidad y el resto vacío.

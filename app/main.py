@@ -88,7 +88,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Retry-After", "X-Total-Count"],
+    # `Content-Disposition`: el nombre del CSV de HU-29, que el front lee en otro origen.
+    expose_headers=["Retry-After", "X-Total-Count", "Content-Disposition"],
 )
 
 
