@@ -29,6 +29,9 @@ ranking: ni el padrón, ni las asistencias, ni las actividades.
 
 Escenario 9: con los valores del ranking, todo da igual que lo guardado y el resultado lo dice
 con `NO_CHANGES`.
+
+Escenarios 11 y 12: el histograma de 20 bins y las estadísticas (media, mediana, desvío,
+percentiles 10 y 90) de los totales del ranking y de la simulación (`scoring.distribution`).
 """
 
 import uuid
@@ -46,17 +49,21 @@ from ..schemas.rules_simulation import (
     BaselineRankingOut,
     ChangedParameterOut,
     DerivedValueOut,
+    HistogramBinOut,
     MessageOut,
     MovementOut,
     RulesInForceOut,
     RulesSimulationFormOut,
     RulesSimulationResultOut,
+    StatsOut,
+    SummaryOut,
 )
 from ..scoring.catalog import FormulaDescriptor, get_descriptor
 from ..scoring.components import COMPONENT_KEYS
 from ..scoring.derived import derived_values
+from ..scoring.distribution import BINS, Summary, histogram, summary
 from ..scoring.engine import ScoringParameters
-from ..scoring.formatting import decimal_to_str
+from ..scoring.formatting import decimal_fixed, decimal_to_str
 from ..scoring.rules_simulation import (
     StoredEntry,
     changed_keys,
@@ -225,6 +232,8 @@ def simulate(
     before = stored_entries(db, ranking.id)
     after = simulate_entries(before, ScoringParameters.from_values(hypothetical))
     moved = movement(before, after)
+    totals_before = [entry.total for entry in before]
+    totals_after = [entry.total for entry in after]
 
     descriptor = _descriptor_of(rules)
     parameters = {p.key: p for p in descriptor.parameters}
@@ -248,8 +257,42 @@ def simulate(
             for key in changed
         ],
         factors_changed=factors_changed(changed),
+        summary=_summary_out(summary(totals_before), summary(totals_after)),
         movement=MovementOut(up=moved.up, down=moved.down, unchanged=moved.unchanged),
+        histogram=_histogram_out(histogram(totals_before), histogram(totals_after)),
     )
+
+
+def _stats_out(stats: Summary) -> StatsOut:
+    return StatsOut(
+        mean=decimal_fixed(stats.mean, 2),
+        median=decimal_fixed(stats.median, 2),
+        std_dev=decimal_fixed(stats.std_dev, 2),
+        p10=decimal_fixed(stats.p10, 2),
+        p90=decimal_fixed(stats.p90, 2),
+    )
+
+
+def _summary_out(before: Summary, after: Summary) -> SummaryOut:
+    """Escenario 12: la diferencia sale de los valores exactos, redondeada al final."""
+    return SummaryOut(
+        before=_stats_out(before),
+        after=_stats_out(after),
+        difference=_stats_out(after.minus(before)),
+    )
+
+
+def _histogram_out(before: list[int], after: list[int]) -> list[HistogramBinOut]:
+    return [
+        HistogramBinOut(
+            label=bin_.label,
+            lower=str(bin_.lower),
+            upper=str(bin_.upper),
+            before=count_before,
+            after=count_after,
+        )
+        for bin_, count_before, count_after in zip(BINS, before, after, strict=True)
+    ]
 
 
 def stored_entries(db: Session, ranking_id: int) -> list[StoredEntry]:

@@ -98,12 +98,43 @@ class MovementOut(BaseModel):
     unchanged: int
 
 
+class StatsOut(BaseModel):
+    """Estadísticas de los totales, con 2 decimales para mostrar (escenario 12)."""
+
+    mean: str
+    median: str
+    std_dev: str
+    p10: str
+    p90: str
+
+
+class SummaryOut(BaseModel):
+    """Las estadísticas del ranking, las de la simulación y su diferencia (simulación − ranking).
+
+    La diferencia se calcula con los valores exactos y se redondea al final.
+    """
+
+    before: StatsOut
+    after: StatsOut
+    difference: StatsOut
+
+
+class HistogramBinOut(BaseModel):
+    """Un bin de 5 puntos con los socios del ranking y de la simulación (escenario 11)."""
+
+    label: str
+    lower: str
+    upper: str
+    before: int
+    after: int
+
+
 class RulesSimulationResultOut(BaseModel):
     """`POST /admin/rules-simulation`: resultado principal (contrato §5).
 
-    Por ahora trae la base, si hubo cambios, los parámetros cambiados y el movimiento de
-    posiciones; las demás secciones (distribución, saturación, componentes, equidad) llegan
-    con los escenarios 11 a 16 y HU-30.
+    Por ahora trae la base, si hubo cambios, los parámetros cambiados, las estadísticas, el
+    movimiento de posiciones y el histograma; las demás secciones (saturación, componentes,
+    equidad) llegan con los escenarios 13 a 16 y HU-30.
     """
 
     ranking: BaselineRankingOut
@@ -113,4 +144,7 @@ class RulesSimulationResultOut(BaseModel):
     message: MessageOut | None
     changed_parameters: list[ChangedParameterOut]
     factors_changed: list[str]
+    summary: SummaryOut
     movement: MovementOut
+    # Siempre los 20 bins, del más bajo al más alto.
+    histogram: list[HistogramBinOut]
