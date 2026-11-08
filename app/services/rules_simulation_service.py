@@ -32,9 +32,16 @@ con `NO_CHANGES`.
 
 Escenarios 11 y 12: el histograma de 20 bins y las estadísticas (media, mediana, desvío,
 percentiles 10 y 90) de los totales del ranking y de la simulación (`scoring.distribution`).
+
+Escenario 13: el movimiento suma el cambio absoluto medio de posición y las subidas y bajadas
+relevantes (al menos el 1 % del ranking).
+
+Escenario 14: socios en el tope, con ajuste por tope, empatados y el empate más grande, en las
+dos situaciones.
 """
 
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -55,16 +62,27 @@ from ..schemas.rules_simulation import (
     RulesInForceOut,
     RulesSimulationFormOut,
     RulesSimulationResultOut,
+    SaturationCountsOut,
+    SaturationOut,
     StatsOut,
     SummaryOut,
 )
 from ..scoring.catalog import FormulaDescriptor, get_descriptor
 from ..scoring.components import COMPONENT_KEYS
 from ..scoring.derived import derived_values
-from ..scoring.distribution import BINS, Summary, histogram, summary
+from ..scoring.distribution import (
+    BINS,
+    Saturation,
+    Summary,
+    histogram,
+    saturation,
+    summary,
+)
 from ..scoring.engine import ScoringParameters
 from ..scoring.formatting import decimal_fixed, decimal_to_str
 from ..scoring.rules_simulation import (
+    Movement,
+    SimulatedEntry,
     StoredEntry,
     changed_keys,
     factor_of,
@@ -258,8 +276,37 @@ def simulate(
         ],
         factors_changed=factors_changed(changed),
         summary=_summary_out(summary(totals_before), summary(totals_after)),
-        movement=MovementOut(up=moved.up, down=moved.down, unchanged=moved.unchanged),
+        movement=_movement_out(moved),
         histogram=_histogram_out(histogram(totals_before), histogram(totals_after)),
+        saturation=SaturationOut(
+            before=_saturation_out(saturation(totals_before, _cap_adjustments(before))),
+            after=_saturation_out(saturation(totals_after, _cap_adjustments(after))),
+        ),
+    )
+
+
+def _movement_out(moved: Movement) -> MovementOut:
+    return MovementOut(
+        up=moved.up,
+        down=moved.down,
+        unchanged=moved.unchanged,
+        mean_abs_position_change=decimal_fixed(moved.mean_abs_position_change, 1),
+        relevant_threshold=moved.relevant_threshold,
+        relevant_up=moved.relevant_up,
+        relevant_down=moved.relevant_down,
+    )
+
+
+def _cap_adjustments(entries: Sequence[StoredEntry | SimulatedEntry]) -> list[Decimal]:
+    return [entry.components["cap_adjustment"] for entry in entries]
+
+
+def _saturation_out(counts: Saturation) -> SaturationCountsOut:
+    return SaturationCountsOut(
+        at_cap=counts.at_cap,
+        needs_cap_adjustment=counts.needs_cap_adjustment,
+        tied=counts.tied,
+        largest_tie=counts.largest_tie,
     )
 
 

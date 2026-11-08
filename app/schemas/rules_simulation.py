@@ -90,12 +90,32 @@ class ChangedParameterOut(BaseModel):
 class MovementOut(BaseModel):
     """Socios que suben, bajan o quedan igual frente al ranking (escenario 13).
 
-    `up + down + unchanged` es la población del ranking.
+    `up + down + unchanged` es la población del ranking. `relevant_up` y `relevant_down`
+    cuentan a los que cambian al menos `relevant_threshold` posiciones (el 1 % del ranking).
     """
 
     up: int
     down: int
     unchanged: int
+    # Un decimal, mitad hacia arriba.
+    mean_abs_position_change: str
+    relevant_threshold: int
+    relevant_up: int
+    relevant_down: int
+
+
+class SaturationCountsOut(BaseModel):
+    """Tope, ajuste por tope y empates de una situación (escenario 14)."""
+
+    at_cap: int
+    needs_cap_adjustment: int
+    tied: int
+    largest_tie: int
+
+
+class SaturationOut(BaseModel):
+    before: SaturationCountsOut
+    after: SaturationCountsOut
 
 
 class StatsOut(BaseModel):
@@ -133,8 +153,8 @@ class RulesSimulationResultOut(BaseModel):
     """`POST /admin/rules-simulation`: resultado principal (contrato §5).
 
     Por ahora trae la base, si hubo cambios, los parámetros cambiados, las estadísticas, el
-    movimiento de posiciones y el histograma; las demás secciones (saturación, componentes,
-    equidad) llegan con los escenarios 13 a 16 y HU-30.
+    movimiento de posiciones, el histograma y la saturación; las demás secciones (alertas,
+    componentes, equidad) llegan con los escenarios 15 y 16 y HU-30.
     """
 
     ranking: BaselineRankingOut
@@ -148,3 +168,4 @@ class RulesSimulationResultOut(BaseModel):
     movement: MovementOut
     # Siempre los 20 bins, del más bajo al más alto.
     histogram: list[HistogramBinOut]
+    saturation: SaturationOut

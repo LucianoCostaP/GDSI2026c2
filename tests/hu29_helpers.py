@@ -4,9 +4,10 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Ranking, Socio, User
+from app.models import EventoVisibleDB, Ranking, Socio, User
 from app.services import ranking_run_service
 from tests.conftest import BOCA_ID
 from tests.hu25_helpers import (
@@ -29,6 +30,17 @@ CHANGED = {
     "alpha_a": "0.4",
     "d_sat": "600",
     "b_max": "20",
+}
+
+# Lleva al socio de `add_star_newcomer` por encima de 100: hace falta el ajuste por tope.
+TO_THE_CAP = {
+    **DEFAULTS,
+    "w_a": "0.6",
+    "w_p": "0.3",
+    "w_t": "0.1",
+    "d_sat": "600",
+    "b_max": "25",
+    "t_max": "365",
 }
 
 
@@ -107,3 +119,25 @@ def make_varied_club(db: Session) -> VariedClub:
 def run_ranking(db: Session, admin: User) -> Ranking:
     """Un cálculo de HU-25 en el momento fijo `NOW`, con las reglas vigentes."""
     return ranking_run_service.start_run(db, admin, BOCA_ID, now=NOW)
+
+
+def add_star_newcomer(db: Session) -> Socio:
+    """Un socio recién asociado que va a todo: lejos, a todos los partidos y a la asamblea, con
+    deporte federado. Con las reglas por defecto queda debajo de 100; con `TO_THE_CAP`, arriba.
+    Se agrega después de `make_varied_club`."""
+    star = make_socio(
+        db,
+        fecha_nacimiento=date(1990, 1, 1),
+        fecha_alta=date(2026, 10, 25),
+        distancia_km=Decimal("900.00"),
+    )
+    for event in db.scalars(select(EventoVisibleDB)):
+        load_attendance(db, event, [star])
+    make_activity(
+        db,
+        star,
+        tipo="deporte_federado",
+        desde=date(2025, 11, 1),
+        hasta=date(2026, 10, 28),
+    )
+    return star

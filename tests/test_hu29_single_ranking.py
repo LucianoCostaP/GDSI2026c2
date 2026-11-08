@@ -67,7 +67,8 @@ def assert_uses(body: dict[str, Any], ranking: Ranking, rules_version: int) -> N
     assert body["ranking"]["population_size"] == ranking.population_size
     assert body["baseline_text"] == baseline_text(ranking.completed_at, rules_version)
     # Las posiciones salen de ese ranking: suben + bajan + igual es su población.
-    assert sum(body["movement"].values()) == ranking.population_size
+    moved = body["movement"]
+    assert moved["up"] + moved["down"] + moved["unchanged"] == ranking.population_size
 
 
 # --- Aceptación: entre dos simulaciones ----------------------------------------------------

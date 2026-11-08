@@ -22,7 +22,6 @@ from app.models import AsistenciaDB, Ranking, RankingEntry, RulesVersion, Socio,
 from app.scoring.components import COMPONENT_KEYS
 from app.scoring.engine import ScoringParameters
 from app.scoring.rules_simulation import (
-    Movement,
     SimulatedEntry,
     StoredEntry,
     changed_keys,
@@ -123,12 +122,18 @@ def test_the_result_counts_the_movement_against_the_ranking(
     changes = [e.position - official[e.socio_id] for e in entries_of(db, ranking)]
     assert body["status"] == "changed"
     assert body["message"] is None
-    assert body["movement"] == {
+    assert {k: body["movement"][k] for k in ("up", "down", "unchanged")} == {
         "up": sum(1 for c in changes if c > 0),
         "down": sum(1 for c in changes if c < 0),
         "unchanged": sum(1 for c in changes if c == 0),
     }
-    assert sum(body["movement"].values()) == ranking.population_size == 7
+    assert (
+        body["movement"]["up"]
+        + body["movement"]["down"]
+        + body["movement"]["unchanged"]
+        == ranking.population_size
+        == 7
+    )
 
 
 def test_the_result_lists_the_changed_parameters_and_their_factors(
@@ -223,7 +228,8 @@ def test_source_data_is_not_re_read(
     unchanged = simulate(client, boca, DEFAULTS)
 
     assert again == first
-    assert unchanged["movement"] == {"up": 0, "down": 0, "unchanged": 7}
+    assert unchanged["status"] == "no_changes"
+    assert unchanged["movement"]["unchanged"] == 7
 
 
 def test_the_population_is_exactly_the_socios_of_the_ranking(
@@ -274,7 +280,9 @@ def test_movement_counts_up_down_and_unchanged() -> None:
     after = [moved_to(before[0], 3), moved_to(before[1], 1), moved_to(before[2], 2)]
     after.append(moved_to(before[3], 4))
 
-    assert movement(before, after) == Movement(up=2, down=1, unchanged=1)
+    moved = movement(before, after)
+
+    assert (moved.up, moved.down, moved.unchanged) == (2, 1, 1)
 
 
 @pytest.mark.parametrize(

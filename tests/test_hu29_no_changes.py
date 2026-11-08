@@ -63,7 +63,15 @@ def assert_no_changes(body: dict[str, Any], population: int) -> None:
     assert body["message"] == NO_CHANGES
     assert body["changed_parameters"] == []
     assert body["factors_changed"] == []
-    assert body["movement"] == {"up": 0, "down": 0, "unchanged": population}
+    assert body["movement"] == {
+        "up": 0,
+        "down": 0,
+        "unchanged": population,
+        "mean_abs_position_change": "0.0",
+        "relevant_threshold": 1,
+        "relevant_up": 0,
+        "relevant_down": 0,
+    }
 
 
 # --- Aceptación ----------------------------------------------------------------------------

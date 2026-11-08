@@ -1,10 +1,11 @@
-"""Distribución de los totales de un ranking (HU-29 escenarios 11 y 12).
+"""Distribución de los totales de un ranking (HU-29 escenarios 11, 12 y 14).
 
 Código puro y determinístico. Trabaja sobre los totales de 2 decimales (regla 1 del modelo de
 puntaje), tal como se guardan o como los devuelve el motor. Los valores son exactos; redondear
 para mostrar es cosa de quien los presenta ("Calculation definitions" del spec de HU-29).
 """
 
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal, localcontext
@@ -120,4 +121,36 @@ def summary(totals: Sequence[Decimal]) -> Summary:
         std_dev=std_dev,
         p10=percentile(ordered, 10),
         p90=percentile(ordered, 90),
+    )
+
+
+# --- Saturación y empates (escenario 14) ---------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Saturation:
+    """Socios en el tope, con ajuste por tope y empatados."""
+
+    # Total igual a 100,00.
+    at_cap: int
+    # Componente `cap_adjustment` menor que 0: sus componentes sumaban más de 100.
+    needs_cap_adjustment: int
+    # Socios cuyo total coincide con el de al menos otro socio.
+    tied: int
+    # Tamaño del grupo empatado más grande; 0 si no hay empates.
+    largest_tie: int
+
+
+def saturation(
+    totals: Sequence[Decimal], cap_adjustments: Sequence[Decimal]
+) -> Saturation:
+    """Cuenta sobre los totales de 2 decimales y el ajuste por tope de cada socio."""
+    if len(totals) != len(cap_adjustments):
+        raise ValueError("Hace falta un ajuste por tope por cada total.")
+    groups = [size for size in Counter(totals).values() if size > 1]
+    return Saturation(
+        at_cap=sum(1 for total in totals if total == _FULL_SCORE),
+        needs_cap_adjustment=sum(1 for adjustment in cap_adjustments if adjustment < 0),
+        tied=sum(groups),
+        largest_tie=max(groups, default=0),
     )

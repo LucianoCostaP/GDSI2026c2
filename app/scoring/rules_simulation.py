@@ -41,11 +41,20 @@ class SimulatedEntry:
 
 @dataclass(frozen=True)
 class Movement:
-    """Cuántos socios suben, bajan o quedan en su posición (escenario 13)."""
+    """Cómo se mueven las posiciones frente al ranking (escenario 13).
+
+    `up + down + unchanged` es la población. Los relevantes son un subconjunto de `up` y de
+    `down`: cambian al menos `relevant_threshold` posiciones.
+    """
 
     up: int
     down: int
     unchanged: int
+    # Promedio exacto de |cambio de posición|; se muestra con un decimal.
+    mean_abs_position_change: Decimal
+    relevant_threshold: int
+    relevant_up: int
+    relevant_down: int
 
 
 def simulate_entries(
@@ -83,15 +92,33 @@ def position_change(before: StoredEntry, after: SimulatedEntry) -> int:
     return before.position - after.position
 
 
+def relevant_threshold(population: int) -> int:
+    """`m = max(1, ceil(N / 100))`: el 1 % del ranking, fijo en el producto (también HU-30)."""
+    return max(1, -(-population // 100))
+
+
 def movement(
     before: Sequence[StoredEntry], after: Sequence[SimulatedEntry]
 ) -> Movement:
-    """Suben, bajan y sin cambio. `after` viene en el orden de `before` (`simulate_entries`)."""
+    """Suben, bajan, sin cambio, cambio absoluto medio y movimientos relevantes.
+
+    `after` viene en el orden de `before` (`simulate_entries`). Sube relevante un cambio
+    `≥ +m`; baja relevante uno `≤ −m`.
+    """
     changes = [position_change(b, a) for b, a in zip(before, after, strict=True)]
+    m = relevant_threshold(len(changes))
     return Movement(
         up=sum(1 for c in changes if c > 0),
         down=sum(1 for c in changes if c < 0),
         unchanged=sum(1 for c in changes if c == 0),
+        mean_abs_position_change=(
+            Decimal(sum(abs(c) for c in changes)) / len(changes)
+            if changes
+            else Decimal(0)
+        ),
+        relevant_threshold=m,
+        relevant_up=sum(1 for c in changes if c >= m),
+        relevant_down=sum(1 for c in changes if c <= -m),
     )
 
 
