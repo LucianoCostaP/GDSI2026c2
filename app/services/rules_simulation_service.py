@@ -15,6 +15,13 @@ front los cargue en el formulario. Cargarlos no simula ni cambia nada.
 Escenario 4: si el último ranking completado no tiene socios, simular se rechaza con
 `EMPTY_RANKING` antes de validar o calcular nada. Abrir el simulador no es error: el front ve
 `population_size = 0` y no ofrece simular.
+
+Escenario 6: los valores hipotéticos se validan contra la fórmula de la versión de reglas del
+ranking, con la misma validación, códigos y textos de HU-27 (`validate_values`); todas las
+violaciones vuelven juntas en un `422 INVALID_VALUES` y no se calcula nada.
+
+Escenario 7: el bloqueo de la fórmula (HU-27) y el corte de temporada (HU-28) gobiernan el
+**guardado** de reglas oficiales, no la vista previa: simular no los consulta.
 """
 
 import uuid
@@ -37,7 +44,8 @@ from ..schemas.rules_simulation import (
 from ..scoring.catalog import FormulaDescriptor, get_descriptor
 from ..scoring.derived import derived_values
 from ..scoring.formatting import decimal_to_str
-from .formula_service import descriptor_out, error, get_in_force
+from ..scoring.validation import validate_values
+from .formula_service import descriptor_out, error, get_in_force, violations_out
 from .ranking_service import get_ranking_in_force
 
 NO_BASELINE_MESSAGE = (
@@ -45,6 +53,9 @@ NO_BASELINE_MESSAGE = (
     "Calculá el ranking para poder simular."
 )
 EMPTY_RANKING_MESSAGE = "El último ranking no tiene socios: no hay nada para simular."
+INVALID_VALUES_MESSAGE = (
+    "Hay valores que no se pueden simular. Corregilos y volvé a intentar."
+)
 
 
 def rules_in_force_notice(in_force_version: int, ranking_version: int) -> str:
@@ -62,9 +73,11 @@ def baseline_text(completed_at: datetime, rules_version: int) -> str:
     return f"Comparado con el ranking calculado el {moment} (reglas versión {rules_version})."
 
 
-def _rejection(code: str, message: str) -> HTTPException:
-    """`409` con el formato de HU-27 y `Cache-Control: no-store`, como toda respuesta."""
-    exc = error(status.HTTP_409_CONFLICT, code, message)
+def _rejection(
+    code: str, message: str, status_code: int = status.HTTP_409_CONFLICT, **extra: Any
+) -> HTTPException:
+    """Error con el formato de HU-27 y `Cache-Control: no-store`, como toda respuesta."""
+    exc = error(status_code, code, message, **extra)
     exc.headers = {"Cache-Control": "no-store"}
     return exc
 
@@ -172,6 +185,15 @@ def simulate(
     ranking, rules = _baseline(db, club_id)
     if ranking.population_size == 0:
         raise _rejection("EMPTY_RANKING", EMPTY_RANKING_MESSAGE)
+    # Límites y regla de la suma: los de la fórmula de las reglas del ranking (escenario 7).
+    validation = validate_values(_descriptor_of(rules), raw_values)
+    if not validation.valid:
+        raise _rejection(
+            "INVALID_VALUES",
+            INVALID_VALUES_MESSAGE,
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            violations=violations_out(validation.violations),
+        )
     baseline = _baseline_out(ranking, rules)
     return RulesSimulationResultOut(
         ranking=baseline,

@@ -1,6 +1,6 @@
 # Contrato de la API propia: simulación de cambio de reglas y análisis de equidad (HU-29 y HU-30)
 
-**Estado**: en implementación. Hecho: `GET /admin/rules-simulation` (escenarios 1, 2, 3 y 5) y el esqueleto de `POST /admin/rules-simulation` (escenarios 3, 4 y 5: acceso, `NO_BASELINE` y `EMPTY_RANKING`; por ahora responde solo `ranking` y `baseline_text`, sin validar los valores) | **Fecha**: 2026-11-07
+**Estado**: en implementación. Hecho: `GET /admin/rules-simulation` (escenarios 1, 2, 3 y 5) y el esqueleto de `POST /admin/rules-simulation` (escenarios 3 a 7: acceso, `NO_BASELINE`, `EMPTY_RANKING`, `INVALID_VALUES`, sin mirar bloqueo ni corte de temporada; con valores válidos por ahora responde solo `ranking` y `baseline_text`) | **Fecha**: 2026-11-07
 **Specs**: `specs/hu-29-rules-change-impact-simulation/spec.md` (v4) y `specs/hu-30-equity-analysis/spec.md` (v2). Sus tablas de "Messages and codes", sus "Calculation definitions", las "Bands" y el "Export" mandan sobre este resumen. Ver también `specs/_shared/scoring-model.md` (reglas 1 a 5), `specs/_shared/cross-cutting.md` (secciones 5, 6 y 9) y las decisiones 44 a 49 de `specs/README.md`.
 **Es el contrato entre el backend y el frontend (`../tp_gestion_reactjs`).** Sigue las convenciones de `docs/contrato-api-reglas.md` (sección 1): una sola ruta por endpoint, club tomado de la cuenta, decimales como string, textos en español.
 

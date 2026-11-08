@@ -72,7 +72,7 @@ class RulesSimulationResultOut(BaseModel):
     """`POST /admin/rules-simulation`: resultado principal (contrato §5).
 
     Por ahora trae solo la base contra la que se compara; el resto de las secciones llega con
-    los escenarios de validación y cálculo.
+    los escenarios de cálculo (8 en adelante).
     """
 
     ranking: BaselineRankingOut
