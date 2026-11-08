@@ -12,7 +12,11 @@ from sqlalchemy.orm import Session
 
 from ..auth import CurrentAdmin, CurrentAdminClub
 from ..db import get_db
-from ..schemas.rules_simulation import RulesSimulationFormOut
+from ..schemas.rules_simulation import (
+    RulesSimulationFormOut,
+    RulesSimulationResultOut,
+    SimulationRequest,
+)
 from ..services import rules_simulation_service
 
 router = APIRouter(prefix="/admin/rules-simulation", tags=["admin rules simulation"])
@@ -30,3 +34,19 @@ def open_simulator(
     """
     response.headers["Cache-Control"] = "no-store"
     return rules_simulation_service.simulator_form(db, club_id)
+
+
+@router.post("", response_model=RulesSimulationResultOut)
+def run_simulation(
+    body: SimulationRequest,
+    _: CurrentAdmin,
+    club_id: CurrentAdminClub,
+    db: Db,
+    response: Response,
+) -> RulesSimulationResultOut:
+    """Simular los valores hipotéticos contra el último ranking completado. No guarda nada.
+
+    Responde `409 NO_BASELINE` sin ranking completado y `409 EMPTY_RANKING` si no tiene socios.
+    """
+    response.headers["Cache-Control"] = "no-store"
+    return rules_simulation_service.simulate(db, club_id, body.values)

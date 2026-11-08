@@ -56,3 +56,24 @@ class RulesSimulationFormOut(BaseModel):
     values: dict[str, str]
     derived_values: list[DerivedValueOut]
     rules_in_force: RulesInForceOut
+
+
+class SimulationRequest(BaseModel):
+    """Cuerpo de los `POST` (contrato §4): los valores hipotéticos, por clave de parámetro.
+
+    Llegan sin tipar (`Any`) para que la validación de HU-27 diga qué valor no es un número.
+    Un `club_id` que venga en el cuerpo se ignora (escenario 5).
+    """
+
+    values: dict[str, Any]
+
+
+class RulesSimulationResultOut(BaseModel):
+    """`POST /admin/rules-simulation`: resultado principal (contrato §5).
+
+    Por ahora trae solo la base contra la que se compara; el resto de las secciones llega con
+    los escenarios de validación y cálculo.
+    """
+
+    ranking: BaselineRankingOut
+    baseline_text: str

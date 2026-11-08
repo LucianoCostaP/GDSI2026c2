@@ -11,13 +11,18 @@ valores derivados como solo lectura y la línea que dice contra qué ranking se 
 Escenario 2: si las reglas vigentes no son las del ranking (por ejemplo, justo después de un
 ajuste de HU-28), se avisa con las dos versiones y se mandan los valores vigentes para que el
 front los cargue en el formulario. Cargarlos no simula ni cambia nada.
+
+Escenario 4: si el último ranking completado no tiene socios, simular se rechaza con
+`EMPTY_RANKING` antes de validar o calcular nada. Abrir el simulador no es error: el front ve
+`population_size = 0` y no ofrece simular.
 """
 
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
-from fastapi import status
+from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..core.date_utils import a_hora_buenos_aires
@@ -27,6 +32,7 @@ from ..schemas.rules_simulation import (
     DerivedValueOut,
     RulesInForceOut,
     RulesSimulationFormOut,
+    RulesSimulationResultOut,
 )
 from ..scoring.catalog import FormulaDescriptor, get_descriptor
 from ..scoring.derived import derived_values
@@ -38,6 +44,7 @@ NO_BASELINE_MESSAGE = (
     "Todavía no hay un ranking calculado, así que no hay con qué comparar. "
     "Calculá el ranking para poder simular."
 )
+EMPTY_RANKING_MESSAGE = "El último ranking no tiene socios: no hay nada para simular."
 
 
 def rules_in_force_notice(in_force_version: int, ranking_version: int) -> str:
@@ -55,12 +62,31 @@ def baseline_text(completed_at: datetime, rules_version: int) -> str:
     return f"Comparado con el ranking calculado el {moment} (reglas versión {rules_version})."
 
 
+def _rejection(code: str, message: str) -> HTTPException:
+    """`409` con el formato de HU-27 y `Cache-Control: no-store`, como toda respuesta."""
+    exc = error(status.HTTP_409_CONFLICT, code, message)
+    exc.headers = {"Cache-Control": "no-store"}
+    return exc
+
+
 def _baseline(db: Session, club_id: uuid.UUID) -> tuple[Ranking, RulesVersion]:
     """El último ranking completado del club y su versión de reglas, o `409 NO_BASELINE`."""
     ranking = get_ranking_in_force(db, club_id)
     if ranking is None:
-        raise error(status.HTTP_409_CONFLICT, "NO_BASELINE", NO_BASELINE_MESSAGE)
+        raise _rejection("NO_BASELINE", NO_BASELINE_MESSAGE)
     return ranking, db.get_one(RulesVersion, ranking.rules_version_id)
+
+
+def _baseline_out(ranking: Ranking, rules: RulesVersion) -> BaselineRankingOut:
+    # Una corrida completada siempre tiene `completed_at` (`Ranking.mark_completed`).
+    assert ranking.completed_at is not None
+    return BaselineRankingOut(
+        id=ranking.id,
+        completed_at=ranking.completed_at,
+        calculation_date=ranking.calculation_date,
+        rules_version=rules.number,
+        population_size=ranking.population_size,
+    )
 
 
 def _descriptor_of(rules: RulesVersion) -> FormulaDescriptor:
@@ -110,21 +136,14 @@ def simulator_form(db: Session, club_id: uuid.UUID) -> RulesSimulationFormOut:
     """`GET /admin/rules-simulation`: base, formulario precargado y derivados (escenario 1),
     y las reglas vigentes cuando no son las del ranking (escenario 2)."""
     ranking, rules = _baseline(db, club_id)
-    # Una corrida completada siempre tiene `completed_at` (`Ranking.mark_completed`).
-    assert ranking.completed_at is not None
+    baseline = _baseline_out(ranking, rules)
     descriptor = _descriptor_of(rules)
     values = _values_of(rules)
     derived = derived_values(descriptor, values)
 
     return RulesSimulationFormOut(
-        ranking=BaselineRankingOut(
-            id=ranking.id,
-            completed_at=ranking.completed_at,
-            calculation_date=ranking.calculation_date,
-            rules_version=rules.number,
-            population_size=ranking.population_size,
-        ),
-        baseline_text=baseline_text(ranking.completed_at, rules.number),
+        ranking=baseline,
+        baseline_text=baseline_text(baseline.completed_at, rules.number),
         formula=descriptor_out(descriptor),
         values=_as_text(values),
         derived_values=[
@@ -139,4 +158,22 @@ def simulator_form(db: Session, club_id: uuid.UUID) -> RulesSimulationFormOut:
             for d in descriptor.derived_values
         ],
         rules_in_force=_rules_in_force(db, club_id, rules),
+    )
+
+
+def simulate(
+    db: Session, club_id: uuid.UUID, raw_values: dict[str, Any]
+) -> RulesSimulationResultOut:
+    """`POST /admin/rules-simulation`: el ranking se fija al empezar (escenario 10).
+
+    Orden de los rechazos: `NO_BASELINE` (escenario 3), `EMPTY_RANKING` (escenario 4) y
+    después la validación de los valores (escenario 6).
+    """
+    ranking, rules = _baseline(db, club_id)
+    if ranking.population_size == 0:
+        raise _rejection("EMPTY_RANKING", EMPTY_RANKING_MESSAGE)
+    baseline = _baseline_out(ranking, rules)
+    return RulesSimulationResultOut(
+        ranking=baseline,
+        baseline_text=baseline_text(baseline.completed_at, rules.number),
     )

@@ -15,7 +15,13 @@ from sqlalchemy.orm import Session
 
 from app.models import RankingState, User
 from tests.conftest import Outbox
-from tests.hu25_helpers import adjust_rules, headers_for, make_ranking, publish_rules
+from tests.hu25_helpers import (
+    DEFAULTS,
+    adjust_rules,
+    headers_for,
+    make_ranking,
+    publish_rules,
+)
 
 SIMULATOR = "/admin/rules-simulation"
 NO_BASELINE = {
@@ -32,11 +38,15 @@ def boca(client: TestClient, outbox: Outbox, admin: User) -> dict[str, str]:
 
 
 def assert_no_baseline(client: TestClient, headers: dict[str, str]) -> None:
-    response = client.get(SIMULATOR, headers=headers)
+    """Tanto al abrir el simulador como al pedir una simulación."""
+    opened = client.get(SIMULATOR, headers=headers)
+    run = client.post(SIMULATOR, json={"values": DEFAULTS}, headers=headers)
 
-    assert response.status_code == 409
-    # Solo el error: ni ranking, ni formulario, ni valores para precargar.
-    assert response.json() == {"detail": NO_BASELINE}
+    for response in (opened, run):
+        assert response.status_code == 409
+        # Solo el error: ni ranking, ni formulario, ni valores para precargar.
+        assert response.json() == {"detail": NO_BASELINE}
+        assert response.headers["cache-control"] == "no-store"
 
 
 # --- Aceptación: no hay ranking completado -------------------------------------------------
