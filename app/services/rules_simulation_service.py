@@ -72,6 +72,13 @@ derivados de antes y después. (El análisis de equidad de HU-30 todavía no est
 
 Escenario 24: cada simulación es independiente. Nada se guarda entre pedidos ni dentro del
 proceso: cada uno lee el ranking, recalcula y responde.
+
+Escenario 25: no hace falta ajustar reglas (HU-28) ni calcular un ranking (HU-25) para
+simular, y no hay forma de aplicar los valores: para hacerlos oficiales el Admin los carga en
+HU-28 desde `changed_parameters`.
+
+Escenario 26: el CSV con las cifras de la pantalla se arma en el momento sobre el mismo
+ranking (`export`, formato en `rules_simulation_export`) y no se guarda.
 """
 
 import logging
@@ -88,7 +95,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..core.date_utils import a_hora_buenos_aires
-from ..models import Ranking, RankingEntry, RankingState, RulesVersion
+from ..models import Ranking, RankingEntry, RankingState, RulesVersion, utcnow
 from ..schemas.rules_simulation import (
     BaselineRankingOut,
     BreakdownOut,
@@ -156,6 +163,7 @@ from ..scoring.rules_simulation import (
     simulate_entries,
 )
 from ..scoring.validation import validate_values
+from . import rules_simulation_export
 from .formula_service import descriptor_out, error, get_in_force, violations_out
 from .ranking_service import COMPONENT_NAMES, get_ranking_in_force
 
@@ -337,6 +345,14 @@ def simulate(
     después la validación de los valores (escenario 6).
     """
     ranking, rules = _baseline(db, club_id)
+    return _result(db, ranking, rules, raw_values)
+
+
+def _result(
+    db: Session, ranking: Ranking, rules: RulesVersion, raw_values: dict[str, Any]
+) -> RulesSimulationResultOut:
+    """El resultado principal sobre un ranking dado: el último (`simulate`) o el de la
+    pantalla (`export`)."""
     hypothetical = _hypothetical_values(ranking, rules, raw_values)
     before_values = _values_of(rules)
     changed = changed_keys(before_values, hypothetical)
@@ -526,6 +542,33 @@ def breakdown(
             parameters=[k for k in changed if factor_of(k) == OTHER],
         ),
         non_additive_note=NON_ADDITIVE_NOTE,
+    )
+
+
+def export(
+    db: Session,
+    club_id: uuid.UUID,
+    ranking_id: int,
+    raw_values: dict[str, Any],
+    now: datetime | None = None,
+) -> tuple[str, bytes]:
+    """`POST /admin/rules-simulation/export`: el CSV de la pantalla (escenario 26).
+
+    Recalcula el resultado principal y el desglose sobre el ranking de la pantalla, en el
+    momento, y no guarda nada. Devuelve el nombre del archivo (hora de Buenos Aires de `now`)
+    y su contenido. Rechazos: los de `breakdown`, en el mismo orden.
+    """
+    ranking = _ranking_of(db, club_id, ranking_id)
+    rules = db.get_one(RulesVersion, ranking.rules_version_id)
+    result = _result(db, ranking, rules, raw_values)
+    factors = breakdown(db, club_id, ranking_id, raw_values)
+    in_force = get_in_force(db, club_id)
+    rows = rules_simulation_export.csv_rows(
+        result, factors, in_force.number if in_force else rules.number
+    )
+    return (
+        rules_simulation_export.filename(now or utcnow()),
+        rules_simulation_export.csv_bytes(rows),
     )
 
 

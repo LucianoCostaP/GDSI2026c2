@@ -121,6 +121,7 @@ Texts in Spanish (es-AR), produced by the server. Errors answer like HU-27 (`{"d
 | No completed ranking | 409 | `NO_BASELINE` | Todavía no hay un ranking calculado, así que no hay con qué comparar. Calculá el ranking para poder simular. |
 | Ranking without Socios | 409 | `EMPTY_RANKING` | El último ranking no tiene socios: no hay nada para simular. |
 | Invalid values | 422 | `INVALID_VALUES` | Hay valores que no se pueden simular. Corregilos y volvé a intentar. Also returns `violations`, a list of `{code, parameter, message}` with the codes and texts of HU-27. |
+| Ranking of the result no longer available (effect by parameter or CSV of a ranking that is not a `completed` ranking of the club) | 409 | `BASELINE_NOT_FOUND` | El ranking de esta simulación ya no está disponible. Volvé a simular. |
 | Forbidden (Socio) | 403 | `FORBIDDEN` | (existing code) |
 | Admin without club | 403 | `ADMIN_WITHOUT_CLUB` | (existing code) |
 | Unauthenticated | 401 | `NOT_AUTHENTICATED` | (existing code) |
@@ -196,3 +197,4 @@ Texts in Spanish (es-AR), produced by the server. Errors answer like HU-27 (`{"d
 - v4: pre-fill and notice when the rules in force differ from the ranking; codes and texts (no more "informative message" nor "same messages as HU-28", which has none); validation reuses the codes of HU-27; the simulator works with the formula locked or after the season cut-off; empty ranking, permissions and tenancy; identity and parity conditions; single ranking per result.
 - v4: results extended: dispersion and percentiles, relevant movement, saturation and ties with alerts, change per component, effect of each factor on its own with the remainder, side-by-side labels, non-blocking delivery of the breakdown, CSV export, and ownership of the equity analysis of HU-30. Histogram bounds, rounding, median and percentile definitions fixed.
 - v4: performance target now consistent with cross-cutting section 6 (it said "expected volume").
+- v4: `BASELINE_NOT_FOUND` added to "Messages and codes" (effect by parameter and CSV ask for the ranking of the result shown, scenario 10).

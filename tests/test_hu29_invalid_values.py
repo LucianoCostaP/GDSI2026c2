@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.models import Ranking, RankingEntry, RulesVersion, User
 from app.scoring.catalog import SCORING_MODEL_V1
 from app.scoring.validation import validate_values
+from app.services import rules_simulation_service
 from app.services.formula_service import violations_out
 from tests.conftest import Outbox
 from tests.hu25_helpers import DEFAULTS, RUNS, headers_for, make_socio, publish_rules
@@ -186,6 +187,32 @@ def test_invalid_values_change_nothing(
         db.scalar(select(func.count()).select_from(model))
         for model in (RulesVersion, Ranking, RankingEntry)
     ] == counts
+
+
+@pytest.mark.parametrize("path", ["", "/breakdown", "/export"])
+def test_with_invalid_values_no_simulation_runs(
+    client: TestClient,
+    db: Session,
+    boca: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    path: str,
+) -> None:
+    # SC-008: 0 simulaciones con pesos que no suman 1,00; ni se leen las entradas.
+    def must_not_run(*_: Any, **__: Any) -> None:
+        raise AssertionError("Se simuló con valores inválidos.")
+
+    for name in ("stored_entries", "simulate_entries", "PillarSimulator"):
+        monkeypatch.setattr(rules_simulation_service, name, must_not_run)
+    ranking_id = db.scalar(select(Ranking.id))
+    values = with_values(w_a="0.65")
+
+    response = client.post(
+        f"{SIMULATOR}{path}",
+        json={"ranking_id": ranking_id, "values": values},
+        headers=boca,
+    )
+
+    assert [v["code"] for v in violations_of(response)] == ["SUM_CONSTRAINT_VIOLATED"]
 
 
 # --- Aceptación: valores válidos ------------------------------------------------------------

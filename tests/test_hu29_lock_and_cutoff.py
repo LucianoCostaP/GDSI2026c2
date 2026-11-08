@@ -15,10 +15,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import User
+from app.models import FormulaLock, FormulaLockState, User
 from app.scoring.catalog import SCORING_MODEL_V1, FormulaDescriptor
 from app.services import rules_simulation_service
-from tests.conftest import Outbox
+from tests.conftest import BOCA_ID, Outbox
 from tests.hu25_helpers import DEFAULTS, RUNS, headers_for, make_socio, publish_rules
 
 SIMULATOR = "/admin/rules-simulation"
@@ -74,6 +74,24 @@ def test_a_locked_formula_can_still_be_simulated(
     response = client.post(SIMULATOR, json={"values": CHANGED}, headers=boca)
 
     assert response.status_code == 200, response.text
+
+
+def test_simulating_leaves_the_formula_locked(
+    client: TestClient, db: Session, boca: dict[str, str]
+) -> None:
+    # Edge case "No effect on real data": el bloqueo nunca cambia.
+    lock_formula(client, boca)
+    lock = db.get_one(FormulaLock, BOCA_ID)
+    before = (lock.state, lock.reason, lock.changed_by_id, lock.changed_at)
+
+    response = client.post(SIMULATOR, json={"values": CHANGED}, headers=boca)
+    assert response.status_code == 200, response.text
+
+    db.expire_all()
+    lock = db.get_one(FormulaLock, BOCA_ID)
+    assert (lock.state, lock.reason, lock.changed_by_id, lock.changed_at) == before
+    assert lock.state == FormulaLockState.LOCKED
+    assert adjust(client, boca).json()["detail"]["code"] == "FORMULA_LOCKED"
 
 
 def test_after_the_season_cutoff_the_formula_can_still_be_simulated(

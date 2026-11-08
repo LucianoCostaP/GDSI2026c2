@@ -251,6 +251,10 @@ class BreakdownRequest(SimulationRequest):
     ranking_id: int
 
 
+class ExportRequest(BreakdownRequest):
+    """Cuerpo de `POST /export` (contrato §7): el CSV es del mismo ranking que la pantalla."""
+
+
 class FactorEffectOut(BaseModel):
     """Lo que mueve un factor solo, sobre los valores del ranking (escenario 18)."""
 

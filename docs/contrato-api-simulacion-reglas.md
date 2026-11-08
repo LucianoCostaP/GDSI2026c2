@@ -1,6 +1,6 @@
 # Contrato de la API propia: simulación de cambio de reglas y análisis de equidad (HU-29 y HU-30)
 
-**Estado**: en implementación. Hecho: `GET /admin/rules-simulation` (escenarios 1, 2, 3 y 5), `POST /admin/rules-simulation` (escenarios 3 a 24: acceso, `NO_BASELINE`, `EMPTY_RANKING`, `INVALID_VALUES`, sin mirar bloqueo ni corte de temporada, recálculo desde la instantánea, `NO_CHANGES`, un solo ranking por resultado, histograma, estadísticas, movimiento, saturación, alertas, cambio por componente, parámetros cambiados con su factor, `breakdown`, `labels` y `derived_values`; repetir no acumula nada) y `POST /admin/rules-simulation/breakdown` (escenarios 18 a 22: una simulación por factor aislado, ordenadas, con `weighs_most`, el resto y la nota de no aditividad; `single_factor` y `no_changes` sin simular nada más; `unavailable` si falla o pasa su tiempo máximo; atajo por pilares con test de paridad; `BASELINE_NOT_FOUND`). Falta `equity` en el `POST` principal (HU-30), el CSV (escenario 26) y HU-30 entero | **Fecha**: 2026-11-08
+**Estado**: en implementación. Hecho: `GET /admin/rules-simulation` (escenarios 1, 2, 3 y 5), `POST /admin/rules-simulation` (escenarios 3 a 24: acceso, `NO_BASELINE`, `EMPTY_RANKING`, `INVALID_VALUES`, sin mirar bloqueo ni corte de temporada, recálculo desde la instantánea, `NO_CHANGES`, un solo ranking por resultado, histograma, estadísticas, movimiento, saturación, alertas, cambio por componente, parámetros cambiados con su factor, `breakdown`, `labels` y `derived_values`; repetir no acumula nada; escenario 25: no hay ningún endpoint para aplicar) y `POST /admin/rules-simulation/breakdown` (escenarios 18 a 22: una simulación por factor aislado, ordenadas, con `weighs_most`, el resto y la nota de no aditividad; `single_factor` y `no_changes` sin simular nada más; `unavailable` si falla o pasa su tiempo máximo; atajo por pilares con test de paridad; `BASELINE_NOT_FOUND`). y `POST /admin/rules-simulation/export` (escenario 26: el CSV del ranking de la pantalla, sin las secciones de HU-30). Falta `equity` en el `POST` principal, `perfil`, `segmento` y `veredicto` en el CSV, y HU-30 entero | **Fecha**: 2026-11-08
 **Specs**: `specs/hu-29-rules-change-impact-simulation/spec.md` (v4) y `specs/hu-30-equity-analysis/spec.md` (v2). Sus tablas de "Messages and codes", sus "Calculation definitions", las "Bands" y el "Export" mandan sobre este resumen. Ver también `specs/_shared/scoring-model.md` (reglas 1 a 5), `specs/_shared/cross-cutting.md` (secciones 5, 6 y 9) y las decisiones 44 a 49 de `specs/README.md`.
 **Es el contrato entre el backend y el frontend (`../tp_gestion_reactjs`).** Sigue las convenciones de `docs/contrato-api-reglas.md` (sección 1): una sola ruta por endpoint, club tomado de la cuenta, decimales como string, textos en español.
 
@@ -24,7 +24,7 @@ Ningún endpoint **guarda** nada ni escribe en la auditoría (HU-29 FR-011, SC-0
 | `409` | `NO_BASELINE` | "Todavía no hay un ranking calculado, así que no hay con qué comparar. Calculá el ranking para poder simular." | No hay ningún ranking `completed` del club (solo `running`/`failed`, o ninguno). Una corrida `running` no cambia la base: sigue siendo el último `completed` | todos |
 | `409` | `EMPTY_RANKING` | "El último ranking no tiene socios: no hay nada para simular." | El último `completed` tiene `population_size = 0` | los tres `POST` |
 | `422` | `INVALID_VALUES` | "Hay valores que no se pueden simular. Corregilos y volvé a intentar." | Ver sección 4.1. Trae `violations` | los tres `POST` |
-| `409` | `BASELINE_NOT_FOUND` | "El ranking de esta simulación ya no está disponible. Volvé a simular." | `ranking_id` no es un ranking `completed` del club (sección 5 y 6). **Código de este contrato, no del spec** (sección 9) | `breakdown`, `export` |
+| `409` | `BASELINE_NOT_FOUND` | "El ranking de esta simulación ya no está disponible. Volvé a simular." | `ranking_id` no es un ranking `completed` del club (sección 5 y 6). Está en la tabla de mensajes de HU-29 (sección 9, punto 2) | `breakdown`, `export` |
 
 `GET` con `EMPTY_RANKING` no es error: responde 200 con `ranking.population_size = 0` y el front muestra el mensaje y no ofrece el botón de simular.
 
@@ -397,7 +397,22 @@ resumen,suben,,4120,
 histograma,[0;5),12,15,3
 ...
 ```
-(El separador de los rangos del histograma va como `;` dentro del elemento, o el rango entre comillas, para no romper el CSV.)
+(El rango del histograma va con `;` dentro del elemento: `[0;5)` … `[95;100]`.)
+
+Elementos de cada sección (sección 9, punto 11):
+
+| Sección | Elementos | Columnas con valor |
+|---|---|---|
+| `contexto` | `ranking calculado` (dd/mm/aaaa HH:MM, Buenos Aires), `versión de reglas del ranking`, `versión de reglas vigente` | `antes` |
+| `parametros` | el símbolo de cada parámetro cambiado (`wA`, `dsat`…), en el orden de `changed_parameters` | `antes`, `despues`, `diferencia` (después − antes, exacta) |
+| `resumen` | `media`, `mediana`, `desvío estándar`, `percentil 10`, `percentil 90` | `antes`, `despues`, `diferencia` (la de `summary.difference`) |
+| `resumen` | `suben`, `bajan`, `sin cambios`, `suben {m} posiciones o más`, `bajan {m} posiciones o más`, `cambio absoluto medio de posición` | `despues` |
+| `histograma` | los 20 rangos | `antes`, `despues`, `diferencia` (después − antes) |
+| `saturacion` | `en el tope de 100`, `con ajuste por tope`, `empatados`, `empate más grande` | `antes`, `despues`, `diferencia` (después − antes) |
+| `componentes` | la etiqueta de cada componente y `total`, como en `components` | `antes`, `despues`, `diferencia` |
+| `parametro_aislado` | por factor, en el orden del desglose: `{etiqueta}: cambio del total medio` (`diferencia`), `{etiqueta}: suben`, `{etiqueta}: bajan`, `{etiqueta}: cambio absoluto medio de posición` (`despues`); al final la fila del resto (`diferencia`) | según la fila |
+
+Las alertas y los valores derivados no van: el spec no los pone entre las secciones. Las cifras salen de las mismas respuestas que la pantalla, con los mismos redondeos. `export` recalcula el resultado principal y el desglose (el desglose con su tiempo máximo de siempre). La hora del nombre sale de `utcnow()` en el servicio, reemplazable en los tests.
 
 Errores: los mismos de los otros `POST`, en JSON.
 
@@ -422,15 +437,17 @@ Respetando el principio 1 de la constitución: **un solo motor**.
 | # | Decisión | Por qué |
 |---|---|---|
 | 1 | Desglose en un endpoint aparte, llamado por el front después del resultado principal | Escenario 21 pide no bloquear el resultado; dos pedidos sin estado evitan jobs y almacenamiento (nada se guarda) |
-| 2 | `breakdown` y `export` llevan `ranking_id`; si ya no es un ranking `completed` del club, `409 BASELINE_NOT_FOUND` | Escenario 10: el desglose y el CSV tienen que ser del mismo ranking que la pantalla. El código y su texto **no están en el spec**: hay que agregarlos a la tabla de HU-29 |
+| 2 | `breakdown` y `export` llevan `ranking_id`; si ya no es un ranking `completed` del club, `409 BASELINE_NOT_FOUND` | Escenario 10: el desglose y el CSV tienen que ser del mismo ranking que la pantalla. **Confirmado**: el código y su texto están en la tabla de "Messages and codes" de HU-29 |
 | 3 | Las seis diferencias de componentes suman la del total **con valores exactos** (el backend promedia con fracciones, sin redondeo intermedio); mostradas a 2 decimales pueden diferir en 0,01 | Redondear cada promedio por separado no conserva la suma. **A confirmar con el spec** (escenario 16, SC-007): o se acepta la diferencia de presentación, o se reparte el redondeo |
 | 4 | `GET` con `EMPTY_RANKING` responde 200 | El spec pone `EMPTY_RANKING` al pedir una simulación, no al abrir |
 | 5 | `club_id` en el cuerpo se ignora (no `422`) | Lo pide el escenario 5 de HU-29 |
-| 6 | Etiquetas de los factores y de los atributos (`distancia`, `antigüedad`, `edad`), y `share` con un decimal | El spec no las fija. **A confirmar** |
+| 6 | Etiquetas de los factores: `"Pesos de los pilares"`, `"Peso de la distancia (αA)"`, `"Punto de inflexión de la distancia (dsat)"` | El spec no las fija. **Confirmado** |
+| 6b | Etiquetas de los atributos (`distancia`, `antigüedad`, `edad`) y `share` con un decimal (HU-30) | El spec no las fija. **A confirmar** junto con HU-30 |
 | 7 | `POST` para el CSV, bajado como `blob` | Necesita el cuerpo con los valores y el `Authorization`; un enlace directo no los lleva |
 | 8 | `no_changes` igual trae todas las secciones | El escenario 9 dice que son iguales, no que se oculten |
 | 9 | El documento del socio forma parte de la instantánea (`tiebreak.dni`) | Decisión 49: el desempate completo sale de la instantánea, sin releer `socios` |
-| 10 | La fecha de `labels.before` es el día de `completed_at` en Buenos Aires, no `calculation_date` | Así coincide con la línea de la base de la misma pantalla. Las dos solo difieren si el cálculo cruza la medianoche. **A confirmar** si el spec quiere la fecha de la instantánea |
+| 10 | La fecha de `labels.before` es el día de `completed_at` en Buenos Aires, no `calculation_date` | Así coincide con la línea de la base de la misma pantalla. Las dos solo difieren si el cálculo cruza la medianoche. **Confirmado** |
+| 11 | Los nombres de los elementos del CSV (sección 7), la columna de cada cifra y la diferencia después − antes en parámetros, histograma y saturación | El spec fija secciones y columnas, no los textos de cada fila. **Confirmado** |
 
 ## 10. Qué falta en el frontend
 

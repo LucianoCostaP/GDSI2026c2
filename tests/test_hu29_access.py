@@ -17,7 +17,15 @@ from sqlalchemy.orm import Session
 
 from app.models import RankingState, User
 from app.services.rules_simulation_service import NO_BASELINE_MESSAGE
-from tests.conftest import RIVER_ID, MakeAdmin, MakeMember, Outbox, bearer, member_token
+from tests.conftest import (
+    BOCA_ID,
+    RIVER_ID,
+    MakeAdmin,
+    MakeMember,
+    Outbox,
+    bearer,
+    member_token,
+)
 from tests.hu25_helpers import (
     DEFAULTS,
     RUNS,
@@ -154,3 +162,46 @@ def test_the_ranking_of_another_club_is_never_the_baseline(
     assert response.json() == {
         "detail": {"code": "NO_BASELINE", "message": NO_BASELINE_MESSAGE}
     }
+
+
+def test_any_admin_of_the_club_can_use_the_simulator(
+    client: TestClient,
+    outbox: Outbox,
+    make_admin: MakeAdmin,
+    boca: dict[str, str],
+    boca_ranking: int,
+) -> None:
+    # Edge case "Access: any Admin of the club": no hace falta ser quien calculó el ranking.
+    other = headers_for(client, outbox, make_admin(BOCA_ID))
+    values = {**DEFAULTS, "w_a": "0.65", "w_t": "0.15", "alpha_a": "0.4"}
+    body = {"ranking_id": boca_ranking, "values": values}
+
+    opened = client.get(SIMULATOR, headers=other)
+    simulated = client.post(SIMULATOR, json={"values": values}, headers=other)
+    factors = client.post(f"{SIMULATOR}/breakdown", json=body, headers=other)
+    exported = client.post(f"{SIMULATOR}/export", json=body, headers=other)
+
+    for response in (opened, simulated, factors, exported):
+        assert response.status_code == 200, response.text
+    assert opened.json() == client.get(SIMULATOR, headers=boca).json()
+    assert (
+        simulated.json()
+        == client.post(SIMULATOR, json={"values": values}, headers=boca).json()
+    )
+
+
+@pytest.mark.parametrize("path", ["/breakdown", "/export"])
+def test_a_club_in_the_body_of_the_breakdown_or_the_csv_is_ignored(
+    client: TestClient, boca: dict[str, str], boca_ranking: int, path: str
+) -> None:
+    values = {**DEFAULTS, "w_a": "0.65", "w_t": "0.15", "alpha_a": "0.4"}
+    body = {"ranking_id": boca_ranking, "values": values}
+
+    with_club = client.post(
+        f"{SIMULATOR}{path}", json={**body, "club_id": str(RIVER_ID)}, headers=boca
+    )
+    without = client.post(f"{SIMULATOR}{path}", json=body, headers=boca)
+
+    # El club sale de la cuenta: el mismo ranking de Boca, la misma respuesta.
+    assert with_club.status_code == 200, with_club.text
+    assert with_club.content == without.content
