@@ -23,7 +23,9 @@ from .routers import (
     admin_participacion,
     admin_ranking,
     admin_rules_simulation,
+    admin_segmentation,
     admin_simulator,
+    admin_wave_schedule,
     auth,
     eventos,
     member_auth,
@@ -105,7 +107,9 @@ app.include_router(admin_formulas.router)
 app.include_router(admin_participacion.router)
 app.include_router(admin_ranking.router)
 app.include_router(admin_rules_simulation.router)
+app.include_router(admin_segmentation.router)
 app.include_router(admin_simulator.router)
+app.include_router(admin_wave_schedule.router)
 app.include_router(member_events.router)
 app.include_router(member_scoring.router)
 
