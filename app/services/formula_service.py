@@ -203,7 +203,7 @@ def _parameter_out(p: Parameter, value: Decimal | None = None) -> dict[str, Any]
     }
 
 
-def _descriptor_out(d: FormulaDescriptor) -> dict[str, Any]:
+def descriptor_out(d: FormulaDescriptor) -> dict[str, Any]:
     return {
         "id": d.id,
         "version": d.version,
@@ -346,7 +346,7 @@ def detail(
     descriptor = _descriptor_or_404(formula_id, version)
     rules = get_in_force(db, club_id)
     return {
-        **_descriptor_out(descriptor),
+        **descriptor_out(descriptor),
         "values": {
             key: decimal_to_str(value)
             for key, value in prefill_values(descriptor, rules).items()

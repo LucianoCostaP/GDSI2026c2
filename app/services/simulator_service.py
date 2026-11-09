@@ -19,7 +19,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, replace
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal
 
 from fastapi import status
@@ -65,7 +65,10 @@ from ..scoring.position import (
     z_for_level,
 )
 from ..scoring.ranking_order import RankingCandidate, ranks_above
-from ..scoring.snapshot import scoring_inputs_from_snapshot
+from ..scoring.snapshot import (
+    ranking_candidate_from_snapshot,
+    scoring_inputs_from_snapshot,
+)
 from .formula_service import get_in_force
 from .ranking_service import _socio_of, get_ranking_in_force
 
@@ -307,19 +310,6 @@ def _position_out(position: PositionRange) -> EstimatedPositionOut:
     )
 
 
-def _candidate(
-    socio_id: uuid.UUID, total: Decimal, inputs: dict, dni: str
-) -> RankingCandidate:
-    membership = inputs["membership"]
-    return RankingCandidate(
-        socio_id=socio_id,
-        total=total,
-        seniority_start=date.fromisoformat(membership["seniority_start"]),
-        birth_date=date.fromisoformat(membership["birth_date"]),
-        dni=dni,
-    )
-
-
 def _estimated_positions(
     db: Session,
     club: Club,
@@ -337,9 +327,9 @@ def _estimated_positions(
     """
     deadline = time.monotonic() + POSITION_TIME_BUDGET_SECONDS
     rows = db.execute(
-        select(RankingEntry.socio_id, RankingEntry.inputs, Socio.dni)
-        .join(Socio, Socio.id == RankingEntry.socio_id)
-        .where(RankingEntry.ranking_id == ranking.id)
+        select(RankingEntry.socio_id, RankingEntry.inputs).where(
+            RankingEntry.ranking_id == ranking.id
+        )
     ).all()
     match_class = str(event.clase)
     rate = club_rate(
@@ -373,8 +363,10 @@ def _estimated_positions(
         skips = calculate_score(_with_event(inputs, event, attends=False), params).total
         others.append(
             _Other(
-                attends=_candidate(row.socio_id, attends, row.inputs, row.dni),
-                skips=_candidate(row.socio_id, skips, row.inputs, row.dni),
+                attends=ranking_candidate_from_snapshot(
+                    row.socio_id, attends, row.inputs
+                ),
+                skips=ranking_candidate_from_snapshot(row.socio_id, skips, row.inputs),
                 attended=inputs.attended_by_class.get(match_class, 0),
                 counted=inputs.matches_by_class.get(match_class, 0),
             )
@@ -383,7 +375,7 @@ def _estimated_positions(
     z = z_for_level(club.position_range_level)
 
     def position_for(total: Decimal) -> PositionRange:
-        own = _candidate(socio.id, total, entry.inputs, socio.dni)
+        own = ranking_candidate_from_snapshot(socio.id, total, entry.inputs)
         outcomes = [
             OtherOutcome(
                 probability=attendance_probability(

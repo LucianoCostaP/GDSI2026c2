@@ -22,6 +22,7 @@ from .routers import (
     admin_formulas,
     admin_participacion,
     admin_ranking,
+    admin_rules_simulation,
     admin_segmentation,
     admin_simulator,
     admin_wave_schedule,
@@ -89,7 +90,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Retry-After", "X-Total-Count"],
+    # `Content-Disposition`: el nombre del CSV de HU-29, que el front lee en otro origen.
+    expose_headers=["Retry-After", "X-Total-Count", "Content-Disposition"],
 )
 
 
@@ -104,6 +106,7 @@ app.include_router(admin_events.router)
 app.include_router(admin_formulas.router)
 app.include_router(admin_participacion.router)
 app.include_router(admin_ranking.router)
+app.include_router(admin_rules_simulation.router)
 app.include_router(admin_segmentation.router)
 app.include_router(admin_simulator.router)
 app.include_router(admin_wave_schedule.router)

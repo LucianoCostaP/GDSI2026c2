@@ -50,7 +50,7 @@ from ..scoring.institutional_inputs import (
 )
 from ..scoring.membership_inputs import build_membership_inputs
 from ..scoring.ranking_order import RankingCandidate, assign_positions
-from ..scoring.snapshot import build_scoring_inputs
+from ..scoring.snapshot import build_scoring_inputs, build_snapshot
 from .formula_service import error, require_rules_in_force
 from .ranking_inputs import (
     load_activities_by_dni,
@@ -256,11 +256,7 @@ def _calculate_entries(
         score = calculate_score(
             build_scoring_inputs(attendance, institutional, membership), params
         )
-        snapshot = {
-            "attendance": attendance.as_dict(),
-            "institutional": institutional.as_dict(),
-            "membership": membership.as_dict(),
-        }
+        snapshot = build_snapshot(attendance, institutional, membership, dni=socio.dni)
         scored[socio.id] = (score.components, snapshot)
         candidates.append(
             RankingCandidate(

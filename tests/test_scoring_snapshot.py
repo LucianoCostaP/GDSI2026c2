@@ -1,6 +1,7 @@
 """HU-25, Ciclo 3c: instantánea de entradas y su paso al motor (módulo puro)."""
 
 import json
+import uuid
 from datetime import date
 from decimal import Decimal
 
@@ -14,7 +15,13 @@ from app.scoring.institutional_inputs import (
     build_institutional_inputs,
 )
 from app.scoring.membership_inputs import build_membership_inputs
-from app.scoring.snapshot import build_scoring_inputs, scoring_inputs_from_snapshot
+from app.scoring.ranking_order import RankingCandidate, assign_positions
+from app.scoring.snapshot import (
+    build_scoring_inputs,
+    build_snapshot,
+    ranking_candidate_from_snapshot,
+    scoring_inputs_from_snapshot,
+)
 from tests.scoring_reference import (
     REFERENCE_COMPONENTS,
     REFERENCE_INPUTS,
@@ -93,11 +100,7 @@ def test_the_reference_snapshot_gives_59_55() -> None:
 
 def test_a_snapshot_stored_as_json_rebuilds_the_same_inputs_and_score() -> None:
     attendance, institutional, membership = real_inputs()
-    snapshot = {
-        "attendance": attendance.as_dict(),
-        "institutional": institutional.as_dict(),
-        "membership": membership.as_dict(),
-    }
+    snapshot = build_snapshot(attendance, institutional, membership, dni="30111222")
 
     stored = json.loads(json.dumps(snapshot))
 
@@ -119,3 +122,66 @@ def test_the_same_snapshot_and_rules_give_the_same_score_every_time() -> None:
 def test_a_snapshot_missing_a_group_is_rejected() -> None:
     with pytest.raises(KeyError):
         scoring_inputs_from_snapshot({"attendance": {}, "institutional": {}})
+
+
+# --- Desempate desde la instantánea (regla 5) -----------------------------------------------
+
+
+def test_the_snapshot_has_the_four_groups_and_the_document() -> None:
+    attendance, institutional, membership = real_inputs()
+
+    snapshot = build_snapshot(attendance, institutional, membership, dni="30111222")
+
+    assert snapshot == {
+        "attendance": attendance.as_dict(),
+        "institutional": institutional.as_dict(),
+        "membership": membership.as_dict(),
+        "tiebreak": {"dni": "30111222"},
+    }
+
+
+def test_the_candidate_from_a_stored_snapshot_carries_every_tiebreak() -> None:
+    attendance, institutional, membership = real_inputs()
+    stored = json.loads(
+        json.dumps(
+            build_snapshot(attendance, institutional, membership, dni="30111222")
+        )
+    )
+    socio_id = uuid.uuid4()
+
+    candidate = ranking_candidate_from_snapshot(socio_id, Decimal("59.55"), stored)
+
+    assert candidate == RankingCandidate(
+        socio_id=socio_id,
+        total=Decimal("59.55"),
+        seniority_start=membership.seniority_start,
+        birth_date=membership.birth_date,
+        dni="30111222",
+    )
+
+
+def test_equal_totals_and_dates_are_ordered_by_the_document_of_the_snapshot() -> None:
+    attendance, institutional, membership = real_inputs()
+    higher_dni, lower_dni = uuid.uuid4(), uuid.uuid4()
+    candidates = [
+        ranking_candidate_from_snapshot(
+            socio_id,
+            Decimal("50.00"),
+            build_snapshot(attendance, institutional, membership, dni=dni),
+        )
+        for socio_id, dni in ((higher_dni, "30000001"), (lower_dni, "4000000"))
+    ]
+
+    ordered = [c.socio_id for _, c in assign_positions(candidates)]
+
+    # El documento se compara como número: 4.000.000 va antes que 30.000.001.
+    assert ordered == [lower_dni, higher_dni]
+
+
+def test_a_snapshot_without_the_document_is_rejected() -> None:
+    attendance, institutional, membership = real_inputs()
+    snapshot = build_snapshot(attendance, institutional, membership, dni="1")
+    del snapshot["tiebreak"]
+
+    with pytest.raises(KeyError):
+        ranking_candidate_from_snapshot(uuid.uuid4(), Decimal("1.00"), snapshot)
