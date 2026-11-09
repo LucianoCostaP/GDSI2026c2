@@ -1,10 +1,11 @@
-# Guía de Integración Frontend con Backend: HU-17, HU-22, HU-14 y HU-37
+# Guía de Integración Frontend con Backend: HU-17, HU-22, HU-14, HU-37 y HU-39
 
 Esta guía documenta la integración del frontend (`tp_gestion_reactjs`) con el backend FastAPI para las historias de usuario:
 - **HU-17 (Consulta de Próximos Eventos)**: Vista para socios autenticados.
 - **HU-22 (Definición de Importancia y Publicación de Eventos)**: Vista de gestión para administradores.
 - **HU-14 (Puntaje Actual y Posición en el Ranking)**: Vista de solo lectura para socios autenticados (sección 3.C).
 - **HU-37 (Cronograma de Habilitación de Oleadas)**: Vista de gestión para administradores (sección 3.D).
+- **HU-39 (Consulta de Turno Propio Asignado)**: Vista de solo lectura para socios autenticados (sección 3.E).
 
 ---
 
@@ -33,7 +34,7 @@ El backend aplica separación estricta por roles en [`app/auth.py`](file:///c:/U
 | Rol Requerido | Flujo de Login | Endpoints Habilitados |
 | :--- | :--- | :--- |
 | **Admin** (`user.role === 'admin'`) | `POST /auth/admin/login/request`<br>`POST /auth/admin/login/verify` | • `GET /admin/events/classes` (HU-22)<br>• `GET /admin/events/pending` (HU-22)<br>• `POST /admin/events/{id}/publish` (HU-22)<br>• `POST /admin/events/auto-publish` (HU-22)<br>• `GET`/`POST /admin/events/{id}/schedule` (HU-37)<br>• `POST /admin/events/{id}/schedule/confirm` (HU-37) |
-| **Socio** (`user.role === 'member'`) | `POST /auth/member/login/request`<br>`POST /auth/member/login/verify` | • `GET /events/upcoming` (HU-17)<br>• `GET /member/events` (HU-17)<br>• `GET /member/scoring/current` (HU-14) |
+| **Socio** (`user.role === 'member'`) | `POST /auth/member/login/request`<br>`POST /auth/member/login/verify` | • `GET /events/upcoming` (HU-17)<br>• `GET /member/events` (HU-17)<br>• `GET /member/scoring/current` (HU-14)<br>• `GET /member/events/{id}/slot` (HU-39) |
 
 > [!WARNING]
 > Si un usuario con rol `admin` intenta consumir `/events/upcoming`, el backend responderá **HTTP 403 Forbidden**. De igual modo, si un `member` intenta consumir `/admin/events/*`, recibirá **HTTP 403 Forbidden**.
@@ -274,6 +275,36 @@ La posición provisional ("el final del ranking") es solo de pantalla y puede re
 - **Listado**: `GET /admin/segmentation/events` (HU-36) trae `schedule: { status, opening_at, closing_at } | null` en cada partido.
 
 **Implementado en el front**: servicio `src/services/schedule.js` (`getSchedule`, `generateSchedule`, `confirmSchedule`, `toBuenosAiresIso`, `toBuenosAiresInput`), pantalla `src/pages/WaveSchedule.jsx` en la ruta `/admin/segmentation/:id/schedule` (solo admins), con acceso desde el detalle de olas y desde el listado "Oleadas".
+
+
+---
+
+### E. Endpoint de Socios: Turno Propio (HU-39)
+
+- **Ruta**: `GET /member/events/{id_interno}/slot`, la misma del `slot_url` de HU-17.
+- **Autenticación**: Bearer Token (Socio). Un Admin recibe `403 FORBIDDEN`. El club sale de la cuenta del socio; `club_id` en la query se ignora.
+- **Reloj de prueba**: acepta `X-Test-Clock` o `?reloj_simulado=` (ISO-8601), igual que HU-17. En producción se ignora.
+- **Reglas de Negocio**:
+  - Un evento inexistente, de otro club o no publicado responde `404 EVENT_NOT_FOUND`. Todo lo demás responde `200` con un `status`.
+  - La ola sale de la posición del socio en el ranking que usó la segmentación (HU-36). No cambia con rankings posteriores ni con la cuota actual.
+  - Orden: institucional → `no_turns`; sin cronograma confirmado → `no_schedule`; pasó el cierre → `closed`; sin ola → `no_wave`; si no, `pending` u `open`.
+  - Los segundos se redondean hacia arriba. La pantalla los descuenta con su propio timer (sin leer la hora del dispositivo) y vuelve a pedir el turno al llegar a cero.
+  - La respuesta va con `Cache-Control: no-store`.
+- **Respuesta (200)**:
+```json
+{
+  "event": { "id_interno": "INT-…", "titulo": "Boca vs. River", "fecha_hora": "2026-11-21T20:00:00Z", "lugar": "La Bombonera", "tipo": "Partido" },
+  "status": "pending",
+  "message": null,
+  "wave": { "order": 2, "total": 5 },
+  "starts_at": "2026-11-20T22:00:00Z",
+  "closing_at": "2026-11-21T02:00:00Z",
+  "seconds_until_start": 5400,
+  "seconds_until_closing": 19800,
+  "now": "2026-11-20T20:30:00Z"
+}
+```
+  `message` trae el texto para `no_turns`, `no_schedule`, `no_wave` y `closed`, y es `null` en `pending` y `open`, donde la pantalla arma el texto con las fechas. `seconds_until_start` viene solo en `pending`; `seconds_until_closing`, en `pending` y `open`.
 
 ---
 

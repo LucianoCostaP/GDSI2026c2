@@ -1,10 +1,10 @@
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, Header, Query, Response
 from sqlalchemy.orm import Session
 
-from ..auth import CurrentMember
+from ..auth import CurrentMember, CurrentMemberClub
 from ..config import settings
 from ..core.date_utils import asegurar_utc
 from ..db import get_db
@@ -13,6 +13,8 @@ from ..models.domain import Club, Socio
 from ..repositories.base import EventoRepository
 from ..repositories.factory import get_evento_repository
 from ..schemas.eventos import ProximosEventosResponse
+from ..schemas.own_slot import OwnSlotOut
+from ..services import own_slot_service
 from ..services.evento_service import EventoService
 
 router = APIRouter(tags=["Próximos Eventos (Socio - HU-17)"])
@@ -142,3 +144,34 @@ def consultar_proximos_eventos(
         tipo=tipo,
         titulo=titulo,
     )
+
+
+@router.get(
+    "/member/events/{event_id}/slot",
+    response_model=OwnSlotOut,
+    summary="Turno propio del socio (HU-39)",
+    description=(
+        "La ola del socio en la segmentación del evento y cuándo se le habilita la reserva. "
+        "El club sale de la cuenta del socio."
+    ),
+)
+def consultar_turno_propio(
+    event_id: str,
+    member: CurrentMember,
+    club_id: CurrentMemberClub,
+    db: Annotated[Session, Depends(get_db)],
+    response: Response,
+    x_test_clock: str | None = Header(
+        None,
+        alias="X-Test-Clock",
+        description="Reloj inyectable para pruebas (UTC / ISO 8601)",
+    ),
+    reloj_simulado: str | None = Query(
+        None, description="Fecha y hora simulada para pruebas (ISO 8601)"
+    ),
+) -> OwnSlotOut:
+    response.headers["Cache-Control"] = "no-store"
+    now = (
+        _parse_clock(reloj_simulado) or _parse_clock(x_test_clock) or datetime.now(UTC)
+    )
+    return own_slot_service.own_slot(db, member, club_id, event_id, now)
