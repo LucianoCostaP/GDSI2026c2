@@ -409,7 +409,7 @@ def main() -> None:
             ),
         ]
 
-        eventos_payload = []
+        eventos_payload: list[dict[str, Any]] = []
         for ext_suffix, days_ago, tipo, clase, puntos, titulo in past_events_def:
             eventos_payload.append(
                 {
@@ -455,14 +455,17 @@ def main() -> None:
         total_asistencias = 0
 
         for ev in eventos_payload:
-            played = ev["fecha_hora"]
+            played: datetime = ev["fecha_hora"]
+            ev_id_externo: str = str(ev["id_externo"])
+            created_at: datetime = played + timedelta(days=1)
             is_institutional = ev["tipo"] == "Institucional"
             is_class_c = ev["clase"] == "C"
 
             attendees = []
             for p in profiles:
                 # Solo puede asistir si ya era socio en la fecha del evento
-                if p["fecha_alta"] > played.date():
+                alta_date: date = p["fecha_alta"]
+                if alta_date > played.date():
                     continue
 
                 if is_institutional:
@@ -485,8 +488,8 @@ def main() -> None:
                     club_id=club_id,
                     tipo=TipoParticipacion.ASISTENCIA,
                     origen=OrigenCarga.CLUB,
-                    carga_id_externo=f"carga-{ev['id_externo'].lower()}",
-                    evento_id_externo=ev["id_externo"],
+                    carga_id_externo=f"carga-{ev_id_externo.lower()}",
+                    evento_id_externo=ev_id_externo,
                     estado=EstadoCargaParticipacion.SUCCESSFUL,
                     total_paginas=1,
                     paginas_recibidas=1,
@@ -494,8 +497,8 @@ def main() -> None:
                     registros_incorporados=len(attendees),
                     registros_actualizados=0,
                     registros_rechazados=0,
-                    creado_en=played + timedelta(days=1),
-                    actualizado_en=played + timedelta(days=1),
+                    creado_en=created_at,
+                    actualizado_en=created_at,
                 )
             )
             db.flush()
@@ -504,11 +507,11 @@ def main() -> None:
                 AsistenciaDB(
                     id=uuid.uuid4(),
                     club_id=club_id,
-                    evento_id_externo=ev["id_externo"],
+                    evento_id_externo=ev_id_externo,
                     dni=dni,
                     numero_socio=num_soc,
                     carga_id=carga_id,
-                    creado_en=played + timedelta(days=1),
+                    creado_en=created_at,
                 )
                 for dni, num_soc in attendees
             )
