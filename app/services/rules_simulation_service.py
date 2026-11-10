@@ -140,6 +140,7 @@ from ..scoring.distribution import (
     summary,
 )
 from ..scoring.engine import ScoringParameters
+from ..scoring.equity import calculate_equity
 from ..scoring.formatting import decimal_fixed, decimal_to_str
 from ..scoring.rules_simulation import (
     OTHER,
@@ -420,6 +421,7 @@ def _result(
             )
         ],
         breakdown=_breakdown_status(changed),
+        equity=calculate_equity(before, after, moved.relevant_threshold),
     )
 
 

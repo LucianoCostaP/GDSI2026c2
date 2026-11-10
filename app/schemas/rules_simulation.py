@@ -214,13 +214,138 @@ class BreakdownStatusOut(BaseModel):
     message: str | None
 
 
+# --- Esquemas de equidad (HU-30, contrato §5.3) -------------------------------------------
+
+
+class MoverVariableOut(BaseModel):
+    """Una variable del perfil con su valor en el grupo, en Todos y su diferencia."""
+
+    value: str
+    all: str
+    difference: str
+
+
+class MoverClassCOut(BaseModel):
+    """Asistencia a partidos Clase C: se muestra solo para socios con al menos 1 partido."""
+
+    value: str | None
+    all: str | None
+    difference: str | None
+    count: int
+    too_small: bool
+    message: str | None
+
+
+class MoverVariablesOut(BaseModel):
+    """Las 5 variables del perfil de un grupo (escenario 5)."""
+
+    distance_km: MoverVariableOut
+    seniority_years: MoverVariableOut
+    age_years: MoverVariableOut
+    class_c_attendance: MoverClassCOut
+    institutional_points: MoverVariableOut
+    with_institutional: MoverVariableOut
+
+
+class MoverGroupOut(BaseModel):
+    """Un grupo del perfil: Suben, Bajan, Sin cambio relevante o Todos (escenario 4)."""
+
+    group: Literal["up", "down", "no_change", "all"]
+    label: str
+    count: int
+    share: str
+    too_small: bool
+    message: str | None
+    variables: MoverVariablesOut | None
+
+
+class MoverProfileOut(BaseModel):
+    """Perfil de los socios que se mueven frente al ranking (escenario 4)."""
+
+    relevant_threshold: int
+    groups: list[MoverGroupOut]
+
+
+class BandOut(BaseModel):
+    """Una banda de un atributo, inicial o fusionada."""
+
+    lower: str
+    upper: str | None
+    label: str
+
+
+class SegmentOut(BaseModel):
+    """Un segmento de un atributo con sus métricas y desvío (escenario 9)."""
+
+    band: BandOut
+    count: int
+    avg_score_before: str
+    avg_score_after: str
+    avg_score_difference: str
+    avg_position_before: str
+    avg_position_after: str
+    avg_position_change: str
+    deviation: str
+    mark: Literal["none", "marked", "strong"]
+    direction: Literal["favored", "harmed"] | None
+    largest_deviation: bool
+
+
+class AttributeVerdictOut(BaseModel):
+    """Veredicto particular de un atributo (escenario 14)."""
+
+    code: Literal["EQUITY_OK", "EQUITY_ATTENTION", "EQUITY_BIAS"]
+    text: str
+
+
+class SegmentationOut(BaseModel):
+    """Segmentación de los socios por un atributo (antigüedad, distancia o edad)."""
+
+    attribute: Literal["seniority", "distance", "age"]
+    label: str
+    status: Literal["available", "not_available"]
+    code: str | None = None
+    message: str | None = None
+    segments: list[SegmentOut]
+    verdict: AttributeVerdictOut | None = None
+
+
+class VerdictItemOut(BaseModel):
+    """Un grupo marcado o fuerte dentro del veredicto general."""
+
+    attribute: str
+    band: str
+    direction: Literal["favored", "harmed"]
+    deviation: str
+    mark: Literal["marked", "strong"]
+
+
+class OverallVerdictOut(BaseModel):
+    """Veredicto general de equidad (el más severo de los disponibles, escenario 14)."""
+
+    code: Literal["EQUITY_OK", "EQUITY_ATTENTION", "EQUITY_BIAS"]
+    text: str
+    scope: str
+    items: list[VerdictItemOut]
+
+
+class EquityOut(BaseModel):
+    """`equity`: análisis de impacto en perfiles y equidad por segmentos (HU-30)."""
+
+    status: Literal["available", "unavailable"]
+    code: str | None = None
+    message: str | None = None
+    profile: MoverProfileOut | None = None
+    segmentations: list[SegmentationOut] | None = None
+    verdict: OverallVerdictOut | None = None
+
+
 class RulesSimulationResultOut(BaseModel):
     """`POST /admin/rules-simulation`: resultado principal (contrato §5).
 
-    Por ahora trae la base, si hubo cambios, los títulos de las dos columnas, los parámetros
-    cambiados, los valores derivados, las estadísticas, el movimiento de posiciones, el
-    histograma, la saturación, las alertas, el cambio por componente y si hay que pedir el
-    desglose por factor; falta la equidad (HU-30).
+    Incluye la base, parámetros cambiados, valores derivados, estadísticas, movimiento,
+    histograma, saturación, alertas, cambio por componente, estado del desglose y análisis de
+    equidad (HU-30).
     """
 
     ranking: BaselineRankingOut
@@ -242,6 +367,7 @@ class RulesSimulationResultOut(BaseModel):
     # Los seis componentes en el orden de HU-16 y el total al final.
     components: list[ComponentChangeOut]
     breakdown: BreakdownStatusOut
+    equity: EquityOut
 
 
 class BreakdownRequest(SimulationRequest):

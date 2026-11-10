@@ -54,7 +54,8 @@ def csv_rows(
     result: RulesSimulationResultOut, factors: BreakdownOut, rules_in_force: int
 ) -> list[Row]:
     """Las filas, sección por sección. `parametro_aislado` solo si el desglose estuvo
-    disponible: con `single_factor`, `no_changes` o `unavailable` no se mostró."""
+    disponible: con `single_factor`, `no_changes` o `unavailable` no se mostró.
+    Las secciones de equidad (`perfil`, `segmento`, `veredicto`) van si el análisis estuvo disponible."""
     return [
         *_context(result, rules_in_force),
         *_parameters(result),
@@ -63,6 +64,9 @@ def csv_rows(
         *_saturation(result),
         *_components(result),
         *(_isolated(factors) if factors.status == "available" else []),
+        *_profile(result),
+        *_segments(result),
+        *_verdict(result),
     ]
 
 
@@ -193,3 +197,130 @@ def _isolated(factors: BreakdownOut) -> list[Row]:
             )
         )
     return rows
+
+
+def _profile(result: RulesSimulationResultOut) -> list[Row]:
+    if result.equity.status != "available" or result.equity.profile is None:
+        return []
+    rows: list[Row] = []
+    for g in result.equity.profile.groups:
+        rows.append(_row("perfil", f"{g.label}: socios", after=str(g.count)))
+        if g.too_small or g.variables is None:
+            continue
+        v = g.variables
+        rows.append(
+            _row(
+                "perfil",
+                f"{g.label}: distancia (km)",
+                before=v.distance_km.all,
+                after=v.distance_km.value,
+                difference=v.distance_km.difference,
+            )
+        )
+        rows.append(
+            _row(
+                "perfil",
+                f"{g.label}: antigüedad (años)",
+                before=v.seniority_years.all,
+                after=v.seniority_years.value,
+                difference=v.seniority_years.difference,
+            )
+        )
+        rows.append(
+            _row(
+                "perfil",
+                f"{g.label}: edad (años)",
+                before=v.age_years.all,
+                after=v.age_years.value,
+                difference=v.age_years.difference,
+            )
+        )
+        if v.class_c_attendance.too_small:
+            rows.append(
+                _row(
+                    "perfil",
+                    f"{g.label}: asistencia a partidos Clase C: socios",
+                    after=str(v.class_c_attendance.count),
+                )
+            )
+        else:
+            rows.append(
+                _row(
+                    "perfil",
+                    f"{g.label}: asistencia a partidos Clase C: socios",
+                    after=str(v.class_c_attendance.count),
+                )
+            )
+            rows.append(
+                _row(
+                    "perfil",
+                    f"{g.label}: asistencia a partidos Clase C (%)",
+                    before=v.class_c_attendance.all or "",
+                    after=v.class_c_attendance.value or "",
+                    difference=v.class_c_attendance.difference or "",
+                )
+            )
+        rows.append(
+            _row(
+                "perfil",
+                f"{g.label}: puntos institucionales crudos",
+                before=v.institutional_points.all,
+                after=v.institutional_points.value,
+                difference=v.institutional_points.difference,
+            )
+        )
+        rows.append(
+            _row(
+                "perfil",
+                f"{g.label}: socios con participación institucional (%)",
+                before=v.with_institutional.all,
+                after=v.with_institutional.value,
+                difference=v.with_institutional.difference,
+            )
+        )
+    return rows
+
+
+def _segments(result: RulesSimulationResultOut) -> list[Row]:
+    if result.equity.status != "available" or result.equity.segmentations is None:
+        return []
+    rows: list[Row] = []
+    for seg_attr in result.equity.segmentations:
+        if seg_attr.status != "available":
+            continue
+        for s in seg_attr.segments:
+            elem_prefix = f"{seg_attr.label}: {s.band.label}"
+            rows.append(_row("segmento", f"{elem_prefix}: socios", after=str(s.count)))
+            rows.append(
+                _row(
+                    "segmento",
+                    f"{elem_prefix}: puntaje medio",
+                    before=s.avg_score_before,
+                    after=s.avg_score_after,
+                    difference=s.avg_score_difference,
+                )
+            )
+            rows.append(
+                _row(
+                    "segmento",
+                    f"{elem_prefix}: posición media",
+                    before=s.avg_position_before,
+                    after=s.avg_position_after,
+                    difference=s.avg_position_change,
+                )
+            )
+            rows.append(
+                _row("segmento", f"{elem_prefix}: desvío", difference=s.deviation)
+            )
+    return rows
+
+
+def _verdict(result: RulesSimulationResultOut) -> list[Row]:
+    if result.equity.status != "available" or result.equity.verdict is None:
+        return []
+    v = result.equity.verdict
+    return [
+        _row("veredicto", "resultado", after=v.code),
+        _row("veredicto", "detalle", after=v.text),
+        _row("veredicto", "alcance", after=v.scope),
+    ]

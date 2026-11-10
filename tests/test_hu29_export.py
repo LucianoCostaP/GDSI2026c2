@@ -51,6 +51,7 @@ SECTIONS = [
     "saturacion",
     "componentes",
     "parametro_aislado",
+    "perfil",
 ]
 
 
@@ -309,7 +310,9 @@ def test_an_unavailable_breakdown_leaves_out_its_section(
     rows = rows_of(client, boca, ranking.id, SPREAD)
 
     assert section(rows, "parametro_aislado") == []
-    assert list(dict.fromkeys(row[0] for row in rows)) == SECTIONS[:-1]
+    assert list(dict.fromkeys(row[0] for row in rows)) == [
+        s for s in SECTIONS if s != "parametro_aislado"
+    ]
 
 
 def test_the_file_has_no_data_of_any_socio(
