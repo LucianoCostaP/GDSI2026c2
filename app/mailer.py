@@ -43,18 +43,69 @@ def render_html(subject: str, body: str) -> str:
     return LAYOUT.substitute(subject=html.escape(subject), content="\n".join(blocks))
 
 
+DUMMY_DOMAINS = {
+    "example.com",
+    "example.org",
+    "example.net",
+    "club.com",
+    "test.com",
+    "localhost",
+}
+
+
+def is_dummy_email(email: str) -> bool:
+    """Detecta dominios de prueba o no entregables según RFC 2606 y convención del proyecto."""
+    _, _, domain = email.strip().lower().partition("@")
+    if not domain:
+        return True
+    if domain in DUMMY_DOMAINS:
+        return True
+    return domain.endswith((".local", ".test", ".example", ".invalid"))
+
+
 def send_email(to: str, subject: str, body: str) -> None:
-    message = EmailMessage()
-    message["From"] = settings.mail_from
-    message["To"] = to
-    message["Subject"] = subject
-    message.set_content(body)
-    message.add_alternative(render_html(subject, body), subtype="html")
-    html_part = message.get_body(preferencelist=("html",))
-    assert html_part is not None
-    html_part.add_related(LOGO, "image", "png", cid="<logo>")
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as smtp:
-        smtp.send_message(message)
+    # 1. Siempre se imprime en consola / logs para visibilidad y testing inmediato
+    print(
+        f"\n[EMAIL CONSOLE LOG]\nPara: {to}\nAsunto: {subject}\n{body}\n[/EMAIL CONSOLE LOG]\n",
+        flush=True,
+    )
+
+    # 2. Si es un correo de prueba (ej. socio1@example.com), no intentamos enviarlo a internet para evitar rebotes
+    if is_dummy_email(to):
+        print(f"[MAILER] Omitiendo envío SMTP para correo de prueba: {to}", flush=True)
+        return
+
+    # 3. Si está activo el modo mock de consola, no enviamos por SMTP
+    if settings.smtp_mock_console:
+        return
+
+    # 4. Si el correo tiene un dominio real y hay SMTP configurado, intentamos el envío
+    try:
+        message = EmailMessage()
+        message["From"] = settings.mail_from
+        message["To"] = to
+        message["Subject"] = subject
+        message.set_content(body)
+        message.add_alternative(render_html(subject, body), subtype="html")
+        html_part = message.get_body(preferencelist=("html",))
+        assert html_part is not None
+        html_part.add_related(LOGO, "image", "png", cid="<logo>")
+
+        if settings.smtp_use_ssl:
+            with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port) as smtp:
+                if settings.smtp_user and settings.smtp_password:
+                    smtp.login(settings.smtp_user, settings.smtp_password)
+                smtp.send_message(message)
+        else:
+            with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as smtp:
+                if settings.smtp_use_tls:
+                    smtp.starttls()
+                if settings.smtp_user and settings.smtp_password:
+                    smtp.login(settings.smtp_user, settings.smtp_password)
+                smtp.send_message(message)
+        print(f"[MAILER] Correo enviado exitosamente a {to}", flush=True)
+    except (smtplib.SMTPException, OSError) as err:
+        print(f"[MAILER ERROR] No se pudo enviar el correo a {to}: {err}", flush=True)
 
 
 def get_mailer() -> SendEmail:
