@@ -4,11 +4,11 @@ set -e
 echo "==> [Entrypoint] Aplicando migraciones con Alembic..."
 alembic upgrade head
 
-if [ "${SEED_ON_STARTUP:-true}" = "true" ]; then
+if [ "${SEED_ON_STARTUP:-false}" = "true" ]; then
     echo "==> [Entrypoint] Cargando datos iniciales (app.seed)..."
     python -m app.seed || echo "Aviso: app.seed ya fue aplicado o falló sin bloquear."
 
-    if [ "${SEED_SIMULATOR_ON_STARTUP:-true}" = "true" ]; then
+    if [ "${SEED_SIMULATOR_ON_STARTUP:-false}" = "true" ]; then
         echo "==> [Entrypoint] Cargando datos para simulador (app.seed_simulator)..."
         python -m app.seed_simulator || echo "Aviso: app.seed_simulator ya fue aplicado o falló sin bloquear."
     fi

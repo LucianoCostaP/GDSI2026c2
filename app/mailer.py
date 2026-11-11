@@ -1,10 +1,19 @@
+import base64
 import html
+import json
 import re
 import smtplib
+import urllib.error
+import urllib.request
+import uuid
+from collections import deque
 from collections.abc import Callable
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from email.message import EmailMessage
 from pathlib import Path
 from string import Template
+from typing import Any
 
 from .config import settings
 
@@ -13,6 +22,7 @@ SendEmail = Callable[[str, str, str], None]
 EMAILS_DIR = Path(__file__).parent / "emails"
 LAYOUT = Template((EMAILS_DIR / "layout.html").read_text())
 LOGO = (EMAILS_DIR / "logo.png").read_bytes()
+LOGO_B64 = base64.b64encode(LOGO).decode("ascii")
 
 PARAGRAPH = '<p style="margin:0 0 16px;">{}</p>'
 CODE = (
@@ -63,6 +73,38 @@ def is_dummy_email(email: str) -> bool:
     return domain.endswith((".local", ".test", ".example", ".invalid"))
 
 
+@dataclass
+class RecordedEmail:
+    id: str
+    created_at: str
+    to: str
+    subject: str
+    body: str
+    html: str
+    code: str | None = None
+    link: str | None = None
+
+
+RECENT_EMAILS: deque[RecordedEmail] = deque(maxlen=50)
+
+
+def extract_code_and_link(body: str) -> tuple[str | None, str | None]:
+    code_match = re.search(r"\b(\d{6})\b", body)
+    code = code_match.group(1) if code_match else None
+
+    link_match = re.search(r"(https?://\S+)", body)
+    link = link_match.group(1) if link_match else None
+    return code, link
+
+
+def get_recent_emails() -> list[dict[str, Any]]:
+    return [asdict(e) for e in RECENT_EMAILS]
+
+
+def clear_recent_emails() -> None:
+    RECENT_EMAILS.clear()
+
+
 def send_email(to: str, subject: str, body: str) -> None:
     # 1. Siempre se imprime en consola / logs para visibilidad y testing inmediato
     print(
@@ -70,23 +112,130 @@ def send_email(to: str, subject: str, body: str) -> None:
         flush=True,
     )
 
-    # 2. Si es un correo de prueba (ej. socio1@example.com), no intentamos enviarlo a internet para evitar rebotes
+    rendered_html = render_html(subject, body)
+    code, link = extract_code_and_link(body)
+
+    # 2. Guardar en el buzón web en memoria (accesible desde /debug/emails)
+    recorded = RecordedEmail(
+        id=str(uuid.uuid4())[:8],
+        created_at=datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        to=to,
+        subject=subject,
+        body=body,
+        html=rendered_html,
+        code=code,
+        link=link,
+    )
+    RECENT_EMAILS.appendleft(recorded)
+
+    # 3. Si es un correo de prueba (ej. socio1@example.com), no intentamos enviarlo a internet para evitar rebotes
     if is_dummy_email(to):
-        print(f"[MAILER] Omitiendo envío SMTP para correo de prueba: {to}", flush=True)
+        print(
+            f"[MAILER] Omitiendo envío externo para correo de prueba: {to}", flush=True
+        )
         return
 
-    # 3. Si está activo el modo mock de consola, no enviamos por SMTP
+    # 4. Si está activo el modo mock de consola, no enviamos por API ni SMTP
     if settings.smtp_mock_console:
         return
 
-    # 4. Si el correo tiene un dominio real y hay SMTP configurado, intentamos el envío
+    # 5. Brevo HTTP API (Puerto 443 - no requiere dominio propio y funciona en Render Free)
+    if settings.brevo_api_key:
+        try:
+            sender_email = settings.brevo_sender_email or (
+                settings.mail_from.split("<")[-1].replace(">", "").strip()
+                if "<" in settings.mail_from
+                else settings.mail_from
+            )
+            sender_name = settings.brevo_sender_name or "Pasión de 10"
+            payload_brevo = {
+                "sender": {"name": sender_name, "email": sender_email},
+                "to": [{"email": to}],
+                "subject": subject,
+                "htmlContent": rendered_html,
+                "textContent": body,
+            }
+            req = urllib.request.Request(
+                "https://api.brevo.com/v3/smtp/email",
+                data=json.dumps(payload_brevo).encode("utf-8"),
+                headers={
+                    "api-key": settings.brevo_api_key.strip(),
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "User-Agent": "PasionDe10/1.0",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                print(
+                    f"[MAILER] Correo enviado exitosamente vía Brevo HTTP API a {to} (Status {resp.status})",
+                    flush=True,
+                )
+                return
+        except urllib.error.HTTPError as err:
+            err_body = err.read().decode("utf-8", errors="replace")
+            print(
+                f"[MAILER ERROR] Brevo API devolvió error {err.code}: {err_body}",
+                flush=True,
+            )
+            return
+        except (urllib.error.URLError, OSError, TimeoutError) as err:
+            print(f"[MAILER ERROR] Error de conexión con Brevo API: {err}", flush=True)
+            return
+
+    # 6. Resend HTTP API (Puerto 443)
+    if settings.resend_api_key:
+        try:
+            from_addr = settings.resend_from or settings.mail_from
+            payload_data = {
+                "from": from_addr,
+                "to": [to],
+                "subject": subject,
+                "text": body,
+                "html": rendered_html,
+                "attachments": [
+                    {
+                        "filename": "logo.png",
+                        "content": LOGO_B64,
+                        "content_id": "logo",
+                    }
+                ],
+            }
+            req = urllib.request.Request(
+                "https://api.resend.com/emails",
+                data=json.dumps(payload_data).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {settings.resend_api_key.strip()}",
+                    "Content-Type": "application/json",
+                    "User-Agent": "PasionDe10/1.0",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                print(
+                    f"[MAILER] Correo enviado exitosamente vía Resend HTTP API a {to} (Status {resp.status})",
+                    flush=True,
+                )
+                return
+        except urllib.error.HTTPError as err:
+            err_body = err.read().decode("utf-8", errors="replace")
+            print(
+                f"[MAILER ERROR] Resend API devolvió error {err.code}: {err_body}",
+                flush=True,
+            )
+            return
+        except (urllib.error.URLError, OSError, TimeoutError) as err:
+            print(f"[MAILER ERROR] Error al conectar con Resend API: {err}", flush=True)
+            return
+
+    # 7. Fallback: Servidor SMTP estándar
     try:
         message = EmailMessage()
         message["From"] = settings.mail_from
         message["To"] = to
         message["Subject"] = subject
         message.set_content(body)
-        message.add_alternative(render_html(subject, body), subtype="html")
+        message.add_alternative(rendered_html, subtype="html")
         html_part = message.get_body(preferencelist=("html",))
         assert html_part is not None
         html_part.add_related(LOGO, "image", "png", cid="<logo>")
