@@ -175,7 +175,7 @@ Invariantes que el front puede dar por ciertas (SC-004): `attend.score >= not_at
 
 - **Configuración por club** (cross-cutting §8, FR-010): hecha, columnas en `clubes` (migración `a8f3c2d1e9b4`) y los endpoints de la sección 5.1.
 - **Motor único**: reusar `scoring.snapshot.scoring_inputs_from_snapshot` + `scoring.engine.calculate_score` con los parámetros de la `rules_version` del ranking, y `scoring.ranking_order` para el desempate de "arriba de". No duplicar la fórmula.
-- **Instantánea**: `RankingEntry.inputs` ya guarda los conteos por clase, la distancia, los puntos institucionales crudos, `birth_date`, `seniority_start`, `T`, `E`, `t` y la baja previa. El DNI sale de `Socio.dni` de cada entrada.
+- **Instantánea**: `RankingEntry.inputs` ya guarda los conteos por clase, la distancia, los puntos institucionales crudos, `birth_date`, `seniority_start`, `T`, `E`, `t`, la baja previa y el documento (`tiebreak.dni`, decisión 49). El desempate sale entero de la instantánea (`scoring.snapshot.ranking_candidate_from_snapshot`), sin join a `socios`.
 - **Reloj inyectable**: el servicio recibe `now: datetime | None = None` para decidir "ya empezó" (escenario 3).
 - **Cache opcional**: `A_j`/`B_j` no dependen de quién consulta, así que se pueden calcular una vez por (ranking, evento) y reusar.
 - **Búsqueda del socio**: `ranking_service._socio_of` (club + DNI), igual que HU-14 y HU-16.

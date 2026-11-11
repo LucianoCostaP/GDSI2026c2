@@ -82,7 +82,12 @@ def test_entry_persists_all_components_and_inputs_snapshot(
     ranking = db.get_one(Ranking, response.json()["id"])
     entry = entry_of(db, ranking, socio)
     assert entry.position == 1
-    assert set(entry.inputs) == {"attendance", "institutional", "membership"}
+    assert set(entry.inputs) == {
+        "attendance",
+        "institutional",
+        "membership",
+        "tiebreak",
+    }
     # Asistió al único partido (48,00) y a una asamblea de 40 puntos (0,20 · 40).
     assert entry.attendance_frequency == Decimal("48.00")
     assert entry.institutional == Decimal("8.00")
@@ -247,6 +252,18 @@ def test_the_membership_snapshot_has_the_documented_shape(
         "days_since_alta": (date(2026, 10, 29) - date(2015, 3, 1)).days,
         "days_between_previous_baja_and_alta": None,
     }
+
+
+def test_the_snapshot_keeps_the_document_used_by_the_tiebreak(
+    client: TestClient, db: Session, admin: User, boca: dict[str, str]
+) -> None:
+    publish_rules(client, boca)
+    socio = make_socio(db, dni="30111222")
+
+    ranking = run_at(db, admin)
+
+    # HU-18, HU-29 y HU-30 reordenan desde la instantánea, sin releer `socios`.
+    assert entry_of(db, ranking, socio).inputs["tiebreak"] == {"dni": "30111222"}
 
 
 # --- Reproducibilidad ----------------------------------------------------------------------

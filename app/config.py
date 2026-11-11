@@ -75,6 +75,27 @@ class Settings(BaseSettings):
     # Inicio de temporada (HU-28). Si es None, no se aplica corte de temporada.
     season_start_date: date | None = None
 
+    # Paso de las oleadas en percentiles (HU-36, cross-cutting sección 8).
+    wave_percentile_step: int = 20
+
+    @field_validator("wave_percentile_step")
+    @classmethod
+    def _wave_step_divides_100(cls, value: int) -> int:
+        if value <= 0 or 100 % value != 0:
+            raise ValueError("wave_percentile_step tiene que dividir a 100")
+        return value
+
+    # Minutos mínimos entre las aperturas de dos oleadas seguidas (HU-37, cross-cutting
+    # sección 8).
+    wave_min_step_minutes: int = 5
+
+    @field_validator("wave_min_step_minutes")
+    @classmethod
+    def _wave_min_step_positive(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("wave_min_step_minutes tiene que ser mayor que 0")
+        return value
+
     # Compatibilidad con alias en mayúsculas
     @property
     def APP_NAME(self) -> str:

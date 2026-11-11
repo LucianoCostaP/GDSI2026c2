@@ -26,7 +26,7 @@ As an Admin, I want to run the Socios ranking calculation, so that the scoring r
 5. **Given** the calculation fails, **When** the error occurs, **Then** the error is shown, the ranking is marked `failed` and the previous ranking stays in force unmodified.
 6. **Given** two or more Socios with the same total score, **When** positions are assigned, **Then** ties are broken by greater seniority, then greater age, then lower document number.
 7. **Given** the club data or the attendance data are older than the staleness limit, or a load happened after the last ranking, **When** the Admin starts the calculation, **Then** a warning is shown before the run and they can continue.
-8. **Given** a completed ranking, **When** it is stored, **Then** each entry holds the five components, the cap adjustment, the total, the position and the inputs snapshot used by HU-16, HU-18 and HU-29.
+8. **Given** a completed ranking, **When** it is stored, **Then** each entry holds the five components, the cap adjustment, the total, the position and the inputs snapshot used by HU-16, HU-18, HU-29 and HU-30, including the tiebreak data (seniority start date, birth date and document number; scoring model, rule 4).
 
 ---
 

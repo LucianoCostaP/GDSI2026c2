@@ -109,7 +109,7 @@ Reglas comunes: token Bearer por club guardado con hash, validación de estructu
 
 ## 6. Research (solo donde hay incertidumbre)
 
-- **Cálculo del ranking con 500.000 socios:** HU-25 en menos de 15 minutos y HU-29 en menos de 10 segundos. Probablemente exige cómputo en memoria sobre la instantánea guardada.
+- **Cálculo del ranking con 500.000 socios:** HU-25 en menos de 15 minutos, HU-29 en menos de 10 segundos y su efecto por parámetro en menos de 30. Probablemente exige cómputo en memoria sobre la instantánea guardada.
 - **Entrega de correos:** que los códigos lleguen en menos de 30 segundos y no caigan en spam.
 - **Envíos del club:** si puede llamar a la API con token, paginar la carga completa y enviar novedades al menos cada 24 horas.
 
