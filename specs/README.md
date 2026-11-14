@@ -1,6 +1,6 @@
-# MVP Specs Index (v4.3)
+# MVP Specs Index (v4.4)
 
-25 specs: the 24 stories the backlog marks as MVP, plus HU-23 (outside the MVP, kept as a ready spec), and 3 shared documents. Titles, estimates, priorities and MVP scope follow the backlog (`Backlog - US.csv`). v4 aligns the specs with the backlog and with the integration prototypes: **the club sends its data to an API the system exposes; the system never calls the club.** v4.1 applies the review in `CORRECCIONES_SPECS.txt` (decisions 24–33 and the table at the end). v4.2 reworks HU-27 and HU-13 around a formula catalog and per-club rules (decisions 34–40). v4.3 reworks HU-29 and HU-30 around four business questions of the Admin: who is rewarded, whom the change harms or favors, which parameter causes the effect and whether the ranking flattens (decisions 44–48).
+27 specs: the 26 stories the backlog marks as MVP, plus HU-23 (outside the MVP, kept as a ready spec), and 4 shared documents. Titles, estimates, priorities and MVP scope follow the backlog (`Backlog - US.csv`). v4 aligns the specs with the backlog and with the integration prototypes: **the club sends its data to an API the system exposes; the system never calls the club.** v4.1 applies the review in `CORRECCIONES_SPECS.txt` (decisions 24–33 and the table at the end). v4.2 reworks HU-27 and HU-13 around a formula catalog and per-club rules (decisions 34–40). v4.3 reworks HU-29 and HU-30 around four business questions of the Admin: who is rewarded, whom the change harms or favors, which parameter causes the effect and whether the ranking flattens (decisions 44–48). v4.4 brings HU-19 and HU-20 into the MVP: in-app notifications and their email channel, with per-type and general preferences (decisions 50–60).
 
 ## Shared documents
 
@@ -8,6 +8,7 @@
 |---|---|
 | [Scoring model v1](_shared/scoring-model.md) | The base formula, parameters with defaults and confirmed limits, calculation rules, worked example |
 | [Data contract](_shared/data-contract.md) | Socio, event, attendance and activity data, and the integration API the club calls |
+| [Notifications](_shared/notifications.md) | The catalog of notification types, recipients, texts, destinations, generation contract and email delivery rules (HU-19, HU-20) |
 | [Cross-cutting rules](_shared/cross-cutting.md) | Time zone, permissions matrix, authentication parameters, state names, non-functional targets, bootstrap tasks, settings |
 
 ## Stories
@@ -26,6 +27,8 @@
 | HU-16 | [Score Breakdown](hu-16-score-breakdown/spec.md) | 3 | Media | Yes |
 | HU-17 | [Upcoming Events](hu-17-upcoming-events/spec.md) | 3 | Alta | Yes |
 | HU-18 | [Attendance Score Simulator](hu-18-attendance-score-simulator/spec.md) | 8 | Media | Yes |
+| HU-19 | [Configure Email Notifications](hu-19-notification-email-preferences/spec.md) | 3 | Baja | Yes |
+| HU-20 | [Notification Inbox](hu-20-notification-inbox/spec.md) | 2 | Baja | Yes |
 | HU-21 | [Receive Events Sent by the Club](hu-21-club-event-reception/spec.md) | 5 | Alta | Yes |
 | HU-22 | [Define Event Category (Class A/B/C) or Points and Publish](hu-22-event-class-and-publication/spec.md) | 5 | Alta | Yes |
 | HU-23 | [Event Reprogramming, Withdrawal and Restoration](hu-23-event-reprogramming/spec.md) | 5 | Media | **No** |
@@ -94,9 +97,21 @@
 48. **The simulator never applies values.** HU-28 remains the only way to change the rules, with its cut-off, lock and confirmation. The result lists the changed parameters with their previous and hypothetical values, and can be downloaded as a CSV generated at that moment and never stored. Simulations change nothing and are not audited. A stored or executive report is HU-42, outside the MVP.
 49. **The tiebreak lives in the snapshot.** Each ranking entry stores, besides the dates of rule 5, the Socio's document number (scoring model, rule 4), so HU-18, HU-29 and HU-30 rebuild the exact order from the snapshot without re-reading the roster. Entries calculated before this decision are completed once from the roster by a data migration.
 
+50. **Notifications have two channels and one record.** Every notification is stored in the Socio's inbox (HU-20); the email is an optional second channel (HU-19). Preferences never affect the inbox. Access codes, activation codes and Admin invitations are not notifications and ignore the preferences (notifications section 1).
+51. **Catalog of four types, owned by the product**: `event_published`, `event_rescheduled`, `wave_opened` and `ranking_completed`. Adding a type is a release, never a screen. `event_rescheduled` is defined but **inactive until HU-23** exists: it is not generated and not shown (notifications section 2).
+52. **Recipients**: `event_published` and `event_rescheduled` go to every Socio of the club with an `activated` account; `wave_opened` only to the Socios of the wave that opens (Partidos only); `ranking_completed` to the Socios with an entry in that ranking. Nobody gets a notification before activating the account or while dado de baja.
+53. **Where each one opens**: the event (HU-17 list with the event highlighted) for the two event types, the Socio's own slot (HU-39) for `wave_opened` and "Mi puntaje" (HU-14) for `ranking_completed`. The notification stores type and reference, never a URL; an unavailable event shows "Este evento ya no está disponible." Opening from the inbox marks it as read.
+54. **Preferences have two levels**: a general switch and one switch per active type. An email is sent only if both are on. The default is on and is not stored; turning the general switch off keeps the per-type values. Changes save at once and apply from that moment, including emails still queued.
+55. **Notifications never interfere with their trigger.** A ranking completes, an event publishes and a schedule works whether or not the notifications or emails succeed. Generation happens after the trigger commits, through one contract (`notify`) that never raises into the caller and is idempotent by Socio and occurrence.
+56. **Best effort, no retries.** The system tries to email every recipient, in batches and asynchronously; a failure is recorded, does not stop the others and is not retried. The inbox is unaffected. No unsubscribe link in the MVP: the email points to "Mi Perfil".
+57. **Additive generators.** The wave opening is detected by a periodic job that only reads confirmed schedules (HU-37 does not change); HU-22 and HU-25 only call the contract after finishing. Old openings (past the catch-up window of 60 minutes) are skipped.
+58. **HU-10 is amended**: "Mi Perfil" stays read-only for account data but now links to the notification settings. The inbox has the counter of unread notifications in the global menu, "Marcar todas como leídas" and no deletion, archive or filters.
+59. **Audit and privacy**: only changes of preferences are audited (who, when, previous and new); generation, delivery results and reads are not. The email shown in the settings is masked.
+60. **Build order: HU-20 first, then HU-19.** HU-20 creates the notifications table and the inbox and is demonstrated with seeded notifications; HU-19 then adds the generators, the preferences and the email delivery on top of that table, in that order (notifications section 10).
+
 ## Defaults set by this revision (change them in one place)
 
-Default class B for Partidos not classified in time and 20 default points for institutional events without points when the automatic publication runs; row-error tolerance of 5% for CSV files; code, session and lockout parameters; time zone Buenos Aires; attendance window of previous calendar year plus current year to date; rounding to two decimals; minimum 5 minutes between wave openings; roster staleness limit of 24 hours; 60-minute expiry for paged loads; size limits of decision 27; HU-29 target of under 3 seconds up to 50,000 Socios and under 10 seconds up to 500,000 (9 and 30 seconds for its effect by parameter); fixed thresholds of HU-29 and HU-30 (decisions 45 and 47).
+Default class B for Partidos not classified in time and 20 default points for institutional events without points when the automatic publication runs; row-error tolerance of 5% for CSV files; code, session and lockout parameters; time zone Buenos Aires; attendance window of previous calendar year plus current year to date; rounding to two decimals; minimum 5 minutes between wave openings; roster staleness limit of 24 hours; 60-minute expiry for paged loads; size limits of decision 27; HU-29 target of under 3 seconds up to 50,000 Socios and under 10 seconds up to 500,000 (9 and 30 seconds for its effect by parameter); fixed thresholds of HU-29 and HU-30 (decisions 45 and 47); 20 notifications per page, email batches of 500, a 60-minute catch-up window for wave openings and no expiry of notifications (notifications section 7).
 
 ## Open items
 
@@ -105,6 +120,10 @@ Default class B for Partidos not classified in time and 20 default points for in
 - **Position of institutional events in HU-18**: not estimated in this version because the inputs snapshot (HU-25, scoring model rule 4) does not hold the number of institutional events each Socio could attend in the window. Adding it needs that data in the snapshot and a revision of HU-18. Until then HU-18 shows scores and a notice for those events.
 - **Thresholds of HU-29 and HU-30**: the relevant movement (1 %), the flatness alert (80 %), the marks of the equity analysis (2 % and 5 % of the ranking) and the minimum group (10 Socios) are proposals to review with the club on real simulations (decisions 45 and 47).
 - **Constitution amendment** for decision 40 (DoR exception): written in `docs/constitution.md` 1.1.0; it still needs the 2 approvals of its PR.
+
+- **Estimate of HU-19**: the backlog says 3, but it now covers preferences, generation of four types, a dispatch queue and a periodic job. It is a candidate for re-estimation.
+- **`FRONTEND_BASE_URL`** must be configured per environment for the email buttons.
+- **Retention** of notifications is open: they are kept without expiry in the MVP.
 
 ## Interpretations to confirm (not blocking)
 
@@ -129,12 +148,14 @@ The backlog already describes the push model for HU-21 and HU-43. Pending:
 - The row of HU-26 (Exportación de Listado Priorizado) has "0" instead of its number.
 - HU-36 ("Un evento retirado invalida su segmentación") and HU-39 ("Para un evento retirado se informa...") describe effects of HU-23, which is outside the MVP; move those criteria to HU-23 (decision 33).
 - HU-38 (outside the MVP) still mentions Socios excluded "con asiento transferido", a feature that no longer exists.
+- HU-19 and HU-20 enter the MVP and need their criteria completed in the backlog: a general email switch besides the per-type ones, the types of the catalog and where each opens, the exact texts, that preferences never affect the inbox, that failures never block the triggering process, "mark as read" (one and all) and the counter in the menu.
 - HU-29 and HU-30 in the backlog still describe the original scope. Align their criteria with the specs (business questions, baseline and pre-fill, saturation and ties, change per component, effect by parameter, profile of the movers, equity with verdict, CSV) and re-estimate them (decisions 44–48).
 
 ## Residual risks
 
-- Socios are not notified by email when an event changes (HU-19/20 are out): they see the change only when they open the app.
-- The wave schedule is informative: with no reservation, ticket-office export or notifications in the MVP, nothing enforces it. State this clearly in the demo.
+- Socios are notified when an event is published, a wave opens or a ranking completes, but **not** when a published event changes: `event_rescheduled` waits for HU-23, so until then they see the change only when they open the app.
+- Notifications are best effort with no retries: a failed email or a crash between a change and its notification is not recovered. The inbox and the app screens remain the reliable source.
+- The wave schedule is informative: with no reservation or ticket-office export in the MVP, nothing enforces it, even though Socios are now notified when their wave opens. State this clearly in the demo.
 - Using age as a score component is a policy choice the club should be able to defend before its Socios.
 - The verdict of HU-30 is descriptive: it applies fixed thresholds to three attributes (seniority, distance, age); it is not a statistical test and does not certify the absence of bias in other attributes.
 - HU-29 and HU-30 work on the snapshot of the latest ranking: they do not age the Socios, shift the attendance window or reflect later loads. To see the current situation the Admin runs HU-25 first.

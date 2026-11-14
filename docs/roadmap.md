@@ -4,9 +4,9 @@ Los specs funcionales dicen **qué** hace el sistema y por qué. Este documento 
 
 ## 1. Dónde estamos
 
-- **25 specs:** las 24 historias que el backlog marca como MVP y HU-23 (fuera del MVP, con el spec listo). Títulos, estimaciones, prioridades y alcance siguen el backlog.
+- **27 specs:** las 26 historias que el backlog marca como MVP (incluidas HU-19 y HU-20, de notificaciones) y HU-23 (fuera del MVP, con el spec listo). Títulos, estimaciones, prioridades y alcance siguen el backlog.
 - **Integración por push:** el club envía socios, eventos, asistencias y actividades a una API que expone el sistema (HU-43, HU-21, HU-24). El sistema nunca consume una API del club.
-- **3 documentos compartidos:** modelo de scoring v1, contrato de datos y reglas transversales (permisos, estados, seguridad, requisitos no funcionales, ajustes del sistema y tareas de arranque).
+- **4 documentos compartidos:** modelo de scoring v1, contrato de datos, notificaciones (catálogo, destinatarios y reglas de envío) y reglas transversales (permisos, estados, seguridad, requisitos no funcionales, ajustes del sistema y tareas de arranque).
 - **Consistencia revisada:** enlaces, nombres de estados y referencias entre historias están alineados, y no quedan preguntas abiertas en los specs.
 - **Brechas del código:** lo que el código actual todavía no cumple de los specs está en [`docs/brechas-codigo.md`](brechas-codigo.md).
 - **Lo que falta** es el **cómo**: acuerdos con el club, decisiones técnicas, contratos y modelo de datos, y el backlog actualizado.
@@ -79,14 +79,15 @@ Un **módulo** es un grupo de historias relacionadas que se construyen juntas, d
 | 7 | Vistas del socio | HU-14, HU-16, HU-13 | El socio ve su puntaje, su posición y el desglose, y cómo se calcula | Módulos 3 y 6 (HU-13 solo necesita HU-27; el aviso del último ranking usa HU-25 si existe) |
 | 8 | Reglas y simuladores | HU-28, HU-29, HU-30, HU-18 | El Admin ajusta y simula reglas con su análisis de equidad; el socio simula su asistencia | Módulos 1, 4 y 6 |
 | 9 | Oleadas | HU-36, HU-37, HU-39 | Oleadas por percentil, cronograma y turno de cada socio | Módulos 3, 4 y 6 |
+| 10 | Notificaciones | HU-20 y después HU-19 | Primero (HU-20): el socio ve su bandeja con el contador, con notificaciones sembradas. Después (HU-19): se generan las de evento publicado, turno habilitado y ranking, y el socio elige qué avisos recibe por correo (el de evento reprogramado se activa con HU-23) | HU-20: módulos 1 y 3, y que existan HU-17, HU-39 y HU-14. HU-19: además módulos 4, 6 y 9; correo y `FRONTEND_BASE_URL` |
 
-Los módulos 7, 8 y 9 pueden avanzar en paralelo una vez listo el 6. HU-27 (fórmula base publicada desde el catálogo, con bloqueo y vista previa) es requisito de HU-25, HU-28 y HU-13, y por eso está en el módulo 6. Dentro del módulo, HU-27 va primero y HU-13 puede construirse apenas HU-27 esté lista. HU-23 queda fuera del MVP.
+Los módulos 7, 8 y 9 pueden avanzar en paralelo una vez listo el 6. El módulo 10 va al final porque escucha lo que producen HU-22, HU-25 y HU-37, sin modificarlos; HU-20 (bandeja) se construye primero y es dueña de la tabla de notificaciones, con notificaciones sembradas; HU-19 sigue con los generadores (historia 3), después las preferencias y el envío de correos (historias 1 y 2). HU-27 (fórmula base publicada desde el catálogo, con bloqueo y vista previa) es requisito de HU-25, HU-28 y HU-13, y por eso está en el módulo 6. Dentro del módulo, HU-27 va primero y HU-13 puede construirse apenas HU-27 esté lista. HU-23 queda fuera del MVP.
 
 ### Fase 5. Pruebas y demo
 
 - [ ] Pruebas de equivalencia y de carga (sección 8).
 - [ ] Datos de prueba sintéticos: socios, eventos y asistencias.
-- [ ] Guion de demo: aclarar que el **cronograma de oleadas es informativo** (sin reserva, exportación a boletería ni avisos por correo en el MVP).
+- [ ] Guion de demo: aclarar que el **cronograma de oleadas es informativo** (sin reserva ni exportación a boletería en el MVP), aunque los socios reciben el aviso cuando su turno se habilita.
 
 ## 4. Constitution
 
@@ -110,7 +111,7 @@ Reglas comunes: token Bearer por club guardado con hash, validación de estructu
 ## 6. Research (solo donde hay incertidumbre)
 
 - **Cálculo del ranking con 500.000 socios:** HU-25 en menos de 15 minutos, HU-29 en menos de 10 segundos y su efecto por parámetro en menos de 30. Probablemente exige cómputo en memoria sobre la instantánea guardada.
-- **Entrega de correos:** que los códigos lleguen en menos de 30 segundos y no caigan en spam.
+- **Entrega de correos:** que los códigos lleguen en menos de 30 segundos y no caigan en spam, y que los avisos de ranking no frenen el cálculo.
 - **Envíos del club:** si puede llamar a la API con token, paginar la carga completa y enviar novedades al menos cada 24 horas.
 
 ## 7. Frontend
@@ -132,7 +133,7 @@ Reglas comunes: token Bearer por club guardado con hash, validación de estructu
 - **Puntualidad y calidad de los envíos del club:** determinan la frescura del ranking.
 - **Sin HU-23 en el MVP**, un partido publicado que el club reprograma o cancela conserva sus datos viejos.
 - **La edad como componente del puntaje** es una decisión de política que el club debe poder defender ante los socios.
-- **Sin avisos por correo** (HU-19 y HU-20 fuera del MVP): los socios ven los cambios solo al abrir la aplicación.
+- **Avisos por correo y bandeja de mejor esfuerzo** (HU-19 y HU-20): sin reintentos, y sin aviso de reprogramación hasta que exista HU-23. Un correo fallido o una caída entre un cambio y su aviso no se recupera; la bandeja y las pantallas son la fuente confiable.
 - **El cronograma de oleadas es informativo:** nada lo hace cumplir dentro del MVP.
 - **Objetivos de rendimiento** para 500.000 socios: son propuestas que hay que validar con una prueba de carga.
 

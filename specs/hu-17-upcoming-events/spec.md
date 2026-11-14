@@ -24,6 +24,7 @@ As a Socio of the club, I want to see the date, time and venue of upcoming event
 3. **Given** the events list, **When** the Socio interacts with it, **Then** it is read-only, except for a link on each event to its slot screen (HU-39).
 4. **Given** no upcoming published event, **When** the Socio opens the list, **Then** the message "No hay eventos próximos publicados." is shown instead of an empty list.
 5. **Given** an event in state `pending importance definition`, `historical` or `discarded`, **When** the list renders, **Then** it is not shown.
+6. **Given** a Socio who arrives from a notification of that event (HU-20, HU-19), **When** the list renders and the event is in it, **Then** the event is highlighted; if it is not in the list, the Socio sees "Este evento ya no está disponible." and the list renders without highlight.
 
 ---
 
@@ -43,6 +44,7 @@ As a Socio of the club, I want to see the date, time and venue of upcoming event
 - **FR-004**: System MUST show "No hay eventos próximos publicados." when there are no upcoming published events.
 - **FR-005**: System MUST NOT show events that are not `published`.
 - **FR-006**: System MUST offer, per event, navigation to the Socio's own slot (HU-39).
+- **FR-007**: System MUST highlight the event referred by a notification when it is in the list, and tell the Socio when it is not.
 
 ### Key Entities
 
@@ -58,9 +60,10 @@ As a Socio of the club, I want to see the date, time and venue of upcoming event
 ## Assumptions
 
 - "Upcoming" means the event start (date and time) is later than the current time.
-- Notifications about new events are out of the MVP (HU-19/20); Socios discover events here.
+- Socios are notified of new events through HU-19 and HU-20 (type `event_published`); this list stays the source of truth. The notification opens this list with the event referred by the `event_id` highlighted (notifications section 3).
 
 ## Revision Notes (v2)
 
 - Unified state names, defined "enabled for sale/reservation", and added the link to HU-39.
 - v3: shows the event type; capacity removed.
+- v4: scenario 6 and FR-007, additive: highlight of the event coming from a notification.

@@ -107,7 +107,7 @@ Audit (`entity = "wave_schedule"`): `wave_schedule.generated`, `wave_schedule.re
 ## Assumptions
 
 - "Equitable" means evenly spaced starts beginning at the opening, as in the formula above.
-- Notifications of the schedule are outside the MVP (HU-19/20).
+- The opening of a wave notifies its Socios (`wave_opened`, HU-19) through a periodic job that only reads `confirmed` schedules. This story does not change: it generates, confirms and invalidates schedules exactly as above.
 - A time zone is fixed (cross-cutting section 1).
 
 ## Revision Notes (v2)
