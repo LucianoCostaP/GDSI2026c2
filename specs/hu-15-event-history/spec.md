@@ -1,7 +1,7 @@
 # Feature Specification: Event History and Rules Applied
 
 **Feature Branch**: `hu-15-event-history`
-**Created**: 2026-11-15
+**Created**: 2026-11-15 | **Revised**: 2026-11-15 (v2)
 **Status**: Draft
 **Backlog Reference**: HU-15 (Estimate: 3, Priority: Media, MVP: No, to be confirmed with the team)
 **Shared rules**: [scoring model](../_shared/scoring-model.md), [cross-cutting](../_shared/cross-cutting.md), [data contract](../_shared/data-contract.md)
@@ -71,6 +71,10 @@ As a Socio of the club, I want to see the past events I attended and the scoring
 | Link label per event | — | — | Ver reglas (versión N) |
 | Loading, front only | — | — | Cargando tu historial… |
 | Load error, front only | — | — | No pudimos cargar tu historial. Probá de nuevo en un rato. |
+| Rules page title (N is the version number) | — | — | Reglas de puntaje (versión N) |
+| Loading the rules, front only | — | — | Cargando las reglas… |
+| Rules load error, front only | — | — | No pudimos cargar las reglas. Probá de nuevo en un rato. |
+| Notice on a superseded version (`in_force: false`) | — | — | Estas reglas ya no están vigentes. |
 | Socio account without club | 403 | `MEMBER_WITHOUT_CLUB` | The front shows: Tu cuenta no tiene un club asignado. Consultá con el club. |
 | Forbidden (Admin) | 403 | `FORBIDDEN` | (existing code) |
 | Unauthenticated | 401 | `NOT_AUTHENTICATED` | (existing code) |
@@ -83,6 +87,11 @@ Under the Socio's session; the club comes from the account (decision 34). No ali
   - `status`: `ok` or `empty`. With `empty`, `message` has the text above, `total` is 0 and `events` is `[]`.
   - `events[]`: `{id_interno, titulo, fecha_hora, tipo, rules_version, rules_message}`. `fecha_hora` is ISO 8601 UTC (the front shows Buenos Aires time). `tipo` is `Partido` or `Evento institucional/amateur`. `rules_version` is `{number, published_at, url}` with `url = /member/scoring/rules/{number}`, or `null` with `rules_message` set to the text of scenario 4.
 - `GET /member/scoring/rules/{number}` → 200 `{rules_version, published_at, in_force, formula: {id, version, name}, explanation}`. `explanation` is the same object as HU-13. It never includes who published the rules or the formula lock. 404 `RULES_VERSION_NOT_FOUND` otherwise.
+
+### Front
+
+- `/ranking/history`: "Mi historial de eventos", only for Socios, from the side navigation bar ("Mi historial").
+- `/ranking/rules/{number}`: the rules of one version, opened from the link of each event. It shows the publication date in Buenos Aires time, the notice above when the version is superseded and the explanation of HU-13, with a link back to the history.
 
 ## Success Criteria *(mandatory)*
 
@@ -97,3 +106,7 @@ Under the Socio's session; the club comes from the account (decision 34). No ali
 - Decision 50 (proposed): the Socio can read past rules versions of their club, read-only, only through this story. It narrows decision 41 (no version history screen): there is still no list of versions, only the version linked from each event.
 - "Ordenados cronológicamente" is read as most recent first, like any history; to be confirmed by the Product Owner.
 - The rules in force at the event are the ones that were published, not necessarily the ones of the ranking used for that event's waves (HU-36). Showing the ranking used per event is a possible extension.
+
+## Revision Notes
+
+- v2: the texts of the rules page are added to the messages table, and the front routes are documented.
