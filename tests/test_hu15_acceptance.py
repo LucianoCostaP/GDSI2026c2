@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models import AsistenciaDB, EventoVisibleDB, RulesVersion, User
 from app.services.formula_service import explanation_of
-from tests.conftest import BOCA_ID, MakeMember, Outbox
+from tests.conftest import BOCA_ID, RIVER_ID, MakeAdmin, MakeMember, Outbox
 from tests.hu15_helpers import (
     HISTORY,
     RULES,
@@ -25,6 +25,7 @@ from tests.hu25_helpers import (
     headers_for,
     load_attendance,
     make_event,
+    make_socio,
     publish_rules,
 )
 
@@ -308,3 +309,81 @@ def test_un_socio_con_la_cuota_en_mora_ve_su_historial(
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     assert titles(response) == [event.titulo]
+
+
+def test_el_club_sale_de_la_cuenta_del_socio_y_no_del_pedido(
+    db: Session, client: TestClient, outbox: Outbox, make_member: MakeMember
+) -> None:
+    ana = socio_with_account(db, make_member)
+    headers = member_headers(client, outbox, ana.member)
+    de_boca = make_event(db, id_externo=uid("BOCA"), when=utc("2026-03-10T20:00:00Z"))
+    load_attendance(db, de_boca, [ana.socio])
+    # River tiene un socio con el mismo documento que fue a un evento de River.
+    mismo_dni = make_socio(db, club_id=RIVER_ID, dni=ana.socio.dni)
+    de_river = make_event(
+        db, id_externo=uid("RIVER"), when=utc("2026-04-10T20:00:00Z"), club_id=RIVER_ID
+    )
+    load_attendance(db, de_river, [mismo_dni])
+    other = str(RIVER_ID)
+
+    plain = client.get(HISTORY, headers=headers)
+    forced = client.get(
+        f"{HISTORY}?club_id={other}", headers={**headers, "X-Club-ID": other}
+    )
+
+    assert titles(plain) == [de_boca.titulo]
+    assert forced.json() == plain.json()
+
+
+def test_una_version_de_reglas_de_otro_club_no_se_encuentra(
+    db: Session,
+    client: TestClient,
+    outbox: Outbox,
+    make_member: MakeMember,
+    make_admin: MakeAdmin,
+) -> None:
+    publish_rules(client, headers_for(client, outbox, make_admin(RIVER_ID)))
+    ana = socio_with_account(db, make_member)
+    headers = member_headers(client, outbox, ana.member)
+    other = str(RIVER_ID)
+
+    for response in (
+        client.get(RULES.format(1), headers=headers),
+        client.get(
+            f"{RULES.format(1)}?club_id={other}",
+            headers={**headers, "X-Club-ID": other},
+        ),
+    ):
+        assert response.status_code == 404
+        assert response.json()["detail"] == {
+            "code": "RULES_VERSION_NOT_FOUND",
+            "message": "No encontramos esa versión de reglas.",
+        }
+
+
+@pytest.mark.parametrize("path", [HISTORY, RULES.format(1)])
+def test_solo_los_socios_pueden_consultar(
+    client: TestClient, outbox: Outbox, admin: User, path: str
+) -> None:
+    forbidden = client.get(path, headers=headers_for(client, outbox, admin))
+    anonymous = client.get(path)
+
+    assert (forbidden.status_code, forbidden.json()["detail"]) == (403, "FORBIDDEN")
+    assert (anonymous.status_code, anonymous.json()["detail"]) == (
+        401,
+        "NOT_AUTHENTICATED",
+    )
+
+
+@pytest.mark.parametrize("path", [HISTORY, RULES.format(1)])
+def test_una_cuenta_de_socio_sin_club_es_rechazada(
+    client: TestClient, outbox: Outbox, make_member: MakeMember, path: str
+) -> None:
+    member = make_member(activated=True, club_id=None)
+
+    response = client.get(path, headers=member_headers(client, outbox, member))
+
+    assert (response.status_code, response.json()["detail"]) == (
+        403,
+        "MEMBER_WITHOUT_CLUB",
+    )
