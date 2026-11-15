@@ -70,8 +70,9 @@ def send_email(to: str, subject: str, body: str) -> None:
         flush=True,
     )
 
-    # 2. Si es un correo de prueba (ej. socio1@example.com), no intentamos enviarlo a internet para evitar rebotes
-    if is_dummy_email(to):
+    # 2. Solo en producción: el SMTP es real y un dominio de prueba rebotaría. En local el SMTP
+    # es Mailpit, que tiene que recibir los mails de los socios del seed (socio1@example.com).
+    if settings.app_env == "production" and is_dummy_email(to):
         print(f"[MAILER] Omitiendo envío SMTP para correo de prueba: {to}", flush=True)
         return
 
