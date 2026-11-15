@@ -1,6 +1,6 @@
 # MVP Specs Index (v4.3)
 
-25 specs: the 24 stories the backlog marks as MVP, plus HU-23 (outside the MVP, kept as a ready spec), and 3 shared documents. Titles, estimates, priorities and MVP scope follow the backlog (`Backlog - US.csv`). v4 aligns the specs with the backlog and with the integration prototypes: **the club sends its data to an API the system exposes; the system never calls the club.** v4.1 applies the review in `CORRECCIONES_SPECS.txt` (decisions 24–33 and the table at the end). v4.2 reworks HU-27 and HU-13 around a formula catalog and per-club rules (decisions 34–40). v4.3 reworks HU-29 and HU-30 around four business questions of the Admin: who is rewarded, whom the change harms or favors, which parameter causes the effect and whether the ranking flattens (decisions 44–48).
+26 specs: the 24 stories the backlog marks as MVP, plus HU-23 and HU-15 (outside the MVP, kept as ready specs), and 3 shared documents. Titles, estimates, priorities and MVP scope follow the backlog (`Backlog - US.csv`). v4 aligns the specs with the backlog and with the integration prototypes: **the club sends its data to an API the system exposes; the system never calls the club.** v4.1 applies the review in `CORRECCIONES_SPECS.txt` (decisions 24–33 and the table at the end). v4.2 reworks HU-27 and HU-13 around a formula catalog and per-club rules (decisions 34–40). v4.3 reworks HU-29 and HU-30 around four business questions of the Admin: who is rewarded, whom the change harms or favors, which parameter causes the effect and whether the ranking flattens (decisions 44–48).
 
 ## Shared documents
 
@@ -23,6 +23,7 @@
 | HU-11 | [Logout](hu-11-logout/spec.md) | 1 | Alta | Yes |
 | HU-13 | [Ranking Explanation](hu-13-ranking-explanation/spec.md) | 1 | Media | Yes |
 | HU-14 | [Current Score and Position](hu-14-current-score-and-position/spec.md) | 3 | Alta | Yes |
+| HU-15 | [Event History and Rules Applied](hu-15-event-history/spec.md) | 3 | Media | **No** (to be confirmed) |
 | HU-16 | [Score Breakdown](hu-16-score-breakdown/spec.md) | 3 | Media | Yes |
 | HU-17 | [Upcoming Events](hu-17-upcoming-events/spec.md) | 3 | Alta | Yes |
 | HU-18 | [Attendance Score Simulator](hu-18-attendance-score-simulator/spec.md) | 8 | Media | Yes |
@@ -93,6 +94,7 @@
 47. **HU-30 profile and equity.** Next to the simulation: the profile of the Socios who move up and down, against all Socios (distance, seniority, age, attendance at Clase C matches, institutional participation; medians; no group under 10 Socios shown), and the equity by seniority, distance and age in fixed bands with a deterministic merge rule for segments under 10 Socios. A segment is marked when its mean change of position is 2 % of the ranking or more, and strong at 5 %; there is a verdict per attribute and an overall one (`EQUITY_OK`, `EQUITY_ATTENTION`, `EQUITY_BIAS`). The thresholds (1 %, 80 %, 10 Socios, 2 %, 5 %) are fixed in the product, not settings; changing them is an amendment of the spec. Segmenting by "tipo de socio" stays out until the club sends that field.
 48. **The simulator never applies values.** HU-28 remains the only way to change the rules, with its cut-off, lock and confirmation. The result lists the changed parameters with their previous and hypothetical values, and can be downloaded as a CSV generated at that moment and never stored. Simulations change nothing and are not audited. A stored or executive report is HU-42, outside the MVP.
 49. **The tiebreak lives in the snapshot.** Each ranking entry stores, besides the dates of rule 5, the Socio's document number (scoring model, rule 4), so HU-18, HU-29 and HU-30 rebuild the exact order from the snapshot without re-reading the roster. Entries calculated before this decision are completed once from the roster by a data migration.
+50. **HU-15 reads past rules versions.** The Socio sees the past events they attended (definitive attendance, HU-24) and, for each one, the rules version in force at its start: the version of the club with the latest `published_at` at or before the event start. The Socio can read a rules version of their own club by its number, read-only, with the same explanation as HU-13. This narrows decision 41: there is still no list or history screen of versions, only the version linked from each event.
 
 ## Defaults set by this revision (change them in one place)
 
