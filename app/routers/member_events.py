@@ -196,7 +196,10 @@ def consultar_historial_de_eventos(
     member: CurrentMember,
     club_id: CurrentMemberClub,
     db: Annotated[Session, Depends(get_db)],
+    response: Response,
 ) -> EventHistoryResponse:
+    # Solo lectura y siempre al día: sin copias en caché (como HU-13 y HU-14).
+    response.headers["Cache-Control"] = "no-store"
     return EventHistoryResponse(
         **event_history_service.member_history(db, member, club_id)
     )

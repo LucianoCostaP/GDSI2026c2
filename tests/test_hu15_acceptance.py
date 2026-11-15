@@ -1,11 +1,12 @@
 """HU-15: tests de aceptación del historial de eventos del Socio, por la API."""
 
+import pytest
 from fastapi.encoders import jsonable_encoder
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import RulesVersion, User
+from app.models import AsistenciaDB, EventoVisibleDB, RulesVersion, User
 from app.services.formula_service import explanation_of
 from tests.conftest import BOCA_ID, MakeMember, Outbox
 from tests.hu15_helpers import (
@@ -193,3 +194,68 @@ def test_un_evento_anterior_a_la_primera_publicacion_no_tiene_reglas(
         event["rules_message"]
         == "No había reglas de puntaje publicadas en ese momento."
     )
+
+
+@pytest.mark.parametrize("path", [HISTORY, RULES.format(1)])
+@pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
+def test_el_historial_y_las_reglas_son_de_solo_lectura(
+    db: Session,
+    client: TestClient,
+    outbox: Outbox,
+    make_member: MakeMember,
+    method: str,
+    path: str,
+) -> None:
+    ana = socio_with_account(db, make_member)
+
+    response = client.request(
+        method, path, headers=member_headers(client, outbox, ana.member)
+    )
+
+    assert response.status_code == 405
+
+
+def test_el_historial_y_las_reglas_no_se_guardan_en_cache(
+    db: Session,
+    client: TestClient,
+    outbox: Outbox,
+    make_member: MakeMember,
+    admin: User,
+) -> None:
+    publish_rules(client, headers_for(client, outbox, admin))
+    ana = socio_with_account(db, make_member)
+    headers = member_headers(client, outbox, ana.member)
+
+    for path in (HISTORY, RULES.format(1)):
+        response = client.get(path, headers=headers)
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store"
+
+
+def test_consultar_el_historial_y_las_reglas_no_modifica_datos(
+    db: Session,
+    client: TestClient,
+    outbox: Outbox,
+    make_member: MakeMember,
+    admin: User,
+) -> None:
+    publish_v1_and_v2(db, client, outbox, admin)
+    ana = socio_with_account(db, make_member)
+    event = make_event(db, id_externo=uid("EVT"), when=utc("2026-03-10T20:00:00Z"))
+    load_attendance(db, event, [ana.socio])
+    headers = member_headers(client, outbox, ana.member)
+
+    def snapshot() -> tuple[int, int, int, list[str]]:
+        return (
+            db.scalar(select(func.count()).select_from(AsistenciaDB)) or 0,
+            db.scalar(select(func.count()).select_from(EventoVisibleDB)) or 0,
+            db.scalar(select(func.count()).select_from(RulesVersion)) or 0,
+            sorted(str(state) for state in db.scalars(select(RulesVersion.state))),
+        )
+
+    before = snapshot()
+    for path in (HISTORY, RULES.format(1), RULES.format(2)):
+        assert client.get(path, headers=headers).status_code == 200
+    db.expire_all()
+
+    assert snapshot() == before
