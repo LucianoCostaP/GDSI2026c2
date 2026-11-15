@@ -2,7 +2,7 @@
 
 Un evento entra al historial si es del club del Socio y tiene una asistencia definitiva de su
 documento (`asistencias`, HU-24). Valen los eventos publicados y los históricos. El orden y el
-armado de cada ítem son lógica pura (`event_history`).
+armado de la respuesta son lógica pura (`event_history`).
 """
 
 import uuid
@@ -11,9 +11,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..core.date_utils import asegurar_utc
 from ..models import AsistenciaDB, EventoPendienteDB, EventoVisibleDB, User
-from .event_history import AttendedEvent, HistoryItem, build_history
+from .event_history import AttendedEvent, build_history, history_response
 from .ranking_service import socio_of
 
 
@@ -51,20 +50,10 @@ def attended_events(db: Session, club_id: uuid.UUID, dni: str) -> list[AttendedE
     ]
 
 
-def _item_out(item: HistoryItem) -> dict[str, Any]:
-    event = item.event
-    return {
-        "id_interno": event.id_interno,
-        "titulo": event.titulo,
-        "fecha_hora": asegurar_utc(event.fecha_hora).isoformat(),
-    }
-
-
 def member_history(
     db: Session, member_user: User, club_id: uuid.UUID
 ) -> dict[str, Any]:
     """Historial de eventos del Socio de la sesión, del más reciente al más antiguo."""
     socio = socio_of(db, member_user, club_id)
     events = attended_events(db, club_id, socio.dni) if socio is not None else []
-    items = build_history(events)
-    return {"total": len(items), "events": [_item_out(item) for item in items]}
+    return history_response(build_history(events))

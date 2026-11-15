@@ -1,14 +1,16 @@
 """HU-15: historial de eventos del Socio. Lógica pura, sin base de datos ni reloj.
 
 La capa de datos (`event_history_service`) trae los eventos a los que el Socio asistió; acá se
-ordenan y se arma cada ítem del historial.
+ordenan y se arma la respuesta. La clase de un Partido nunca llega hasta acá: `AttendedEvent` no
+la tiene, así que no se puede exponer por error (como en HU-17).
 """
 
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
-from ..core.date_utils import asegurar_utc
+from ..core.date_utils import asegurar_utc, formatear_tipo_evento
 
 
 @dataclass(frozen=True)
@@ -43,3 +45,19 @@ def build_history(events: Iterable[AttendedEvent]) -> list[HistoryItem]:
         ),
     )
     return [HistoryItem(event=event) for event in ordered]
+
+
+def _event_out(item: HistoryItem) -> dict[str, Any]:
+    event = item.event
+    return {
+        "id_interno": event.id_interno,
+        "titulo": event.titulo,
+        # En UTC; el front la muestra en hora de Buenos Aires.
+        "fecha_hora": asegurar_utc(event.fecha_hora).isoformat(),
+        "tipo": formatear_tipo_evento(event.tipo),
+    }
+
+
+def history_response(items: list[HistoryItem]) -> dict[str, Any]:
+    """Respuesta del historial: el total y cada evento con su fecha y su tipo."""
+    return {"total": len(items), "events": [_event_out(item) for item in items]}

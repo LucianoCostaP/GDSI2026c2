@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Response
 from sqlalchemy.orm import Session
@@ -12,6 +12,7 @@ from ..models import Member, User
 from ..models.domain import Club, Socio
 from ..repositories.base import EventoRepository
 from ..repositories.factory import get_evento_repository
+from ..schemas.event_history import EventHistoryResponse
 from ..schemas.eventos import ProximosEventosResponse
 from ..schemas.own_slot import OwnSlotOut
 from ..services import event_history_service, own_slot_service
@@ -182,16 +183,20 @@ def consultar_turno_propio(
 # ==============================================================================
 @router.get(
     "/member/events/history",
+    response_model=EventHistoryResponse,
     tags=["Historial de eventos (Socio - HU-15)"],
     summary="Historial de eventos del socio (HU-15)",
     description=(
         "Eventos pasados del club del socio con su asistencia registrada, del más reciente "
-        "al más antiguo. El club sale de la cuenta del socio."
+        "al más antiguo, con su fecha (UTC) y su tipo. No expone la clase de los partidos. "
+        "El club sale de la cuenta del socio."
     ),
 )
 def consultar_historial_de_eventos(
     member: CurrentMember,
     club_id: CurrentMemberClub,
     db: Annotated[Session, Depends(get_db)],
-) -> dict[str, Any]:
-    return event_history_service.member_history(db, member, club_id)
+) -> EventHistoryResponse:
+    return EventHistoryResponse(
+        **event_history_service.member_history(db, member, club_id)
+    )

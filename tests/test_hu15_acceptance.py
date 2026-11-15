@@ -55,3 +55,34 @@ def test_un_evento_historico_forma_parte_del_historial(
 
     assert response.status_code == 200
     assert titles(response) == [historical.titulo]
+
+
+def test_cada_evento_muestra_fecha_y_tipo_sin_la_clase(
+    db: Session, client: TestClient, outbox: Outbox, make_member: MakeMember
+) -> None:
+    ana = socio_with_account(db, make_member)
+    partido = make_event(
+        db, id_externo=uid("EVT-01"), when=utc("2026-03-10T20:00:00Z"), clase="C"
+    )
+    institucional = make_event(
+        db,
+        id_externo=uid("EVT-02"),
+        when=utc("2026-05-02T18:00:00Z"),
+        tipo="Institucional",
+        clase=None,
+        puntos=10,
+    )
+    load_attendance(db, partido, [ana.socio])
+    load_attendance(db, institucional, [ana.socio])
+
+    response = client.get(HISTORY, headers=member_headers(client, outbox, ana.member))
+
+    assert response.status_code == 200
+    by_title = {event["titulo"]: event for event in response.json()["events"]}
+    assert utc(by_title[partido.titulo]["fecha_hora"]) == utc("2026-03-10T20:00:00Z")
+    assert by_title[partido.titulo]["tipo"] == "Partido"
+    assert utc(by_title[institucional.titulo]["fecha_hora"]) == utc(
+        "2026-05-02T18:00:00Z"
+    )
+    assert by_title[institucional.titulo]["tipo"] == "Evento institucional/amateur"
+    assert all("clase" not in event for event in by_title.values())
