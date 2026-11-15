@@ -147,3 +147,23 @@ def test_un_evento_sin_reglas_trae_el_mensaje_del_spec() -> None:
     assert event["rules_message"] == (
         "No había reglas de puntaje publicadas en ese momento."
     )
+
+
+# --- Historial vacío (ciclo 5) -------------------------------------------------------------
+
+
+def test_sin_eventos_responde_estado_empty_con_el_mensaje_del_spec() -> None:
+    assert history_response([]) == {
+        "status": "empty",
+        "message": (
+            "Todavía no tenés eventos en tu historial. "
+            "Cuando el club registre tu asistencia a un evento, lo vas a ver acá."
+        ),
+        "total": 0,
+        "events": [],
+    }
+
+
+def test_con_eventos_responde_estado_ok_sin_mensaje() -> None:
+    out = history_response(build_history([ev("a", D1)]))
+    assert (out["status"], out["message"], out["total"]) == ("ok", None, 1)

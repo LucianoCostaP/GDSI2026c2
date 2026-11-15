@@ -70,3 +70,10 @@ def test_la_version_de_reglas_no_admite_datos_de_quien_publico() -> None:
     assert MemberRulesVersionOut(**RULES_VERSION).in_force is False
     with pytest.raises(ValidationError):
         MemberRulesVersionOut(**RULES_VERSION, published_by="admin@club.com")
+
+
+def test_el_estado_del_historial_solo_puede_ser_ok_o_empty() -> None:
+    empty = EventHistoryResponse(status="empty", message="…", total=0, events=[])
+    assert empty.status == "empty"
+    with pytest.raises(ValidationError):
+        EventHistoryResponse(status="otro", message=None, total=0, events=[])

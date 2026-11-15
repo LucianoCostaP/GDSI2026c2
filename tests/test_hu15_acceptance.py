@@ -259,3 +259,52 @@ def test_consultar_el_historial_y_las_reglas_no_modifica_datos(
     db.expire_all()
 
     assert snapshot() == before
+
+
+EMPTY_HISTORY_MESSAGE = (
+    "Todavía no tenés eventos en tu historial. "
+    "Cuando el club registre tu asistencia a un evento, lo vas a ver acá."
+)
+
+
+def test_un_socio_sin_eventos_ve_un_mensaje_en_vez_de_una_lista_vacia(
+    db: Session, client: TestClient, outbox: Outbox, make_member: MakeMember
+) -> None:
+    ana = socio_with_account(db, make_member)
+
+    response = client.get(HISTORY, headers=member_headers(client, outbox, ana.member))
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "empty",
+        "message": EMPTY_HISTORY_MESSAGE,
+        "total": 0,
+        "events": [],
+    }
+
+
+def test_una_cuenta_sin_socio_en_el_padron_ve_el_historial_vacio(
+    db: Session, client: TestClient, outbox: Outbox, make_member: MakeMember
+) -> None:
+    # Cuenta activada del club, pero el club todavía no mandó su socio (HU-43).
+    member = make_member(activated=True)
+
+    response = client.get(HISTORY, headers=member_headers(client, outbox, member))
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "empty"
+    assert response.json()["message"] == EMPTY_HISTORY_MESSAGE
+
+
+def test_un_socio_con_la_cuota_en_mora_ve_su_historial(
+    db: Session, client: TestClient, outbox: Outbox, make_member: MakeMember
+) -> None:
+    ana = socio_with_account(db, make_member, estado_cuota="moroso")
+    event = make_event(db, id_externo=uid("EVT"), when=utc("2026-03-10T20:00:00Z"))
+    load_attendance(db, event, [ana.socio])
+
+    response = client.get(HISTORY, headers=member_headers(client, outbox, ana.member))
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+    assert titles(response) == [event.titulo]

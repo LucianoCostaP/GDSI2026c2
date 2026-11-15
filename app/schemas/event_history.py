@@ -1,7 +1,7 @@
 """HU-15: respuesta del historial de eventos del Socio y de una versión de reglas."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -40,6 +40,10 @@ class EventHistoryResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    status: Literal["ok", "empty"]
+    message: str | None = Field(
+        description="Con `empty`: el texto para el socio sin eventos. Con `ok`: `null`."
+    )
     total: int
     events: list[EventHistoryItemOut]
 

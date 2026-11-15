@@ -15,6 +15,10 @@ from ..core.date_utils import asegurar_utc, formatear_tipo_evento
 
 RULES_URL = "/member/scoring/rules/{number}"
 NO_RULES_MESSAGE = "No había reglas de puntaje publicadas en ese momento."
+EMPTY_HISTORY_MESSAGE = (
+    "Todavía no tenés eventos en tu historial. "
+    "Cuando el club registre tu asistencia a un evento, lo vas a ver acá."
+)
 
 
 @dataclass(frozen=True)
@@ -107,5 +111,14 @@ def _event_out(item: HistoryItem) -> dict[str, Any]:
 
 
 def history_response(items: list[HistoryItem]) -> dict[str, Any]:
-    """Respuesta del historial: el total y cada evento con su fecha, su tipo y sus reglas."""
-    return {"total": len(items), "events": [_event_out(item) for item in items]}
+    """Respuesta del historial: el total y cada evento con su fecha, su tipo y sus reglas.
+
+    Sin eventos, el estado es `empty` y trae el mensaje para el Socio en vez de una lista vacía
+    sin contexto.
+    """
+    return {
+        "status": "ok" if items else "empty",
+        "message": None if items else EMPTY_HISTORY_MESSAGE,
+        "total": len(items),
+        "events": [_event_out(item) for item in items],
+    }

@@ -7,15 +7,22 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.date_utils import asegurar_utc
-from app.models import EstadoCargaParticipacion, RulesVersion
+from app.models import EstadoCargaParticipacion, Member, RulesVersion, User
 from app.services.event_history_service import (
     attended_events,
+    member_history,
     member_rules_version,
     rules_timeline,
 )
 from app.services.formula_service import explanation_of
-from tests.conftest import BOCA_ID, RIVER_ID, MakeAdmin, Outbox
-from tests.hu15_helpers import backdate_rules, make_historical_event, uid, utc
+from tests.conftest import BOCA_ID, RIVER_ID, MakeAdmin, MakeMember, Outbox
+from tests.hu15_helpers import (
+    backdate_rules,
+    make_historical_event,
+    socio_with_account,
+    uid,
+    utc,
+)
 from tests.hu25_helpers import (
     adjust_rules,
     headers_for,
@@ -169,3 +176,41 @@ def test_una_version_no_expone_quien_la_publico(
     publish_rules(client, boca)
 
     assert "published_by" not in str(member_rules_version(db, BOCA_ID, 1))
+
+
+# --- Historial vacío y socio moroso (ciclo 5) ----------------------------------------------
+
+
+def account_of(db: Session, member: Member) -> User:
+    return db.scalars(select(User).where(User.member_id == member.member_id)).one()
+
+
+def test_una_cuenta_sin_socio_en_el_padron_tiene_el_historial_vacio(
+    db: Session, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+
+    out = member_history(db, account_of(db, member), BOCA_ID)
+
+    assert (out["status"], out["total"], out["events"]) == ("empty", 0, [])
+
+
+def test_un_socio_sin_asistencias_tiene_el_historial_vacio(
+    db: Session, make_member: MakeMember
+) -> None:
+    ana = socio_with_account(db, make_member)
+
+    assert member_history(db, account_of(db, ana.member), BOCA_ID)["status"] == "empty"
+
+
+def test_la_cuota_en_mora_no_oculta_el_historial(
+    db: Session, make_member: MakeMember
+) -> None:
+    ana = socio_with_account(db, make_member, estado_cuota="moroso")
+    event = make_event(db, id_externo=uid("E"), when=MARZO)
+    load_attendance(db, event, [ana.socio])
+
+    out = member_history(db, account_of(db, ana.member), BOCA_ID)
+
+    assert out["status"] == "ok"
+    assert [e["id_interno"] for e in out["events"]] == [event.id_interno]
