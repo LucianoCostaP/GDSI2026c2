@@ -19,7 +19,7 @@ from ..schemas.own_slot import OwnSlotEventOut, OwnSlotOut, OwnSlotStatus, OwnWa
 from ..scoring.wave_schedule import WaveState, wave_starts, wave_state
 from ..scoring.waves import build_waves, wave_of
 from .formula_service import error
-from .ranking_service import _socio_of
+from .ranking_service import socio_of
 from .wave_schedule_service import visible_schedule
 
 NO_TURNS_MESSAGE = "Este evento no tiene turnos de reserva."
@@ -52,7 +52,7 @@ def _seconds_until(moment: datetime, now: datetime) -> int:
 def _position(
     db: Session, member: User, club_id: uuid.UUID, segmentation: WaveSegmentation
 ) -> int | None:
-    socio = _socio_of(db, member, club_id)
+    socio = socio_of(db, member, club_id)
     if socio is None:
         return None
     return db.scalar(

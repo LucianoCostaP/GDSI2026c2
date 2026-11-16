@@ -70,7 +70,7 @@ from ..scoring.snapshot import (
     scoring_inputs_from_snapshot,
 )
 from .formula_service import get_in_force
-from .ranking_service import _socio_of, get_ranking_in_force
+from .ranking_service import get_ranking_in_force, socio_of
 
 EVENT_NOT_FOUND_MESSAGE = "No encontramos el evento."
 EVENT_NOT_SIMULABLE_MESSAGE = "Este evento ya no está disponible para simular."
@@ -158,7 +158,7 @@ def _ranked_entry(
     socio no tiene entrada (ingresó después del cálculo).
     """
     ranking = get_ranking_in_force(db, club_id)
-    socio = _socio_of(db, member_user, club_id)
+    socio = socio_of(db, member_user, club_id)
     if (
         ranking is None
         or socio is None
