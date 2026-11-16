@@ -30,3 +30,10 @@ class NotificationListOut(BaseModel):
     unread_count: int = Field(description="Igual al de `/unread-count`")
     limit: int
     offset: int
+
+
+class ReadAllOut(BaseModel):
+    marked: int = Field(
+        description="Cuántas estaban sin leer y se marcaron; puede ser 0"
+    )
+    unread_count: int = Field(description="Siempre 0 después de marcar todas")

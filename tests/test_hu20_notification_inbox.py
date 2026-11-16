@@ -4,7 +4,7 @@ Hasta que existan los generadores de HU-19, las notificaciones se crean directo 
 haría el contrato `notify` (notificaciones §4 y §10).
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from itertools import count
 from typing import Any
 
@@ -621,3 +621,323 @@ def test_el_club_y_el_socio_salen_de_la_sesion_y_no_del_pedido(
 
     assert response.status_code == 200
     assert [item["message"] for item in response.json()["items"]] == ["mía"]
+
+
+# === User Story 2: abrir y marcar como leída ================================================
+
+
+def read(client: TestClient, auth: dict[str, str], notification: Notification) -> Any:
+    return client.post(f"{INBOX}/{notification.id}/read", headers=auth)
+
+
+# --- US2 escenario 1: al abrirla queda leída y el front tiene con qué ir al destino ----------
+
+
+def test_abrir_una_no_leida_la_marca_como_leida_con_la_hora_de_lectura(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+    notification = notify(
+        db,
+        account_of(db, member),
+        created_at=at("2026-11-05T13:00:04Z"),
+        type="wave_opened",
+        title="Tu turno de reserva está habilitado",
+        message="Ya podés reservar para Fecha 12 vs. Rival.",
+        reference={"event_id": "evt-7f3a"},
+    )
+    auth = headers(client, outbox, member)
+    before = datetime.now(UTC)
+
+    response = read(client, auth, notification)
+
+    after = datetime.now(UTC)
+    assert response.status_code == 200
+    body = response.json()
+    read_at = datetime.fromisoformat(body.pop("read_at"))
+    assert before - timedelta(seconds=1) <= read_at <= after + timedelta(seconds=1)
+    assert body == {
+        "id": notification.id,
+        "type": "wave_opened",
+        "title": "Tu turno de reserva está habilitado",
+        "message": "Ya podés reservar para Fecha 12 vs. Rival.",
+        "created_at": "2026-11-05T13:00:04Z",
+        "state": "read",
+        "reference": {"event_id": "evt-7f3a"},
+    }
+
+
+def test_la_lectura_queda_guardada_y_baja_el_contador(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+    user = account_of(db, member)
+    opened = notify(db, user, created_at=at("2026-11-05T13:00:00Z"), message="abierta")
+    notify(db, user, created_at=at("2026-11-04T13:00:00Z"), message="pendiente")
+    auth = headers(client, outbox, member)
+
+    marked = read(client, auth, opened).json()
+    inbox = client.get(INBOX, headers=auth).json()
+
+    assert [(i["message"], i["state"]) for i in inbox["items"]] == [
+        ("abierta", "read"),
+        ("pendiente", "unread"),
+    ]
+    assert inbox["items"][0]["read_at"] == marked["read_at"]
+    assert inbox["unread_count"] == 1
+
+
+@pytest.mark.parametrize(
+    ("type", "reference"),
+    [
+        ("event_published", {"event_id": "evt-1"}),
+        ("event_rescheduled", {"event_id": "evt-2"}),
+        ("wave_opened", {"event_id": "evt-3"}),
+        ("ranking_completed", {"ranking_id": 42}),
+    ],
+)
+def test_la_respuesta_trae_tipo_y_referencia_para_armar_el_destino(
+    client: TestClient,
+    db: Session,
+    outbox: Outbox,
+    make_member: MakeMember,
+    type: str,
+    reference: dict[str, Any],
+) -> None:
+    """El front arma la ruta con el tipo y la referencia (contrato §7): el evento, el turno
+    propio o "Mi puntaje". La notificación nunca guarda una URL."""
+    member = make_member(activated=True)
+    notification = notify(
+        db,
+        account_of(db, member),
+        created_at=at("2026-11-05T13:00:00Z"),
+        type=type,
+        reference=reference,
+    )
+
+    body = read(client, headers(client, outbox, member), notification).json()
+
+    assert (body["type"], body["reference"]) == (type, reference)
+
+
+def test_marcar_como_leida_no_cambia_las_demas(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+    other = make_member(activated=True)
+    user = account_of(db, member)
+    opened = notify(db, user, created_at=at("2026-11-05T13:00:00Z"))
+    mine = notify(db, user, created_at=at("2026-11-04T13:00:00Z"))
+    theirs = notify(db, account_of(db, other), created_at=at("2026-11-05T13:00:00Z"))
+
+    read(client, headers(client, outbox, member), opened)
+
+    for untouched in (mine, theirs):
+        db.refresh(untouched)
+        assert (untouched.state, untouched.read_at) == (NotificationState.UNREAD, None)
+
+
+# --- US2 escenario 2: el evento ya no está disponible ----------------------------------------
+
+
+def test_se_marca_como_leida_aunque_el_evento_ya_no_exista(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    """Marcar como leída no consulta el evento: el front muestra "Este evento ya no está
+    disponible." cuando el destino no lo encuentra (contrato §7)."""
+    member = make_member(activated=True)
+    notification = notify(
+        db,
+        account_of(db, member),
+        created_at=at("2026-11-05T13:00:00Z"),
+        reference={"event_id": "evento-que-no-existe"},
+    )
+
+    response = read(client, headers(client, outbox, member), notification)
+
+    assert response.status_code == 200
+    assert response.json()["state"] == "read"
+    assert response.json()["reference"] == {"event_id": "evento-que-no-existe"}
+
+
+def test_despues_de_un_evento_no_disponible_la_bandeja_sigue_accesible(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+    user = account_of(db, member)
+    gone = notify(
+        db,
+        user,
+        created_at=at("2026-11-05T13:00:00Z"),
+        reference={"event_id": "evento-que-no-existe"},
+    )
+    notify(db, user, created_at=at("2026-11-04T13:00:00Z"))
+    auth = headers(client, outbox, member)
+
+    read(client, auth, gone)
+    inbox = client.get(INBOX, headers=auth)
+
+    assert inbox.status_code == 200
+    assert [i["state"] for i in inbox.json()["items"]] == ["read", "unread"]
+
+
+# --- US2 escenario 3: abrir una ya leída no cambia nada --------------------------------------
+
+
+def test_abrir_una_ya_leida_conserva_la_primera_hora_de_lectura(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+    notification = notify(
+        db,
+        account_of(db, member),
+        created_at=at("2026-10-29T15:00:05Z"),
+        read_at=at("2026-10-29T18:22:10Z"),
+    )
+
+    response = read(client, headers(client, outbox, member), notification)
+
+    assert response.status_code == 200
+    assert (response.json()["state"], response.json()["read_at"]) == (
+        "read",
+        "2026-10-29T18:22:10Z",
+    )
+    db.refresh(notification)
+    assert notification.read_at == at("2026-10-29T18:22:10Z")
+
+
+def test_abrirla_dos_veces_responde_lo_mismo(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    """Dos dispositivos o dos toques: marcar como leída es idempotente (FR-009)."""
+    member = make_member(activated=True)
+    notification = notify(
+        db, account_of(db, member), created_at=at("2026-11-05T13:00:00Z")
+    )
+    auth = headers(client, outbox, member)
+
+    first = read(client, auth, notification).json()
+    second = read(client, auth, notification).json()
+
+    assert second == first
+
+
+def test_abrir_una_ya_leida_no_cambia_el_contador(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+    user = account_of(db, member)
+    already = notify(
+        db,
+        user,
+        created_at=at("2026-11-05T13:00:00Z"),
+        read_at=at("2026-11-05T14:00:00Z"),
+    )
+    notify(db, user, created_at=at("2026-11-04T13:00:00Z"))
+    auth = headers(client, outbox, member)
+
+    read(client, auth, already)
+
+    assert client.get(INBOX, headers=auth).json()["unread_count"] == 1
+
+
+# --- US2 escenario 4: "Marcar todas como leídas" ---------------------------------------------
+
+READ_ALL = f"{INBOX}/read-all"
+
+
+def test_marcar_todas_como_leidas_deja_el_contador_en_cero(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+    user = account_of(db, member)
+    for day in (3, 4, 5):
+        notify(db, user, created_at=at(f"2026-11-0{day}T13:00:00Z"))
+    auth = headers(client, outbox, member)
+    before = datetime.now(UTC)
+
+    response = client.post(READ_ALL, headers=auth)
+
+    assert response.status_code == 200
+    assert response.json() == {"marked": 3, "unread_count": 0}
+    inbox = client.get(INBOX, headers=auth).json()
+    assert inbox["unread_count"] == 0
+    assert {i["state"] for i in inbox["items"]} == {"read"}
+    for item in inbox["items"]:
+        assert datetime.fromisoformat(item["read_at"]) >= before - timedelta(seconds=1)
+
+
+def test_marcar_todas_conserva_la_hora_de_las_ya_leidas(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+    user = account_of(db, member)
+    already = notify(
+        db,
+        user,
+        created_at=at("2026-10-29T15:00:05Z"),
+        read_at=at("2026-10-29T18:22:10Z"),
+    )
+    notify(db, user, created_at=at("2026-11-05T13:00:00Z"))
+
+    response = client.post(READ_ALL, headers=headers(client, outbox, member))
+
+    assert response.json() == {"marked": 1, "unread_count": 0}
+    db.refresh(already)
+    assert already.read_at == at("2026-10-29T18:22:10Z")
+
+
+def test_marcar_todas_sin_ninguna_pendiente_marca_cero(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+    notify(
+        db,
+        account_of(db, member),
+        created_at=at("2026-11-05T13:00:00Z"),
+        read_at=at("2026-11-05T14:00:00Z"),
+    )
+
+    response = client.post(READ_ALL, headers=headers(client, outbox, member))
+
+    assert (response.status_code, response.json()) == (
+        200,
+        {"marked": 0, "unread_count": 0},
+    )
+
+
+def test_marcar_todas_no_toca_las_de_otro_socio_ni_las_de_otro_club(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+    other = make_member(activated=True)
+    user = account_of(db, member)
+    notify(db, user, created_at=at("2026-11-05T13:00:00Z"))
+    foreign_club = notify(db, user, created_at=at("2026-11-05T13:00:00Z"))
+    foreign_club.club_id = RIVER_ID
+    db.commit()
+    theirs = notify(db, account_of(db, other), created_at=at("2026-11-05T13:00:00Z"))
+
+    response = client.post(READ_ALL, headers=headers(client, outbox, member))
+
+    assert response.json() == {"marked": 1, "unread_count": 0}
+    for untouched in (foreign_club, theirs):
+        db.refresh(untouched)
+        assert (untouched.state, untouched.read_at) == (NotificationState.UNREAD, None)
+
+
+def test_marcar_todas_marca_mas_que_una_pagina(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    """ "Todas" son todas las del Socio, no solo las de la página cargada."""
+    member = make_member(activated=True)
+    many(db, account_of(db, member), 25)
+    auth = headers(client, outbox, member)
+
+    response = client.post(READ_ALL, headers=auth)
+
+    assert response.json() == {"marked": 25, "unread_count": 0}
+    assert (
+        client.get(INBOX, params={"offset": 20}, headers=auth).json()["unread_count"]
+        == 0
+    )

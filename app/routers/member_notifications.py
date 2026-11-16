@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import CurrentMember, CurrentMemberClub
 from ..db import get_db
-from ..schemas.notifications import NotificationListOut
+from ..schemas.notifications import NotificationListOut, NotificationOut, ReadAllOut
 from ..services import notification_service
 
 router = APIRouter(prefix="/member/notifications", tags=["member notifications"])
@@ -32,3 +32,17 @@ def list_notifications(
     return notification_service.list_notifications(
         db, member, club_id, limit=limit, offset=offset
     )
+
+
+@router.post("/read-all", response_model=ReadAllOut)
+def mark_all_as_read(
+    member: CurrentMember, club_id: CurrentMemberClub, db: Db
+) -> ReadAllOut:
+    return notification_service.mark_all_as_read(db, member, club_id)
+
+
+@router.post("/{notification_id}/read", response_model=NotificationOut)
+def mark_as_read(
+    notification_id: int, member: CurrentMember, club_id: CurrentMemberClub, db: Db
+) -> NotificationOut:
+    return notification_service.mark_as_read(db, member, club_id, notification_id)
