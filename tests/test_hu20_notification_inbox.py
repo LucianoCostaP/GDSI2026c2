@@ -11,10 +11,22 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
+from app.main import app
 from app.models import Member, Notification, NotificationState, User
-from tests.conftest import BOCA_ID, MakeMember, Outbox, bearer, member_token
+from app.services import notification_service
+from tests.conftest import (
+    BOCA_ID,
+    RIVER_ID,
+    MakeAdmin,
+    MakeMember,
+    Outbox,
+    admin_token,
+    bearer,
+    member_token,
+)
 
 INBOX = "/member/notifications"
 
@@ -443,3 +455,169 @@ def test_limite_u_offset_fuera_de_rango_responden_422(
     response = client.get(INBOX, params=params, headers=headers(client, outbox, member))
 
     assert response.status_code == 422
+
+
+# --- Escenario 7: la bandeja no se puede cargar ----------------------------------------------
+#
+# El texto "No pudimos cargar tus notificaciones. Intentá de nuevo." y el reintento los pone el
+# front. Al backend le toca no disfrazar la falla de bandeja vacía.
+
+
+def test_si_la_base_falla_responde_un_error_y_no_una_bandeja_vacia(
+    client: TestClient,
+    db: Session,
+    outbox: Outbox,
+    make_member: MakeMember,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    member = make_member(activated=True)
+    notify(db, account_of(db, member), created_at=at("2026-11-05T13:00:00Z"))
+    auth = headers(client, outbox, member)
+    # Con los overrides del fixture `client` activos, pero devolviendo el 500 como el server real.
+    client = TestClient(app, raise_server_exceptions=False)
+
+    def broken(*_: Any) -> int:
+        raise OperationalError("SELECT count(*) FROM notifications", {}, Exception())
+
+    monkeypatch.setattr(notification_service, "_unread_count", broken)
+
+    response = client.get(INBOX, headers=auth)
+
+    assert response.status_code == 500
+    assert "items" not in response.text
+    assert "notifications" not in response.text  # sin detalle técnico
+
+
+def test_despues_de_una_falla_reintentar_trae_la_bandeja(
+    client: TestClient,
+    db: Session,
+    outbox: Outbox,
+    make_member: MakeMember,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    member = make_member(activated=True)
+    notify(db, account_of(db, member), created_at=at("2026-11-05T13:00:00Z"))
+    auth = headers(client, outbox, member)
+    # Con los overrides del fixture `client` activos, pero devolviendo el 500 como el server real.
+    client = TestClient(app, raise_server_exceptions=False)
+    working = notification_service._unread_count
+
+    def broken(*_: Any) -> int:
+        raise OperationalError("SELECT 1", {}, Exception())
+
+    monkeypatch.setattr(notification_service, "_unread_count", broken)
+    assert client.get(INBOX, headers=auth).status_code == 500
+    monkeypatch.setattr(notification_service, "_unread_count", working)
+
+    retry = client.get(INBOX, headers=auth)
+
+    assert retry.status_code == 200
+    assert retry.json()["total"] == 1
+
+
+# --- Escenario 8: solo el Socio de la sesión, y solo lo suyo ---------------------------------
+
+
+def test_sin_sesion_se_rechaza(client: TestClient) -> None:
+    response = client.get(INBOX)
+
+    assert (response.status_code, response.json()["detail"]) == (
+        401,
+        "NOT_AUTHENTICATED",
+    )
+
+
+def test_con_un_token_invalido_se_rechaza(client: TestClient) -> None:
+    response = client.get(INBOX, headers=bearer("no-es-un-token"))
+
+    assert response.status_code == 401
+
+
+def test_un_admin_no_puede_ver_la_bandeja(
+    client: TestClient, outbox: Outbox, make_admin: MakeAdmin
+) -> None:
+    auth = bearer(admin_token(client, outbox, make_admin(BOCA_ID)))
+
+    response = client.get(INBOX, headers=auth)
+
+    assert (response.status_code, response.json()["detail"]) == (403, "FORBIDDEN")
+
+
+def test_una_cuenta_de_socio_sin_club_se_rechaza(
+    client: TestClient, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True, club_id=None)
+
+    response = client.get(INBOX, headers=headers(client, outbox, member))
+
+    assert (response.status_code, response.json()["detail"]) == (
+        403,
+        "MEMBER_WITHOUT_CLUB",
+    )
+
+
+def test_un_socio_nunca_ve_las_notificaciones_de_otro_socio(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+    other = make_member(activated=True)
+    notify(
+        db, account_of(db, member), created_at=at("2026-11-04T13:00:00Z"), message="mía"
+    )
+    notify(
+        db,
+        account_of(db, other),
+        created_at=at("2026-11-05T13:00:00Z"),
+        message="ajena",
+    )
+
+    body = client.get(INBOX, headers=headers(client, outbox, member)).json()
+
+    assert [item["message"] for item in body["items"]] == ["mía"]
+
+
+def test_un_socio_no_ve_las_notificaciones_de_otro_club_aunque_sean_de_su_cuenta(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    """La consulta filtra por cuenta y por el club de la sesión: una fila de otro club nunca
+    aparece, aunque apunte a la misma cuenta."""
+    member = make_member(activated=True)
+    user = account_of(db, member)
+    notify(db, user, created_at=at("2026-11-04T13:00:00Z"), message="de Boca")
+    foreign = notify(
+        db, user, created_at=at("2026-11-05T13:00:00Z"), message="de River"
+    )
+    foreign.club_id = RIVER_ID
+    db.commit()
+
+    body = client.get(INBOX, headers=headers(client, outbox, member)).json()
+
+    assert [item["message"] for item in body["items"]] == ["de Boca"]
+    assert (body["total"], body["unread_count"]) == (1, 1)
+
+
+def test_el_club_y_el_socio_salen_de_la_sesion_y_no_del_pedido(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    river_member = make_member(activated=True, club_id=RIVER_ID)
+    boca_member = make_member(activated=True)
+    notify(
+        db,
+        account_of(db, river_member),
+        created_at=at("2026-11-04T13:00:00Z"),
+        message="mía",
+    )
+    boca_user = account_of(db, boca_member)
+    notify(db, boca_user, created_at=at("2026-11-05T13:00:00Z"), message="ajena")
+
+    response = client.get(
+        INBOX,
+        params={"club_id": str(BOCA_ID), "user_id": boca_user.id},
+        headers={
+            **headers(client, outbox, river_member),
+            "X-Club-ID": str(BOCA_ID),
+        },
+    )
+
+    assert response.status_code == 200
+    assert [item["message"] for item in response.json()["items"]] == ["mía"]
