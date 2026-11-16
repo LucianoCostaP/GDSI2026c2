@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.main import app
 from app.models import Member, Notification, NotificationState, User
+from app.notifications.catalog import ACTIVE_TYPES, BY_KEY, CATALOG
 from app.services import notification_service
 from tests.conftest import (
     BOCA_ID,
@@ -691,7 +692,8 @@ def test_la_lectura_queda_guardada_y_baja_el_contador(
     ("type", "reference"),
     [
         ("event_published", {"event_id": "evt-1"}),
-        ("event_rescheduled", {"event_id": "evt-2"}),
+        # `event_rescheduled` lleva al evento igual que `event_published`, pero está inactivo
+        # hasta HU-23 y no se puede abrir (ver la sección del catálogo).
         ("wave_opened", {"event_id": "evt-3"}),
         ("ranking_completed", {"ranking_id": 42}),
     ],
@@ -941,3 +943,371 @@ def test_marcar_todas_marca_mas_que_una_pagina(
         client.get(INBOX, params={"offset": 20}, headers=auth).json()["unread_count"]
         == 0
     )
+
+
+# --- US2 escenario 5: el contador del menú ----------------------------------------------------
+#
+# El front muestra el número junto a "Notificaciones", `99+` por encima de 99 y nada con 0
+# (contrato §3.2). El backend manda el número exacto.
+
+UNREAD_COUNT = f"{INBOX}/unread-count"
+
+
+def test_el_contador_dice_cuantas_hay_sin_leer(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+    user = account_of(db, member)
+    notify(db, user, created_at=at("2026-11-05T13:00:00Z"))
+    notify(db, user, created_at=at("2026-11-04T13:00:00Z"))
+    notify(
+        db,
+        user,
+        created_at=at("2026-11-03T13:00:00Z"),
+        read_at=at("2026-11-03T14:00:00Z"),
+    )
+
+    response = client.get(UNREAD_COUNT, headers=headers(client, outbox, member))
+
+    assert response.status_code == 200
+    assert response.json() == {"unread_count": 2}
+
+
+def test_sin_notificaciones_sin_leer_el_contador_es_cero(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+    notify(
+        db,
+        account_of(db, member),
+        created_at=at("2026-11-05T13:00:00Z"),
+        read_at=at("2026-11-05T14:00:00Z"),
+    )
+
+    response = client.get(UNREAD_COUNT, headers=headers(client, outbox, member))
+
+    assert response.json() == {"unread_count": 0}
+
+
+def test_por_encima_de_99_el_contador_manda_el_numero_exacto(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    """El `99+` lo arma el front; el backend no recorta."""
+    member = make_member(activated=True)
+    user = account_of(db, member)
+    db.add_all(
+        Notification(
+            club_id=BOCA_ID,
+            user_id=user.id,
+            type="event_published",
+            reference={"event_id": f"evt-{n}"},
+            title="Nuevo evento publicado",
+            message="Ya podés verlo.",
+            created_at=at("2026-11-05T13:00:00Z"),
+            occurrence_key=f"test:muchas:{n}",
+        )
+        for n in range(105)
+    )
+    db.commit()
+
+    response = client.get(UNREAD_COUNT, headers=headers(client, outbox, member))
+
+    assert response.json() == {"unread_count": 105}
+
+
+def test_el_contador_es_igual_al_de_la_bandeja(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+    many(db, account_of(db, member), 25)
+    auth = headers(client, outbox, member)
+
+    counter = client.get(UNREAD_COUNT, headers=auth).json()["unread_count"]
+    inbox = client.get(INBOX, params={"limit": 5}, headers=auth).json()
+
+    assert counter == inbox["unread_count"] == 25
+
+
+def test_el_contador_solo_cuenta_las_del_socio_y_su_club(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+    other = make_member(activated=True)
+    user = account_of(db, member)
+    notify(db, user, created_at=at("2026-11-05T13:00:00Z"))
+    foreign_club = notify(db, user, created_at=at("2026-11-05T13:00:00Z"))
+    foreign_club.club_id = RIVER_ID
+    db.commit()
+    notify(db, account_of(db, other), created_at=at("2026-11-05T13:00:00Z"))
+
+    response = client.get(
+        UNREAD_COUNT,
+        params={"club_id": str(RIVER_ID)},
+        headers={**headers(client, outbox, member), "X-Club-ID": str(RIVER_ID)},
+    )
+
+    assert response.json() == {"unread_count": 1}
+
+
+def test_el_contador_responde_sin_cache(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+
+    response = client.get(UNREAD_COUNT, headers=headers(client, outbox, member))
+
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_el_contador_es_solo_para_socios(
+    client: TestClient, outbox: Outbox, make_admin: MakeAdmin
+) -> None:
+    anonymous = client.get(UNREAD_COUNT)
+    as_admin = client.get(
+        UNREAD_COUNT, headers=bearer(admin_token(client, outbox, make_admin(BOCA_ID)))
+    )
+
+    assert (anonymous.status_code, anonymous.json()["detail"]) == (
+        401,
+        "NOT_AUTHENTICATED",
+    )
+    assert (as_admin.status_code, as_admin.json()["detail"]) == (403, "FORBIDDEN")
+
+
+# --- US2 escenario 6: lo marcado se ve en la próxima carga -----------------------------------
+
+
+def test_al_abrir_una_el_contador_y_la_lista_lo_reflejan(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+    user = account_of(db, member)
+    opened = notify(db, user, created_at=at("2026-11-05T13:00:00Z"), message="abierta")
+    notify(db, user, created_at=at("2026-11-04T13:00:00Z"), message="pendiente")
+    auth = headers(client, outbox, member)
+    assert client.get(UNREAD_COUNT, headers=auth).json() == {"unread_count": 2}
+
+    read(client, auth, opened)
+
+    assert client.get(UNREAD_COUNT, headers=auth).json() == {"unread_count": 1}
+    inbox = client.get(INBOX, headers=auth).json()
+    assert [(i["message"], i["state"]) for i in inbox["items"]] == [
+        ("abierta", "read"),
+        ("pendiente", "unread"),
+    ]
+
+
+def test_al_marcar_todas_el_contador_y_la_lista_lo_reflejan(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+    many(db, account_of(db, member), 3)
+    auth = headers(client, outbox, member)
+
+    client.post(READ_ALL, headers=auth)
+
+    assert client.get(UNREAD_COUNT, headers=auth).json() == {"unread_count": 0}
+    inbox = client.get(INBOX, headers=auth).json()
+    assert {i["state"] for i in inbox["items"]} == {"read"}
+
+
+def test_lo_marcado_en_un_dispositivo_se_ve_en_otro(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    """Dos sesiones del mismo Socio: la segunda ve el estado en su próxima carga."""
+    member = make_member(activated=True)
+    notification = notify(
+        db, account_of(db, member), created_at=at("2026-11-05T13:00:00Z")
+    )
+    phone = headers(client, outbox, member)
+    laptop = headers(client, outbox, member)
+    assert phone != laptop
+
+    marked = read(client, phone, notification).json()
+
+    assert client.get(UNREAD_COUNT, headers=laptop).json() == {"unread_count": 0}
+    [item] = client.get(INBOX, headers=laptop).json()["items"]
+    assert (item["state"], item["read_at"]) == ("read", marked["read_at"])
+
+
+def test_una_notificacion_nueva_aparece_en_la_proxima_carga(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    """Sin tiempo real: lo generado con la pantalla abierta se ve al volver a pedir."""
+    member = make_member(activated=True)
+    user = account_of(db, member)
+    auth = headers(client, outbox, member)
+    assert client.get(UNREAD_COUNT, headers=auth).json() == {"unread_count": 0}
+
+    notify(db, user, created_at=at("2026-11-05T13:00:00Z"), message="recién llegada")
+
+    assert client.get(UNREAD_COUNT, headers=auth).json() == {"unread_count": 1}
+    assert [i["message"] for i in client.get(INBOX, headers=auth).json()["items"]] == [
+        "recién llegada"
+    ]
+
+
+# --- US2 escenario 7: una notificación ajena o inexistente -----------------------------------
+
+NOT_FOUND = {
+    "code": "NOTIFICATION_NOT_FOUND",
+    "message": "No encontramos esa notificación.",
+}
+
+
+def test_marcar_una_notificacion_de_otro_socio_responde_como_inexistente(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+    other = make_member(activated=True)
+    theirs = notify(db, account_of(db, other), created_at=at("2026-11-05T13:00:00Z"))
+
+    response = read(client, headers(client, outbox, member), theirs)
+
+    assert (response.status_code, response.json()["detail"]) == (404, NOT_FOUND)
+    db.refresh(theirs)
+    assert (theirs.state, theirs.read_at) == (NotificationState.UNREAD, None)
+
+
+def test_marcar_una_notificacion_inexistente_responde_404(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+    gone = notify(db, account_of(db, member), created_at=at("2026-11-05T13:00:00Z"))
+    missing_id = gone.id + 1_000_000
+
+    response = client.post(
+        f"{INBOX}/{missing_id}/read", headers=headers(client, outbox, member)
+    )
+
+    assert (response.status_code, response.json()["detail"]) == (404, NOT_FOUND)
+
+
+def test_marcar_una_de_otro_club_responde_404_aunque_sea_de_la_misma_cuenta(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+    foreign = notify(db, account_of(db, member), created_at=at("2026-11-05T13:00:00Z"))
+    foreign.club_id = RIVER_ID
+    db.commit()
+
+    response = read(client, headers(client, outbox, member), foreign)
+
+    assert (response.status_code, response.json()["detail"]) == (404, NOT_FOUND)
+    db.refresh(foreign)
+    assert foreign.state == NotificationState.UNREAD
+
+
+def test_un_id_que_no_es_numero_responde_422(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+
+    response = client.post(
+        f"{INBOX}/no-es-un-id/read", headers=headers(client, outbox, member)
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("path", ["/1/read", "/read-all"])
+def test_marcar_como_leida_es_solo_para_socios(
+    client: TestClient, outbox: Outbox, make_admin: MakeAdmin, path: str
+) -> None:
+    anonymous = client.post(f"{INBOX}{path}")
+    as_admin = client.post(
+        f"{INBOX}{path}",
+        headers=bearer(admin_token(client, outbox, make_admin(BOCA_ID))),
+    )
+
+    assert (anonymous.status_code, anonymous.json()["detail"]) == (
+        401,
+        "NOT_AUTHENTICATED",
+    )
+    assert (as_admin.status_code, as_admin.json()["detail"]) == (403, "FORBIDDEN")
+
+
+# --- Catálogo: un tipo inactivo no aparece en ningún lado (notificaciones §2) ----------------
+
+
+def test_el_catalogo_trae_los_cuatro_tipos_con_event_rescheduled_inactivo() -> None:
+    assert [(t.key, t.active) for t in CATALOG] == [
+        ("event_published", True),
+        ("event_rescheduled", False),
+        ("wave_opened", True),
+        ("ranking_completed", True),
+    ]
+    assert ACTIVE_TYPES == ("event_published", "wave_opened", "ranking_completed")
+
+
+def test_el_catalogo_tiene_los_nombres_y_textos_del_spec() -> None:
+    assert {t.key: (t.name, t.title) for t in CATALOG} == {
+        "event_published": ("Nuevo evento publicado", "Nuevo evento publicado"),
+        "event_rescheduled": ("Evento reprogramado", "Evento reprogramado"),
+        "wave_opened": (
+            "Turno de reserva habilitado",
+            "Tu turno de reserva está habilitado",
+        ),
+        "ranking_completed": ("Ejecución del ranking", "Se actualizó el ranking"),
+    }
+    assert BY_KEY["wave_opened"].message.format(
+        titulo="Fecha 12 vs. Rival", fecha="07/11/2026", hora="18:00"
+    ) == (
+        "Ya podés reservar para Fecha 12 vs. Rival. "
+        "Tu acceso está habilitado hasta el 07/11/2026 a las 18:00."
+    )
+
+
+def inactive_and_active(db: Session, user: User) -> tuple[Notification, Notification]:
+    hidden = notify(
+        db, user, created_at=at("2026-11-05T13:00:00Z"), type="event_rescheduled"
+    )
+    shown = notify(db, user, created_at=at("2026-11-04T13:00:00Z"))
+    return hidden, shown
+
+
+def test_un_tipo_inactivo_no_aparece_en_la_bandeja_ni_en_sus_cuentas(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+    _, shown = inactive_and_active(db, account_of(db, member))
+
+    body = client.get(INBOX, headers=headers(client, outbox, member)).json()
+
+    assert [item["id"] for item in body["items"]] == [shown.id]
+    assert (body["total"], body["unread_count"]) == (1, 1)
+
+
+def test_un_tipo_inactivo_no_suma_al_contador(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+    inactive_and_active(db, account_of(db, member))
+
+    response = client.get(UNREAD_COUNT, headers=headers(client, outbox, member))
+
+    assert response.json() == {"unread_count": 1}
+
+
+def test_una_notificacion_de_tipo_inactivo_no_se_encuentra_al_marcarla(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+    hidden, _ = inactive_and_active(db, account_of(db, member))
+
+    response = read(client, headers(client, outbox, member), hidden)
+
+    assert (response.status_code, response.json()["detail"]) == (404, NOT_FOUND)
+
+
+def test_marcar_todas_no_cuenta_ni_toca_las_de_tipo_inactivo(
+    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+) -> None:
+    member = make_member(activated=True)
+    hidden, _ = inactive_and_active(db, account_of(db, member))
+
+    response = client.post(READ_ALL, headers=headers(client, outbox, member))
+
+    assert response.json() == {"marked": 1, "unread_count": 0}
+    db.refresh(hidden)
+    assert hidden.state == NotificationState.UNREAD

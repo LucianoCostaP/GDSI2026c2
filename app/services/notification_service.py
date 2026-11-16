@@ -14,7 +14,13 @@ from sqlalchemy.orm import Session
 from ..core.date_utils import asegurar_utc
 from ..models import Notification, NotificationState, User
 from ..models.auth import utcnow
-from ..schemas.notifications import NotificationListOut, NotificationOut, ReadAllOut
+from ..notifications.catalog import ACTIVE_TYPES
+from ..schemas.notifications import (
+    NotificationListOut,
+    NotificationOut,
+    ReadAllOut,
+    UnreadCountOut,
+)
 from .formula_service import error
 
 NOT_FOUND_MESSAGE = "No encontramos esa notificación."
@@ -39,7 +45,7 @@ def list_notifications(
     """Una página de las notificaciones del Socio, la más reciente primero; en un empate de
     fecha, la creada después (id mayor) primero (escenario 1). El orden es total, así que las
     páginas no se pisan ni dejan huecos (escenario 6)."""
-    own = (Notification.user_id == member.id, Notification.club_id == club_id)
+    own = _own(member, club_id)
     rows = db.scalars(
         select(Notification)
         .where(*own)
@@ -54,6 +60,22 @@ def list_notifications(
         unread_count=_unread_count(db, own),
         limit=limit,
         offset=offset,
+    )
+
+
+def unread_count(db: Session, member: User, club_id: uuid.UUID) -> UnreadCountOut:
+    """El número del menú (US2 escenario 5). Se pide en cada cambio de pantalla, así que es
+    una sola cuenta sobre el índice por cuenta y estado; el mismo valor que trae la bandeja."""
+    return UnreadCountOut(unread_count=_unread_count(db, _own(member, club_id)))
+
+
+def _own(member: User, club_id: uuid.UUID) -> tuple[ColumnElement[bool], ...]:
+    """Solo las de la cuenta de la sesión y de su club (decisión 34), y solo de tipos activos:
+    un tipo inactivo no aparece en ningún lado (notificaciones §2)."""
+    return (
+        Notification.user_id == member.id,
+        Notification.club_id == club_id,
+        Notification.type.in_(ACTIVE_TYPES),
     )
 
 
@@ -81,14 +103,12 @@ def mark_as_read(
 
     No mira el evento ni el ranking de la referencia: si el destino ya no existe, la
     notificación igual queda leída y el front muestra el aviso (US2 escenario 2). Si ya estaba
-    leída conserva su primera hora de lectura (FR-009). Otra cuenta, otro club o un id
-    inexistente responden igual: 404 `NOTIFICATION_NOT_FOUND`.
+    leída conserva su primera hora de lectura (FR-009). Otra cuenta, otro club, un tipo
+    inactivo o un id inexistente responden igual: 404 `NOTIFICATION_NOT_FOUND`.
     """
     notification = db.scalar(
         select(Notification).where(
-            Notification.id == notification_id,
-            Notification.user_id == member.id,
-            Notification.club_id == club_id,
+            Notification.id == notification_id, *_own(member, club_id)
         )
     )
     if notification is None:
@@ -111,9 +131,7 @@ def mark_all_as_read(
         db.execute(
             update(Notification)
             .where(
-                Notification.user_id == member.id,
-                Notification.club_id == club_id,
-                Notification.state == NotificationState.UNREAD,
+                *_own(member, club_id), Notification.state == NotificationState.UNREAD
             )
             .values(state=NotificationState.READ, read_at=now or utcnow())
         ),

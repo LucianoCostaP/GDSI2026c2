@@ -11,7 +11,12 @@ from sqlalchemy.orm import Session
 
 from ..auth import CurrentMember, CurrentMemberClub
 from ..db import get_db
-from ..schemas.notifications import NotificationListOut, NotificationOut, ReadAllOut
+from ..schemas.notifications import (
+    NotificationListOut,
+    NotificationOut,
+    ReadAllOut,
+    UnreadCountOut,
+)
 from ..services import notification_service
 
 router = APIRouter(prefix="/member/notifications", tags=["member notifications"])
@@ -32,6 +37,14 @@ def list_notifications(
     return notification_service.list_notifications(
         db, member, club_id, limit=limit, offset=offset
     )
+
+
+@router.get("/unread-count", response_model=UnreadCountOut)
+def unread_count(
+    member: CurrentMember, club_id: CurrentMemberClub, db: Db, response: Response
+) -> UnreadCountOut:
+    response.headers["Cache-Control"] = "no-store"
+    return notification_service.unread_count(db, member, club_id)
 
 
 @router.post("/read-all", response_model=ReadAllOut)

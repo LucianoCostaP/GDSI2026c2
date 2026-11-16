@@ -1,6 +1,6 @@
 # Contrato de la API propia: bandeja de notificaciones y avisos por correo (HU-20 y HU-19)
 
-**Estado**: propuesto, sin implementar | **Fecha**: 2026-11-15
+**Estado**: HU-20 (secciones 3 y 4 del backend) implementado; HU-19 propuesto, sin implementar | **Fecha**: 2026-11-15
 **Specs**: `specs/hu-20-notification-inbox/spec.md`, `specs/hu-19-notification-email-preferences/spec.md` y `specs/_shared/notifications.md` (catálogo, textos, destinos, contrato `notify` y reglas de envío). Sus tablas de códigos y mensajes mandan sobre este resumen. Decisiones 50 a 60 de `specs/README.md`.
 **Es el contrato entre el backend y el frontend (`../tp_gestion_reactjs`).** Sigue las convenciones de `docs/contrato-api-reglas.md` (sección 1): una sola ruta por endpoint, club tomado de la cuenta, textos en español.
 
