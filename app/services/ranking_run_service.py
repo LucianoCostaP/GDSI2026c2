@@ -42,6 +42,7 @@ from sqlalchemy.orm import Session
 
 from ..core.date_utils import a_hora_buenos_aires
 from ..models import Ranking, RankingEntry, RankingState, User, utcnow
+from ..notifications import generators
 from ..scoring.attendance_inputs import attendance_window_start, build_attendance_inputs
 from ..scoring.engine import ScoringParameters, calculate_score
 from ..scoring.institutional_inputs import (
@@ -199,6 +200,9 @@ def start_run(
             RUN_FAILED_MESSAGE,
             ranking_id=run_id,
         ) from exc
+    # Ya está `completed` y vigente: el aviso no puede deshacerlo ni demorarlo con un error
+    # (HU-19 US3 escenario 5, notificaciones §1).
+    generators.ranking_completed(db, run_id)
     return ranking
 
 

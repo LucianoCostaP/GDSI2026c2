@@ -8,6 +8,7 @@ from ..audit import record
 from ..auth import CurrentAdmin
 from ..config import settings
 from ..db import get_db
+from ..notifications import generators
 from ..repositories.base import EventoRepository
 from ..repositories.factory import get_evento_repository
 from ..schemas.eventos import (
@@ -176,6 +177,8 @@ def publicar_evento_manual(
     # La publicación y su auditoría se confirman juntas (FR-007, cross-cutting §6).
     _auditar_publicacion(db, res, actor_id=admin.id)
     db.commit()
+    # Después del commit, y sin poder deshacer la publicación (HU-19, notificaciones §4).
+    generators.event_published(db, res.id_interno)
 
     return res
 
@@ -217,5 +220,8 @@ def ejecutar_publicacion_automatica(
     for publicado in res.detalle:
         _auditar_publicacion(db, publicado, actor_id=None)
     db.commit()
+    # Después del commit, y sin poder deshacer la publicación (HU-19, notificaciones §4).
+    for publicado in res.detalle:
+        generators.event_published(db, publicado.id_interno)
 
     return res

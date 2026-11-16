@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     # Paso de las oleadas en percentiles (HU-36, cross-cutting sección 8).
     wave_percentile_step: int = 20
 
+    # Una ola que abrió hace más que esto cuando el trabajo la ve se saltea, para no avisar
+    # aperturas viejas tras una caída o el primer deploy (HU-19, notificaciones §4 y §7).
+    wave_notification_catchup_minutes: int = 60
+
     @field_validator("wave_percentile_step")
     @classmethod
     def _wave_step_divides_100(cls, value: int) -> int:
