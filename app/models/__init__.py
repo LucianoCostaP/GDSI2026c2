@@ -47,6 +47,7 @@ from .enums import (
     TipoEvento,
     TipoParticipacion,
 )
+from .notification import Notification, NotificationState
 from .ranking import Ranking, RankingEntry, RankingState
 from .rules import FormulaLock, FormulaLockState, RulesVersion, RulesVersionState
 from .segmentation import WaveSegmentation
@@ -83,6 +84,8 @@ __all__ = [
     "LinkToken",
     "Member",
     "MemberAccountState",
+    "Notification",
+    "NotificationState",
     "OrigenCarga",
     "Ranking",
     "RankingEntry",

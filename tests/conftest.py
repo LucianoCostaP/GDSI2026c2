@@ -209,6 +209,7 @@ def clean_club_data() -> None:
     elif _test_sqlite_engine is not None:
         with _test_sqlite_engine.begin() as conn:
             for tbl in [
+                "notifications",
                 "ranking_entries",
                 "rankings",
                 "formula_locks",
