@@ -6,7 +6,7 @@ El club y la cuenta salen siempre de la sesión (decisión 34): estos endpoints 
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
 
 from ..auth import CurrentMember, CurrentMemberClub
@@ -21,7 +21,14 @@ Db = Annotated[Session, Depends(get_db)]
 
 @router.get("", response_model=NotificationListOut)
 def list_notifications(
-    member: CurrentMember, club_id: CurrentMemberClub, db: Db, response: Response
+    member: CurrentMember,
+    club_id: CurrentMemberClub,
+    db: Db,
+    response: Response,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> NotificationListOut:
     response.headers["Cache-Control"] = "no-store"
-    return notification_service.list_notifications(db, member, club_id)
+    return notification_service.list_notifications(
+        db, member, club_id, limit=limit, offset=offset
+    )

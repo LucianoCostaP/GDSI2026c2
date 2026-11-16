@@ -4,7 +4,7 @@ Ver `docs/contrato-api-notificaciones.md`, sección 3.
 """
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -15,6 +15,10 @@ class NotificationOut(BaseModel):
     title: str
     message: str = Field(description="Texto congelado al generar la notificación")
     created_at: datetime = Field(description="Fecha y hora de generación, en UTC")
+    state: Literal["unread", "read"]
+    read_at: datetime | None = Field(
+        description="Primera vez que se leyó, en UTC; `null` si no se leyó"
+    )
     reference: dict[str, Any] = Field(
         description='`{"event_id": "<id_interno>"}` o `{"ranking_id": 42}`'
     )
@@ -23,3 +27,6 @@ class NotificationOut(BaseModel):
 class NotificationListOut(BaseModel):
     items: list[NotificationOut]
     total: int
+    unread_count: int = Field(description="Igual al de `/unread-count`")
+    limit: int
+    offset: int
