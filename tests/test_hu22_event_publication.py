@@ -931,4 +931,3 @@ def test_subida_batch_evento_60h_y_evento_insuficiente(
     )
     assert res_auto.status_code == 200
     assert id_interno in res_auto.json()["eventos_publicados"]
-

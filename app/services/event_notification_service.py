@@ -6,7 +6,6 @@ de notificaciones por app/email consuma los eventos encolados sin acoplarse
 a la lógica interna de eventos.
 """
 
-import json
 import uuid
 from datetime import UTC, datetime
 from typing import Any

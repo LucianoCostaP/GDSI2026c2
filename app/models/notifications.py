@@ -43,9 +43,7 @@ class EventNotificationDB(Base):
     tipo_notificacion: Mapped[str] = mapped_column(String(50), nullable=False)
     titulo: Mapped[str] = mapped_column(String(200), nullable=False)
     mensaje: Mapped[str] = mapped_column(Text, nullable=False)
-    datos_evento: Mapped[dict[str, Any] | None] = mapped_column(
-        JSONB, nullable=True
-    )
+    datos_evento: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     creado_en: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),

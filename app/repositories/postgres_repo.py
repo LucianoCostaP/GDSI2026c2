@@ -473,7 +473,11 @@ class PostgresEventoRepository(EventoRepository):
         self,
         club_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        filtro_club = "WHERE club_id = :club_id AND estado_revision = 'pendiente_revision'" if club_id else "WHERE estado_revision = 'pendiente_revision'"
+        filtro_club = (
+            "WHERE club_id = :club_id AND estado_revision = 'pendiente_revision'"
+            if club_id
+            else "WHERE estado_revision = 'pendiente_revision'"
+        )
         return self._rows(
             f"""
             SELECT c.id_cambio, c.id_interno, c.club_id, c.titulo, c.fecha_hora, c.lugar,
@@ -667,4 +671,3 @@ class PostgresEventoRepository(EventoRepository):
             ),
             params,
         )
-

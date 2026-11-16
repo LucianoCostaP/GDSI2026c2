@@ -1,3 +1,5 @@
+import json
+import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -5,6 +7,7 @@ from typing import Any
 from fastapi import HTTPException, status
 from pydantic import ValidationError
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from .. import audit
@@ -40,10 +43,8 @@ from ..schemas.eventos import (
     BatchSuccessItem,
     BatchSummary,
     ClaseInfoResponse,
-    ClubCancelacionRequest,
     ClubEventoUpdateRequest,
     ComparacionValores,
-    EventoAjustarClaseRequest,
     EventoAjustarClaseResponse,
     EventoCambioActionResponse,
     EventoCambioReviewResponse,
@@ -52,7 +53,6 @@ from ..schemas.eventos import (
     EventoDetailResponse,
     EventoPendientePublicacionResponse,
     EventoRestaurarResponse,
-    EventoRetiroRequest,
     EventoRetiroResponse,
     ProximoEventoItem,
     ProximosEventosResponse,
@@ -63,6 +63,7 @@ from . import event_notification_service
 
 # HU-17 FR-004 y decisión 24: texto exacto, los tests lo comparan por igualdad.
 MENSAJE_SIN_EVENTOS_PROXIMOS = "No hay eventos próximos publicados."
+logger = logging.getLogger(__name__)
 
 
 class EventoService:
@@ -781,7 +782,9 @@ class EventoService:
                 else ""
             )
             desc_nueva = (
-                payload.descripcion.strip() if payload.descripcion is not None else desc_actual
+                payload.descripcion.strip()
+                if payload.descripcion is not None
+                else desc_actual
             )
             cambio_desc = payload.descripcion is not None and desc_nueva != desc_actual
 
@@ -850,7 +853,10 @@ class EventoService:
         )
 
         if matching_pend:
-            if matching_pend.get("es_historico") or matching_pend.get("estado") == "Historico":
+            if (
+                matching_pend.get("es_historico")
+                or matching_pend.get("estado") == "Historico"
+            ):
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                     detail={
@@ -981,9 +987,8 @@ class EventoService:
             raw_vp = r.get("valores_previos")
             if isinstance(raw_vp, str):
                 try:
-                    import json
                     valores_previos = json.loads(raw_vp)
-                except Exception:
+                except (json.JSONDecodeError, TypeError, ValueError):
                     valores_previos = {}
             elif isinstance(raw_vp, dict):
                 valores_previos = raw_vp
@@ -1059,7 +1064,9 @@ class EventoService:
                 val = cambio[k]
                 if k == "fecha_hora":
                     val = asegurar_utc(
-                        val if isinstance(val, datetime) else datetime.fromisoformat(str(val))
+                        val
+                        if isinstance(val, datetime)
+                        else datetime.fromisoformat(str(val))
                     )
                 valores_a_aplicar[k] = val
 
@@ -1122,9 +1129,7 @@ class EventoService:
                     new={"status": WaveScheduleStatus.INVALIDATED.value},
                     motivo="reprogramacion_previa_apertura",
                 )
-                advertencia_cronograma = (
-                    "El cronograma fue invalidado porque el nuevo inicio es anterior al cierre general. Debe regenerarse."
-                )
+                advertencia_cronograma = "El cronograma fue invalidado porque el nuevo inicio es anterior al cierre general. Debe regenerarse."
             else:
                 # Escenario 12: nuevo inicio antes del cierre y ya abrieron olas -> fijar closing = new_start
                 prev_closing = schedule.closing_at
@@ -1140,9 +1145,7 @@ class EventoService:
                     new={"closing_at": new_start.isoformat()},
                     motivo="reprogramacion_con_olas_abiertas",
                 )
-                advertencia_cronograma = (
-                    "El cierre general del cronograma se ajustó al nuevo inicio del evento debido a que ya se habían abierto olas."
-                )
+                advertencia_cronograma = "El cierre general del cronograma se ajustó al nuevo inicio del evento debido a que ya se habían abierto olas."
 
         # Auditoría del cambio (Escenario 13 & FR-011)
         audit.record(
@@ -1165,7 +1168,9 @@ class EventoService:
                 db=db,
                 club_id=uuid.UUID(str(cambio["club_id"])),
                 event_id=cambio["id_interno"],
-                titulo_evento=valores_a_aplicar.get("titulo") or cambio.get("titulo_actual") or "",
+                titulo_evento=valores_a_aplicar.get("titulo")
+                or cambio.get("titulo_actual")
+                or "",
                 cambios={
                     "valores_previos": cambio.get("valores_previos") or {},
                     "valores_nuevos": {
@@ -1174,8 +1179,8 @@ class EventoService:
                     },
                 },
             )
-        except Exception:
-            pass
+        except (SQLAlchemyError, ValueError, TypeError) as exc:
+            logger.warning("No se pudo encolar notificacion de reprogramacion: %s", exc)
 
         return EventoCambioActionResponse(
             mensaje="Cambio aprobado y aplicado exitosamente.",
@@ -1294,7 +1299,9 @@ class EventoService:
 
             # Anular cronograma de olas si existía (Esc. 4 & FR-009)
             schedule = db.scalar(
-                select(WaveSchedule).where(WaveSchedule.event_id == evento_vis["id_interno"])
+                select(WaveSchedule).where(
+                    WaveSchedule.event_id == evento_vis["id_interno"]
+                )
             )
             if schedule:
                 prev_status = schedule.status.value
@@ -1329,8 +1336,8 @@ class EventoService:
                     titulo_evento=evento_vis["titulo"],
                     motivo=motivo.strip(),
                 )
-            except Exception:
-                pass
+            except (SQLAlchemyError, ValueError, TypeError) as exc:
+                logger.warning("No se pudo encolar notificacion de retiro: %s", exc)
 
             return EventoRetiroResponse(
                 mensaje="Evento retirado exitosamente.",
@@ -1367,7 +1374,9 @@ class EventoService:
             entity="event",
             entity_id=evento_pend["id_interno"],
             motivo=motivo.strip(),
-            previous={"estado": evento_pend.get("estado", "pendiente_definicion_importancia")},
+            previous={
+                "estado": evento_pend.get("estado", "pendiente_definicion_importancia")
+            },
             new={"estado": "descartado"},
         )
 
@@ -1445,8 +1454,10 @@ class EventoService:
                     event_id=evento_vis["id_interno"],
                     titulo_evento=evento_vis["titulo"],
                 )
-            except Exception:
-                pass
+            except (SQLAlchemyError, ValueError, TypeError) as exc:
+                logger.warning(
+                    "No se pudo encolar notificacion de restauracion: %s", exc
+                )
 
             return EventoRestaurarResponse(
                 mensaje="Evento restaurado exitosamente.",
@@ -1541,7 +1552,9 @@ class EventoService:
             )
 
         fin_ajuste_utc = asegurar_utc(
-            fin_ajuste if isinstance(fin_ajuste, datetime) else datetime.fromisoformat(str(fin_ajuste))
+            fin_ajuste
+            if isinstance(fin_ajuste, datetime)
+            else datetime.fromisoformat(str(fin_ajuste))
         )
         if ahora > fin_ajuste_utc:
             raise HTTPException(
@@ -1584,7 +1597,10 @@ class EventoService:
             actor_id=admin_id,
             entity="event",
             entity_id=evento_vis["id_interno"],
-            previous={"clase": evento_vis.get("clase"), "puntos": evento_vis.get("puntos")},
+            previous={
+                "clase": evento_vis.get("clase"),
+                "puntos": evento_vis.get("puntos"),
+            },
             new={"clase": clase_val, "puntos": puntos_val},
         )
 
@@ -1595,4 +1611,3 @@ class EventoService:
             puntos=puntos_val,
             actualizado_en=ahora,
         )
-

@@ -232,4 +232,3 @@ def notificar_cancelacion_evento_club(
     )
     db.commit()
     return res
-

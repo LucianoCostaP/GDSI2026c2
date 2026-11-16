@@ -492,4 +492,3 @@ def ajustar_clase_o_puntos(
     )
     db.commit()
     return res
-

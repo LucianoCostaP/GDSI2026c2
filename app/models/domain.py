@@ -1,6 +1,6 @@
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -407,11 +407,12 @@ class EventoCambioPendienteDB(Base):
     tipo: Mapped[str | None] = mapped_column(String(50), nullable=True)
     descripcion: Mapped[str | None] = mapped_column(Text, nullable=True)
     estado_revision: Mapped[str] = mapped_column(
-        String(50), default="pendiente_revision", server_default="pendiente_revision", nullable=False
+        String(50),
+        default="pendiente_revision",
+        server_default="pendiente_revision",
+        nullable=False,
     )
-    valores_previos: Mapped[dict[str, Any] | None] = mapped_column(
-        JSONB, nullable=True
-    )
+    valores_previos: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     revisado_por_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id"), nullable=True
     )
@@ -419,7 +420,10 @@ class EventoCambioPendienteDB(Base):
         DateTime(timezone=True), nullable=True
     )
     solicitado_en: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(UTC), server_default=func.now(), nullable=False
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+        nullable=False,
     )
 
 

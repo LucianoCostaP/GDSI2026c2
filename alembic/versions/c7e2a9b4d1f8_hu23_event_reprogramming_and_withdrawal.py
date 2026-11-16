@@ -9,8 +9,9 @@ Create Date: 2026-11-14 20:00:00.000000
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import JSONB
+
 from alembic import op
-from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 # revision identifiers, used by Alembic.
 revision: str = "c7e2a9b4d1f8"
@@ -23,11 +24,18 @@ def upgrade() -> None:
     # 1. Agregar columnas a eventos_visibles para HU-23
     op.add_column(
         "eventos_visibles",
-        sa.Column("estado", sa.String(length=20), server_default="publicado", nullable=False),
+        sa.Column(
+            "estado", sa.String(length=20), server_default="publicado", nullable=False
+        ),
     )
     op.add_column(
         "eventos_visibles",
-        sa.Column("cancelado_por_el_club", sa.Boolean(), server_default=sa.false(), nullable=False),
+        sa.Column(
+            "cancelado_por_el_club",
+            sa.Boolean(),
+            server_default=sa.false(),
+            nullable=False,
+        ),
     )
     op.add_column(
         "eventos_visibles",
@@ -39,7 +47,9 @@ def upgrade() -> None:
     )
     op.add_column(
         "eventos_visibles",
-        sa.Column("retirado_por_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=True),
+        sa.Column(
+            "retirado_por_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=True
+        ),
     )
     op.add_column(
         "eventos_visibles",
@@ -51,13 +61,20 @@ def upgrade() -> None:
     )
     op.add_column(
         "eventos_visibles",
-        sa.Column("restaurado_por_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=True),
+        sa.Column(
+            "restaurado_por_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=True
+        ),
     )
 
     # 2. Agregar columna a eventos_pendientes_verificacion
     op.add_column(
         "eventos_pendientes_verificacion",
-        sa.Column("cancelado_por_el_club", sa.Boolean(), server_default=sa.false(), nullable=False),
+        sa.Column(
+            "cancelado_por_el_club",
+            sa.Boolean(),
+            server_default=sa.false(),
+            nullable=False,
+        ),
     )
 
     # 3. Agregar columnas a eventos_cambios_pendientes
@@ -71,7 +88,9 @@ def upgrade() -> None:
     )
     op.add_column(
         "eventos_cambios_pendientes",
-        sa.Column("revisado_por_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=True),
+        sa.Column(
+            "revisado_por_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=True
+        ),
     )
     op.add_column(
         "eventos_cambios_pendientes",

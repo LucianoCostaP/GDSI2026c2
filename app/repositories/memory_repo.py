@@ -206,13 +206,12 @@ class MemoryEventoRepository(EventoRepository):
     ) -> dict[str, Any] | None:
         target = id_externo_o_interno.strip()
         for p in self.tabla_eventos_pendientes:
-            if not club_id or str(p.get("club_id")) == str(club_id):
-                if (
-                    p.get("id_externo") == target
-                    or p.get("id_interno") == target
-                    or (p.get("titulo") and p["titulo"].strip().lower() == target.lower())
-                ):
-                    return dict(p)
+            if (not club_id or str(p.get("club_id")) == str(club_id)) and (
+                p.get("id_externo") == target
+                or p.get("id_interno") == target
+                or (p.get("titulo") and p["titulo"].strip().lower() == target.lower())
+            ):
+                return dict(p)
         return None
 
     def descartar_evento_pendiente(
@@ -386,13 +385,12 @@ class MemoryEventoRepository(EventoRepository):
         """Obtiene un evento publicado/visible por su id_externo, id_interno o titulo (nombre)."""
         target = id_externo_o_interno.strip()
         for v in self.tabla_eventos_visibles:
-            if not club_id or str(v.get("club_id")) == str(club_id):
-                if (
-                    v.get("id_externo") == target
-                    or v.get("id_interno") == target
-                    or (v.get("titulo") and v["titulo"].strip().lower() == target.lower())
-                ):
-                    return dict(v)
+            if (not club_id or str(v.get("club_id")) == str(club_id)) and (
+                v.get("id_externo") == target
+                or v.get("id_interno") == target
+                or (v.get("titulo") and v["titulo"].strip().lower() == target.lower())
+            ):
+                return dict(v)
         return None
 
     def insert_o_reemplazar_cambio_pendiente(
@@ -446,16 +444,18 @@ class MemoryEventoRepository(EventoRepository):
                 item = dict(c)
                 v = self.get_evento_visible(c["id_interno"])
                 if v:
-                    item.update({
-                        "id_externo": v.get("id_externo"),
-                        "titulo_actual": v.get("titulo"),
-                        "fecha_hora_actual": v.get("fecha_hora"),
-                        "lugar_actual": v.get("lugar"),
-                        "descripcion_actual": v.get("descripcion"),
-                        "tipo_actual": v.get("tipo"),
-                        "clase": v.get("clase"),
-                        "puntos": v.get("puntos"),
-                    })
+                    item.update(
+                        {
+                            "id_externo": v.get("id_externo"),
+                            "titulo_actual": v.get("titulo"),
+                            "fecha_hora_actual": v.get("fecha_hora"),
+                            "lugar_actual": v.get("lugar"),
+                            "descripcion_actual": v.get("descripcion"),
+                            "tipo_actual": v.get("tipo"),
+                            "clase": v.get("clase"),
+                            "puntos": v.get("puntos"),
+                        }
+                    )
                 resultado.append(item)
         return resultado
 
@@ -469,16 +469,18 @@ class MemoryEventoRepository(EventoRepository):
                 item = dict(c)
                 v = self.get_evento_visible(c["id_interno"])
                 if v:
-                    item.update({
-                        "id_externo": v.get("id_externo"),
-                        "titulo_actual": v.get("titulo"),
-                        "fecha_hora_actual": v.get("fecha_hora"),
-                        "lugar_actual": v.get("lugar"),
-                        "descripcion_actual": v.get("descripcion"),
-                        "tipo_actual": v.get("tipo"),
-                        "clase": v.get("clase"),
-                        "puntos": v.get("puntos"),
-                    })
+                    item.update(
+                        {
+                            "id_externo": v.get("id_externo"),
+                            "titulo_actual": v.get("titulo"),
+                            "fecha_hora_actual": v.get("fecha_hora"),
+                            "lugar_actual": v.get("lugar"),
+                            "descripcion_actual": v.get("descripcion"),
+                            "tipo_actual": v.get("tipo"),
+                            "clase": v.get("clase"),
+                            "puntos": v.get("puntos"),
+                        }
+                    )
                 return item
         return None
 
@@ -590,4 +592,3 @@ class MemoryEventoRepository(EventoRepository):
                     v["puntos"] = puntos
                 v["actualizado_en"] = datetime.now(UTC)
                 break
-

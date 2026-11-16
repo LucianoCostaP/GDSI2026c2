@@ -215,4 +215,3 @@ class EventoRepository(ABC):
         puntos: int | None = None,
     ) -> None:
         """Ajusta la clase o puntos dentro de la ventana de 24h tras reprogramación."""
-

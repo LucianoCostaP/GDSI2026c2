@@ -42,8 +42,14 @@ from app.models.domain import EventoVisibleDB
 from app.models.notifications import EventNotificationDB, TipoNotificacionEvento
 from app.models.segmentation import WaveSegmentation
 from app.models.wave_schedule import WaveSchedule, WaveScheduleStatus
-from app.schemas.eventos import EventoCreateRequest
-from tests.conftest import BOCA_HEADERS, MakeMember, Outbox, admin_token, bearer, member_token
+from tests.conftest import (
+    BOCA_HEADERS,
+    MakeMember,
+    Outbox,
+    admin_token,
+    bearer,
+    member_token,
+)
 
 BOCA_ID = "11111111-1111-1111-1111-111111111111"
 
@@ -124,7 +130,9 @@ def test_club_sends_update_stores_pending_review_and_shows_comparison(
     token = admin_token(client, outbox, admin)
     token_socio = member_token(client, outbox, socio_boca)
     id_ext = f"EVT-REPROG-{uuid.uuid4().hex[:6]}"
-    id_int, fh_orig = _crear_y_publicar_partido(client, token, id_ext, horas_adelante=80, db=db)
+    id_int, fh_orig = _crear_y_publicar_partido(
+        client, token, id_ext, horas_adelante=80, db=db
+    )
 
     nueva_fh = fh_orig + timedelta(days=2)
     nuevo_lugar = "Nuevo Estadio Secundario"
@@ -175,7 +183,9 @@ def test_admin_approves_change_updates_immediately_and_audits(
     token = admin_token(client, outbox, admin)
     token_socio = member_token(client, outbox, socio_boca)
     id_ext = f"EVT-APPROVE-{uuid.uuid4().hex[:6]}"
-    id_int, fh_orig = _crear_y_publicar_partido(client, token, id_ext, horas_adelante=80, db=db)
+    id_int, fh_orig = _crear_y_publicar_partido(
+        client, token, id_ext, horas_adelante=80, db=db
+    )
 
     nueva_fh = fh_orig + timedelta(days=1)
     res_put = client.put(
@@ -223,7 +233,8 @@ def test_admin_approves_change_updates_immediately_and_audits(
     notif = db.scalar(
         select(EventNotificationDB).where(
             EventNotificationDB.event_id == id_int,
-            EventNotificationDB.tipo_notificacion == TipoNotificacionEvento.EVENTO_REPROGRAMADO,
+            EventNotificationDB.tipo_notificacion
+            == TipoNotificacionEvento.EVENTO_REPROGRAMADO,
         )
     )
     assert notif is not None
@@ -237,7 +248,9 @@ def test_admin_rejects_change_event_stays_as_it_was(
     token = admin_token(client, outbox, admin)
     token_socio = member_token(client, outbox, socio_boca)
     id_ext = f"EVT-REJECT-{uuid.uuid4().hex[:6]}"
-    id_int, fh_orig = _crear_y_publicar_partido(client, token, id_ext, horas_adelante=80, db=db)
+    id_int, _fh_orig = _crear_y_publicar_partido(
+        client, token, id_ext, horas_adelante=80, db=db
+    )
 
     res_put = client.put(
         f"/api/v1/eventos/{id_ext}",
@@ -277,7 +290,9 @@ def test_club_sends_identical_values_no_change_stored(
     """Escenario 4: Si los valores son idénticos, no se almacena cambio y se avisa que está al día."""
     token = admin_token(client, outbox, admin)
     id_ext = f"EVT-IDENTICAL-{uuid.uuid4().hex[:6]}"
-    id_int, fh_orig = _crear_y_publicar_partido(client, token, id_ext, horas_adelante=80, db=db)
+    _id_int, fh_orig = _crear_y_publicar_partido(
+        client, token, id_ext, horas_adelante=80, db=db
+    )
 
     res_put = client.put(
         f"/api/v1/eventos/{id_ext}",
@@ -300,7 +315,9 @@ def test_club_sends_different_type_rejected(
     """Escenario 5 & FR-004: Intento de cambiar el tipo de evento es rechazado con 422."""
     token = admin_token(client, outbox, admin)
     id_ext = f"EVT-TYPE-CHANGE-{uuid.uuid4().hex[:6]}"
-    id_int, _ = _crear_y_publicar_partido(client, token, id_ext, horas_adelante=80, tipo="Partido", db=db)
+    _id_int, _ = _crear_y_publicar_partido(
+        client, token, id_ext, horas_adelante=80, tipo="Partido", db=db
+    )
 
     res_put = client.put(
         f"/api/v1/eventos/{id_ext}",
@@ -317,7 +334,9 @@ def test_club_sends_update_for_started_or_withdrawn_rejected(
     """Escenario 6 & FR-004: Eventos ya comenzados o retirados rechazan actualizaciones."""
     token = admin_token(client, outbox, admin)
     id_ext = f"EVT-STARTED-{uuid.uuid4().hex[:6]}"
-    id_int, fh_orig = _crear_y_publicar_partido(client, token, id_ext, horas_adelante=50, db=db)
+    _id_int, fh_orig = _crear_y_publicar_partido(
+        client, token, id_ext, horas_adelante=50, db=db
+    )
 
     # Simular momento posterior al inicio
     sim_post = (fh_orig + timedelta(hours=1)).isoformat()
@@ -336,7 +355,9 @@ def test_new_update_replaces_pending_review(
     """Escenario 7: Una nueva actualización reemplaza a la que estaba pendiente de revisión."""
     token = admin_token(client, outbox, admin)
     id_ext = f"EVT-REPLACE-{uuid.uuid4().hex[:6]}"
-    id_int, fh_orig = _crear_y_publicar_partido(client, token, id_ext, horas_adelante=80, db=db)
+    id_int, _fh_orig = _crear_y_publicar_partido(
+        client, token, id_ext, horas_adelante=80, db=db
+    )
 
     # Primera actualización
     res1 = client.put(
@@ -344,7 +365,7 @@ def test_new_update_replaces_pending_review(
         json={"lugar": "Lugar Intento 1"},
         headers=BOCA_HEADERS,
     )
-    id_cambio1 = res1.json()["id_cambio"]
+    res1.json()["id_cambio"]
 
     # Segunda actualización
     res2 = client.put(
@@ -359,7 +380,9 @@ def test_new_update_replaces_pending_review(
     cambios_evento = [c for c in res_changes.json() if c["id_interno"] == id_int]
     assert len(cambios_evento) == 1
     assert str(cambios_evento[0]["id_cambio"]) == str(id_cambio2)
-    assert cambios_evento[0]["comparacion"]["lugar_nuevo"] == "Lugar Intento 2 Definitivo"
+    assert (
+        cambios_evento[0]["comparacion"]["lugar_nuevo"] == "Lugar Intento 2 Definitivo"
+    )
 
 
 def test_24h_window_class_points_adjustment(
@@ -368,7 +391,9 @@ def test_24h_window_class_points_adjustment(
     """Escenarios 8 & 9, FR-005, SC-003: Ajuste de clase habilitado por 24h y bloqueado luego."""
     token = admin_token(client, outbox, admin)
     id_ext = f"EVT-ADJUST-{uuid.uuid4().hex[:6]}"
-    id_int, fh_orig = _crear_y_publicar_partido(client, token, id_ext, horas_adelante=80, db=db)
+    id_int, _fh_orig = _crear_y_publicar_partido(
+        client, token, id_ext, horas_adelante=80, db=db
+    )
 
     # Enviar y aprobar cambio
     res_put = client.put(
@@ -402,7 +427,10 @@ def test_24h_window_class_points_adjustment(
         headers=bearer(token),
     )
     assert res_adj_late.status_code == 422
-    assert "expirado" in res_adj_late.text.lower() or "habilitada" in res_adj_late.text.lower()
+    assert (
+        "expirado" in res_adj_late.text.lower()
+        or "habilitada" in res_adj_late.text.lower()
+    )
 
 
 def test_wave_schedule_rules_scenarios_10_11_12(
@@ -418,7 +446,9 @@ def test_wave_schedule_rules_scenarios_10_11_12(
 
     # --- ESCENARIO 10 ---
     id_ext10 = f"EVT-WS-10-{uuid.uuid4().hex[:6]}"
-    id_int10, fh10 = _crear_y_publicar_partido(client, token, id_ext10, horas_adelante=100, db=db)
+    id_int10, _fh10 = _crear_y_publicar_partido(
+        client, token, id_ext10, horas_adelante=100, db=db
+    )
     opening_10 = datetime.now(UTC) + timedelta(hours=10)
     closing_10 = datetime.now(UTC) + timedelta(hours=40)
 
@@ -474,7 +504,9 @@ def test_wave_schedule_rules_scenarios_10_11_12(
     # --- ESCENARIO 11 ---
     # new_start < closing_at y now < opening_at -> invalidado
     id_ext11 = f"EVT-WS-11-{uuid.uuid4().hex[:6]}"
-    id_int11, fh11 = _crear_y_publicar_partido(client, token, id_ext11, horas_adelante=100, db=db)
+    id_int11, _fh11 = _crear_y_publicar_partido(
+        client, token, id_ext11, horas_adelante=100, db=db
+    )
     opening_11 = datetime.now(UTC) + timedelta(hours=20)
     closing_11 = datetime.now(UTC) + timedelta(hours=50)
 
@@ -521,7 +553,9 @@ def test_wave_schedule_rules_scenarios_10_11_12(
     # --- ESCENARIO 12 ---
     # new_start < closing_at y now >= opening_at -> closing_at = new_start
     id_ext12 = f"EVT-WS-12-{uuid.uuid4().hex[:6]}"
-    id_int12, fh12 = _crear_y_publicar_partido(client, token, id_ext12, horas_adelante=100, db=db)
+    id_int12, _fh12 = _crear_y_publicar_partido(
+        client, token, id_ext12, horas_adelante=100, db=db
+    )
     opening_12 = datetime.now(UTC) - timedelta(hours=5)  # Ya abrió
     closing_12 = datetime.now(UTC) + timedelta(hours=50)
 
@@ -577,7 +611,9 @@ def test_club_sends_cancellation_flags_event(
     token = admin_token(client, outbox, admin)
     token_socio = member_token(client, outbox, socio_boca)
     id_ext = f"EVT-CANCEL-{uuid.uuid4().hex[:6]}"
-    id_int, _ = _crear_y_publicar_partido(client, token, id_ext, horas_adelante=80, db=db)
+    id_int, _ = _crear_y_publicar_partido(
+        client, token, id_ext, horas_adelante=80, db=db
+    )
 
     res_cancel = client.post(
         f"/api/v1/eventos/{id_ext}/cancelacion",
@@ -600,7 +636,9 @@ def test_admin_withdraws_event_requires_reason_and_hides_from_socio(
     token = admin_token(client, outbox, admin)
     socio_tok = member_token(client, outbox, socio_boca)
     id_ext = f"EVT-WITHDRAW-{uuid.uuid4().hex[:6]}"
-    id_int, _ = _crear_y_publicar_partido(client, token, id_ext, horas_adelante=80, db=db)
+    id_int, _ = _crear_y_publicar_partido(
+        client, token, id_ext, horas_adelante=80, db=db
+    )
 
     # 1. Intentar retirar sin motivo -> 422
     res_bad = client.post(
@@ -646,13 +684,17 @@ def test_admin_withdraws_event_requires_reason_and_hides_from_socio(
     )
     assert audit_entry is not None
     assert audit_entry.actor_user_id == admin.id
-    assert audit_entry.details.get("reason") == motivo_txt or audit_entry.details.get("motivo") == motivo_txt
+    assert (
+        audit_entry.details.get("reason") == motivo_txt
+        or audit_entry.details.get("motivo") == motivo_txt
+    )
 
     # 6. Notificación encolada
     notif = db.scalar(
         select(EventNotificationDB).where(
             EventNotificationDB.event_id == id_int,
-            EventNotificationDB.tipo_notificacion == TipoNotificacionEvento.EVENTO_RETIRADO,
+            EventNotificationDB.tipo_notificacion
+            == TipoNotificacionEvento.EVENTO_RETIRADO,
         )
     )
     assert notif is not None
@@ -672,7 +714,9 @@ def test_admin_restores_event_reappears_in_hu17(
     token = admin_token(client, outbox, admin)
     token_socio = member_token(client, outbox, socio_boca)
     id_ext = f"EVT-RESTORE-{uuid.uuid4().hex[:6]}"
-    id_int, _ = _crear_y_publicar_partido(client, token, id_ext, horas_adelante=80, db=db)
+    id_int, _ = _crear_y_publicar_partido(
+        client, token, id_ext, horas_adelante=80, db=db
+    )
 
     # Retirar
     client.post(
@@ -708,7 +752,8 @@ def test_admin_restores_event_reappears_in_hu17(
     notif = db.scalar(
         select(EventNotificationDB).where(
             EventNotificationDB.event_id == id_int,
-            EventNotificationDB.tipo_notificacion == TipoNotificacionEvento.EVENTO_RESTAURADO,
+            EventNotificationDB.tipo_notificacion
+            == TipoNotificacionEvento.EVENTO_RESTAURADO,
         )
     )
     assert notif is not None
@@ -722,11 +767,24 @@ def test_security_admin_endpoints_restricted(
 
     # Sin token -> 401
     assert client.get("/admin/events/changes").status_code == 401
-    assert client.post("/admin/events/EVT-X/withdraw", json={"motivo": "x"}).status_code == 401
+    assert (
+        client.post("/admin/events/EVT-X/withdraw", json={"motivo": "x"}).status_code
+        == 401
+    )
 
     # Con token de socio -> 403
-    assert client.get("/admin/events/changes", headers=bearer(socio_tok)).status_code == 403
-    assert client.post("/admin/events/EVT-X/withdraw", json={"motivo": "x"}, headers=bearer(socio_tok)).status_code == 403
+    assert (
+        client.get("/admin/events/changes", headers=bearer(socio_tok)).status_code
+        == 403
+    )
+    assert (
+        client.post(
+            "/admin/events/EVT-X/withdraw",
+            json={"motivo": "x"},
+            headers=bearer(socio_tok),
+        ).status_code
+        == 403
+    )
 
 
 def test_admin_published_events_and_operations_by_name(

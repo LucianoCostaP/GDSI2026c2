@@ -329,4 +329,3 @@ class EventoAjustarClaseResponse(BaseModel):
     clase: str | None = None
     puntos: int | None = None
     actualizado_en: datetime
-
