@@ -1,3 +1,4 @@
+import re
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request, status
@@ -11,6 +12,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy import text
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from .bootstrap import create_initial_admin
 from .config import settings
@@ -84,6 +86,24 @@ if settings.front_origin != "*":
             cors_origins.append(extra)
 
 
+class NormalizePathMiddleware:
+    """Normaliza rutas con barras consecutivas o redundantes (ej: //auth/member -> /auth/member)."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            path = scope.get("path", "")
+            if "//" in path:
+                clean_path = re.sub(r"/+", "/", path)
+                scope["path"] = clean_path
+                if "raw_path" in scope:
+                    scope["raw_path"] = clean_path.encode()
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(NormalizePathMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,

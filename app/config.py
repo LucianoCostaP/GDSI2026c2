@@ -9,6 +9,17 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://app:app@localhost:5432/app"
     test_database_url: str = "postgresql+psycopg://app:app@localhost:5432/app_test"
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_database_url(cls, v: str) -> str:
+        if isinstance(v, str):
+            if v.startswith("postgres://"):
+                return v.replace("postgres://", "postgresql+psycopg://", 1)
+            if v.startswith("postgresql://") and not v.startswith("postgresql+"):
+                return v.replace("postgresql://", "postgresql+psycopg://", 1)
+        return v
+
     db_engine: str = "postgres"
     front_origin: str = "http://localhost:5173"
     app_env: str = "local"
@@ -24,6 +35,11 @@ class Settings(BaseSettings):
 
     smtp_host: str = "localhost"
     smtp_port: int = 1025
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    smtp_use_tls: bool = False
+    smtp_use_ssl: bool = False
+    smtp_mock_console: bool = False
     mail_from: str = "Pasión de 10 <no-reply@pasionde10.local>"
     # Pedidos de código (activación y login), cross-cutting sección 3.
     ip_rate_limit: int = 10
