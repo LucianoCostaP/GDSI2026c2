@@ -28,6 +28,7 @@ NO_SCHEDULE_MESSAGE = (
 )
 NO_WAVE_MESSAGE = "No tenés un turno asignado para este evento. Contactá al club."
 CLOSED_MESSAGE = "El período de reserva de este evento terminó."
+WITHDRAWN_MESSAGE = "Este evento fue retirado."
 
 _SOCIO_EVENT_TYPES = {"Partido", "Institucional"}
 
@@ -75,6 +76,14 @@ def own_slot(
         lugar=event.lugar,
         tipo=formatear_tipo_evento(event.tipo),
     )
+
+    if event.estado in ("withdrawn", "retirado"):
+        return OwnSlotOut(
+            event=event_out,
+            now=now,
+            status=OwnSlotStatus.WITHDRAWN,
+            message=WITHDRAWN_MESSAGE,
+        )
 
     if event.tipo != "Partido":
         return OwnSlotOut(

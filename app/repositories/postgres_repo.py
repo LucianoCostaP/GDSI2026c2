@@ -200,9 +200,74 @@ class PostgresEventoRepository(EventoRepository):
             SELECT id_interno, id_externo, club_id, titulo, fecha_hora, lugar, tipo,
                    descripcion, estado, creado_en, actualizado_en
             FROM eventos_pendientes_verificacion
-            WHERE {filtro_club}(id_externo = :id OR id_interno = :id);
+            WHERE {filtro_club}(
+                id_externo = :id 
+                OR id_interno = :id 
+                OR LOWER(TRIM(titulo)) = LOWER(TRIM(:id))
+            )
+            ORDER BY creado_en DESC
+            LIMIT 1;
             """,
-            {"club_id": club_id, "id": id_externo_o_interno},
+            {"club_id": club_id, "id": id_externo_o_interno.strip()},
+        )
+
+    def descartar_evento_pendiente(
+        self,
+        id_interno: str,
+    ) -> None:
+        self.db.execute(
+            text(
+                """
+                UPDATE eventos_pendientes_verificacion
+                SET estado = 'descartado',
+                    actualizado_en = CURRENT_TIMESTAMP
+                WHERE id_interno = :id_interno;
+                """
+            ),
+            {"id_interno": id_interno},
+        )
+
+    def restaurar_evento_pendiente(
+        self,
+        id_interno: str,
+    ) -> None:
+        self.db.execute(
+            text(
+                """
+                UPDATE eventos_pendientes_verificacion
+                SET estado = 'pendiente_definicion_importancia',
+                    actualizado_en = CURRENT_TIMESTAMP
+                WHERE id_interno = :id_interno;
+                """
+            ),
+            {"id_interno": id_interno},
+        )
+
+    def ajustar_clase_o_puntos_pendiente(
+        self,
+        id_interno: str,
+        clase: str | None = None,
+        puntos: int | None = None,
+    ) -> None:
+        updates = ["actualizado_en = CURRENT_TIMESTAMP"]
+        params: dict[str, Any] = {"id_interno": id_interno}
+        if clase is not None:
+            updates.append("clase = :clase")
+            params["clase"] = clase
+        if puntos is not None:
+            updates.append("puntos = :puntos")
+            params["puntos"] = puntos
+
+        set_clause = ", ".join(updates)
+        self.db.execute(
+            text(
+                f"""
+                UPDATE eventos_pendientes_verificacion
+                SET {set_clause}
+                WHERE id_interno = :id_interno;
+                """
+            ),
+            params,
         )
 
     def is_already_published(
@@ -290,7 +355,10 @@ class PostgresEventoRepository(EventoRepository):
         Consulta los próximos eventos publicados (visibles para socios) ordenados
         cronológicamente (HU-17).
         """
-        condiciones = ["fecha_hora > :ahora"]
+        condiciones = [
+            "fecha_hora > :ahora",
+            "COALESCE(estado, 'publicado') = 'publicado'",
+        ]
         params: dict[str, Any] = {"ahora": now or datetime.now(UTC)}
 
         if club_id:
@@ -302,10 +370,301 @@ class PostgresEventoRepository(EventoRepository):
             f"""
             SELECT id_interno, id_externo, club_id, titulo, fecha_hora, lugar, tipo,
                    descripcion, clase, puntos, publicado_por, es_default,
-                   publicado_en, actualizado_en
+                   publicado_en, actualizado_en, estado, cancelado_por_el_club,
+                   fin_ajuste_clase_puntos, retirado_en, retirado_por_id, motivo_retiro,
+                   restaurado_en, restaurado_por_id
             FROM eventos_visibles
             WHERE {where_clause}
             ORDER BY fecha_hora ASC;
             """,
             params,
         )
+
+    def find_eventos_visibles_admin(
+        self,
+        club_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        filtro_club = "WHERE club_id = :club_id" if club_id else ""
+        return self._rows(
+            f"""
+            SELECT id_interno, id_externo, club_id, titulo, fecha_hora, lugar, tipo,
+                   clase, puntos, estado, cancelado_por_el_club, fin_ajuste_clase_puntos
+            FROM eventos_visibles
+            {filtro_club}
+            ORDER BY fecha_hora ASC;
+            """,
+            {"club_id": club_id} if club_id else {},
+        )
+
+    def get_evento_visible(
+        self,
+        id_externo_o_interno: str,
+        club_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        filtro_club = "club_id = :club_id AND " if club_id else ""
+        return self._row(
+            f"""
+            SELECT id_interno, id_externo, club_id, titulo, fecha_hora, lugar, tipo,
+                   descripcion, clase, puntos, publicado_por, es_default,
+                   publicado_en, actualizado_en, estado, cancelado_por_el_club,
+                   fin_ajuste_clase_puntos, retirado_en, retirado_por_id, motivo_retiro,
+                   restaurado_en, restaurado_por_id
+            FROM eventos_visibles
+            WHERE {filtro_club}(
+                id_externo = :id 
+                OR id_interno = :id 
+                OR LOWER(TRIM(titulo)) = LOWER(TRIM(:id))
+            )
+            ORDER BY publicado_en DESC
+            LIMIT 1;
+            """,
+            {"club_id": club_id, "id": id_externo_o_interno.strip()},
+        )
+
+    def insert_o_reemplazar_cambio_pendiente(
+        self,
+        club_id: str,
+        id_interno: str,
+        valores_nuevos: dict[str, Any],
+        valores_previos: dict[str, Any],
+    ) -> str:
+        # 1. Si existía uno en pendiente_revision, marcar como reemplazado
+        self.db.execute(
+            text(
+                """
+                UPDATE eventos_cambios_pendientes
+                SET estado_revision = 'reemplazado'
+                WHERE id_interno = :id_interno
+                  AND club_id = :club_id
+                  AND estado_revision = 'pendiente_revision';
+                """
+            ),
+            {"id_interno": id_interno, "club_id": club_id},
+        )
+        import json
+
+        row = self._row(
+            """
+            INSERT INTO eventos_cambios_pendientes (
+                id_interno, club_id, titulo, fecha_hora, lugar, tipo, descripcion,
+                estado_revision, valores_previos, solicitado_en
+            ) VALUES (
+                :id_interno, :club_id, :titulo, :fecha_hora, :lugar, :tipo, :descripcion,
+                'pendiente_revision', :valores_previos, CURRENT_TIMESTAMP
+            )
+            RETURNING id_cambio;
+            """,
+            {
+                "id_interno": id_interno,
+                "club_id": club_id,
+                "titulo": valores_nuevos.get("titulo"),
+                "fecha_hora": valores_nuevos.get("fecha_hora"),
+                "lugar": valores_nuevos.get("lugar"),
+                "tipo": valores_nuevos.get("tipo"),
+                "descripcion": valores_nuevos.get("descripcion"),
+                "valores_previos": json.dumps(valores_previos, default=str),
+            },
+        )
+        if not row:
+            raise RuntimeError("No se pudo registrar la solicitud de cambio.")
+        return str(row["id_cambio"])
+
+    def find_cambios_pendientes(
+        self,
+        club_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        filtro_club = "WHERE club_id = :club_id AND estado_revision = 'pendiente_revision'" if club_id else "WHERE estado_revision = 'pendiente_revision'"
+        return self._rows(
+            f"""
+            SELECT c.id_cambio, c.id_interno, c.club_id, c.titulo, c.fecha_hora, c.lugar,
+                   c.tipo, c.descripcion, c.estado_revision, c.valores_previos, c.solicitado_en,
+                   v.id_externo, v.titulo AS titulo_actual, v.fecha_hora AS fecha_hora_actual,
+                   v.lugar AS lugar_actual, v.descripcion AS descripcion_actual, v.tipo AS tipo_actual
+            FROM eventos_cambios_pendientes c
+            JOIN eventos_visibles v ON c.id_interno = v.id_interno
+            {filtro_club}
+            ORDER BY c.solicitado_en ASC;
+            """,
+            {"club_id": club_id} if club_id else {},
+        )
+
+    def get_cambio_pendiente(
+        self,
+        id_cambio: str,
+    ) -> dict[str, Any] | None:
+        return self._row(
+            """
+            SELECT c.id_cambio, c.id_interno, c.club_id, c.titulo, c.fecha_hora, c.lugar,
+                   c.tipo, c.descripcion, c.estado_revision, c.valores_previos, c.solicitado_en,
+                   c.revisado_por_id, c.revisado_en,
+                   v.id_externo, v.titulo AS titulo_actual, v.fecha_hora AS fecha_hora_actual,
+                   v.lugar AS lugar_actual, v.descripcion AS descripcion_actual, v.tipo AS tipo_actual,
+                   v.clase, v.puntos
+            FROM eventos_cambios_pendientes c
+            JOIN eventos_visibles v ON c.id_interno = v.id_interno
+            WHERE c.id_cambio = :id_cambio;
+            """,
+            {"id_cambio": id_cambio},
+        )
+
+    def update_cambio_estado(
+        self,
+        id_cambio: str,
+        estado_revision: str,
+        revisado_por_id: int | None = None,
+    ) -> None:
+        self.db.execute(
+            text(
+                """
+                UPDATE eventos_cambios_pendientes
+                SET estado_revision = :estado,
+                    revisado_por_id = :revisado_por_id,
+                    revisado_en = CURRENT_TIMESTAMP
+                WHERE id_cambio = :id_cambio;
+                """
+            ),
+            {
+                "id_cambio": id_cambio,
+                "estado": estado_revision,
+                "revisado_por_id": revisado_por_id,
+            },
+        )
+
+    def aplicar_cambio_evento(
+        self,
+        id_interno: str,
+        valores: dict[str, Any],
+        fin_ajuste_clase_puntos: datetime,
+    ) -> None:
+        updates = [
+            "actualizado_en = CURRENT_TIMESTAMP",
+            "fin_ajuste_clase_puntos = :fin_ajuste",
+        ]
+        params: dict[str, Any] = {
+            "id_interno": id_interno,
+            "fin_ajuste": fin_ajuste_clase_puntos,
+        }
+        if "fecha_hora" in valores and valores["fecha_hora"] is not None:
+            updates.append("fecha_hora = :fecha_hora")
+            params["fecha_hora"] = valores["fecha_hora"]
+        if "lugar" in valores and valores["lugar"] is not None:
+            updates.append("lugar = :lugar")
+            params["lugar"] = valores["lugar"]
+        if "descripcion" in valores:
+            updates.append("descripcion = :descripcion")
+            params["descripcion"] = valores["descripcion"]
+        if "titulo" in valores and valores["titulo"] is not None:
+            updates.append("titulo = :titulo")
+            params["titulo"] = valores["titulo"]
+
+        set_clause = ", ".join(updates)
+        self.db.execute(
+            text(
+                f"""
+                UPDATE eventos_visibles
+                SET {set_clause}
+                WHERE id_interno = :id_interno;
+                """
+            ),
+            params,
+        )
+
+    def marcar_cancelado_club(
+        self,
+        club_id: str,
+        id_externo_o_interno: str,
+    ) -> dict[str, Any] | None:
+        # Primero buscar en eventos_visibles
+        row = self._row(
+            """
+            UPDATE eventos_visibles
+            SET cancelado_por_el_club = TRUE,
+                actualizado_en = CURRENT_TIMESTAMP
+            WHERE club_id = :club_id AND (id_externo = :id OR id_interno = :id)
+            RETURNING id_interno, id_externo, estado;
+            """,
+            {"club_id": club_id, "id": id_externo_o_interno},
+        )
+        if row:
+            return dict(row)
+
+        # Si no está en visibles, buscar en pendientes
+        row_p = self._row(
+            """
+            UPDATE eventos_pendientes_verificacion
+            SET cancelado_por_el_club = TRUE,
+                actualizado_en = CURRENT_TIMESTAMP
+            WHERE club_id = :club_id AND (id_externo = :id OR id_interno = :id)
+            RETURNING id_interno, id_externo, estado;
+            """,
+            {"club_id": club_id, "id": id_externo_o_interno},
+        )
+        return dict(row_p) if row_p else None
+
+    def retirar_evento(
+        self,
+        id_interno: str,
+        admin_id: int,
+        motivo: str,
+    ) -> None:
+        self.db.execute(
+            text(
+                """
+                UPDATE eventos_visibles
+                SET estado = 'retirado',
+                    retirado_en = CURRENT_TIMESTAMP,
+                    retirado_por_id = :admin_id,
+                    motivo_retiro = :motivo,
+                    actualizado_en = CURRENT_TIMESTAMP
+                WHERE id_interno = :id_interno;
+                """
+            ),
+            {"id_interno": id_interno, "admin_id": admin_id, "motivo": motivo},
+        )
+
+    def restaurar_evento(
+        self,
+        id_interno: str,
+        admin_id: int,
+    ) -> None:
+        self.db.execute(
+            text(
+                """
+                UPDATE eventos_visibles
+                SET estado = 'publicado',
+                    restaurado_en = CURRENT_TIMESTAMP,
+                    restaurado_por_id = :admin_id,
+                    actualizado_en = CURRENT_TIMESTAMP
+                WHERE id_interno = :id_interno;
+                """
+            ),
+            {"id_interno": id_interno, "admin_id": admin_id},
+        )
+
+    def ajustar_clase_o_puntos(
+        self,
+        id_interno: str,
+        clase: str | None = None,
+        puntos: int | None = None,
+    ) -> None:
+        updates = ["actualizado_en = CURRENT_TIMESTAMP"]
+        params: dict[str, Any] = {"id_interno": id_interno}
+        if clase is not None:
+            updates.append("clase = :clase")
+            params["clase"] = clase
+        if puntos is not None:
+            updates.append("puntos = :puntos")
+            params["puntos"] = puntos
+
+        set_clause = ", ".join(updates)
+        self.db.execute(
+            text(
+                f"""
+                UPDATE eventos_visibles
+                SET {set_clause}
+                WHERE id_interno = :id_interno;
+                """
+            ),
+            params,
+        )
+

@@ -17,12 +17,12 @@ class PasioDe10Exception(Exception):
 
 
 class AntelacionInsuficienteError(PasioDe10Exception):
-    """422: La antelación del evento tipo Partido es inferior a 48 horas."""
+    """422: La antelación del evento tipo Partido o Institucional es inferior a 48 horas."""
 
     def __init__(
         self, message: str = "No cumple con la antelación mínima de 48 horas."
     ):
-        super().__init__(message, status_code=422, code="UNPROCESSABLE_ENTITY")
+        super().__init__(message, status_code=422, code="INSUFFICIENT_LEAD")
 
 
 class EventoFinalizadoError(PasioDe10Exception):
