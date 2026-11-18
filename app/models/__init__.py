@@ -48,6 +48,7 @@ from .enums import (
     TipoEvento,
     TipoParticipacion,
 )
+from .event_reprogramming import EventReprogramming
 from .notification import Notification, NotificationState
 from .ranking import Ranking, RankingEntry, RankingState
 from .rules import FormulaLock, FormulaLockState, RulesVersion, RulesVersionState
@@ -73,6 +74,7 @@ __all__ = [
     "EstadoCargaParticipacion",
     "EstadoCicloEvento",
     "EstadoCuota",
+    "EventReprogramming",
     "EventoBase",
     "EventoCambioPendiente",
     "EventoCambioPendienteDB",

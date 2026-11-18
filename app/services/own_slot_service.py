@@ -16,7 +16,12 @@ from sqlalchemy.orm import Session
 from ..core.date_utils import asegurar_utc, formatear_tipo_evento
 from ..models import EventoVisibleDB, RankingEntry, User, WaveSegmentation
 from ..schemas.own_slot import OwnSlotEventOut, OwnSlotOut, OwnSlotStatus, OwnWaveOut
-from ..scoring.wave_schedule import WaveState, wave_starts, wave_state
+from ..scoring.wave_schedule import (
+    WaveState,
+    effective_order,
+    effective_wave_starts,
+    wave_state,
+)
 from ..scoring.waves import build_waves, wave_of
 from .formula_service import error
 from .ranking_service import socio_of
@@ -104,16 +109,27 @@ def own_slot(
 
     segmentation = db.get_one(WaveSegmentation, schedule.segmentation_id)
     opening = asegurar_utc(schedule.opening_at)
-    closing = asegurar_utc(schedule.closing_at)
-    total = len(build_waves(segmentation.ranked_total, segmentation.percentile_step))
+    closing = asegurar_utc(schedule.effective_closing)
+    generated = len(
+        build_waves(segmentation.ranked_total, segmentation.percentile_step)
+    )
+    merged_into = schedule.merged_into_order
+    # Tras una fusión (HU-23B US3) el Socio ve la ola a la que se sumó, "Ola k de M", con M
+    # las olas que quedaron separadas, y la hora de inicio de esa ola.
+    total = merged_into if merged_into is not None else generated
     position = _position(db, member, club_id, segmentation)
-    order = (
+    wave = (
         wave_of(position, segmentation.ranked_total, segmentation.percentile_step)
         if position is not None
         else None
     )
+    order = effective_order(wave, merged_into) if wave is not None else None
     starts_at = (
-        wave_starts(opening, closing, total)[order - 1] if order is not None else None
+        effective_wave_starts(
+            opening, asegurar_utc(schedule.closing_at), generated, merged_into
+        )[wave - 1]
+        if wave is not None
+        else None
     )
 
     def out(

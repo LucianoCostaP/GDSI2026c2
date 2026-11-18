@@ -38,7 +38,9 @@ def _schedule_out(view: wave_schedule_service.ScheduleView) -> WaveScheduleOut:
         ),
         status=schedule.status,
         opening_at=schedule.opening_at,
-        closing_at=schedule.closing_at,
+        closing_at=schedule.effective_closing,
+        generated_closing_at=schedule.closing_at,
+        merged_into_order=schedule.merged_into_order,
         step_seconds=step_seconds(
             asegurar_utc(schedule.opening_at),
             asegurar_utc(schedule.closing_at),

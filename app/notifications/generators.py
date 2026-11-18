@@ -28,7 +28,12 @@ from ..models import (
     WaveSegmentation,
 )
 from ..models.auth import utcnow
-from ..scoring.wave_schedule import WaveState, schedule_waves, wave_state
+from ..scoring.wave_schedule import (
+    ScheduledWave,
+    WaveState,
+    schedule_waves,
+    wave_state,
+)
 from ..scoring.waves import build_waves
 from .notify import notify
 
@@ -61,6 +66,12 @@ def _club_members(db: Session, club_id: uuid.UUID) -> list[int]:
             )
         )
     )
+
+
+def club_member_ids(db: Session, club_id: uuid.UUID) -> list[int]:
+    """Los destinatarios de una notificación de evento del club (para contarlos antes de
+    generarla, como la vista previa de una reprogramación de HU-23B)."""
+    return _club_members(db, club_id)
 
 
 def _event_to_club(
@@ -108,13 +119,15 @@ def event_published(db: Session, event_id: str, *, now: datetime | None = None) 
 
 
 def event_rescheduled(
-    db: Session, event_id: str, change_id: str, *, now: datetime | None = None
+    db: Session, event_id: str, reprogramming_id: str, *, now: datetime | None = None
 ) -> int:
-    """`event_rescheduled` cuando el Admin aprueba un cambio del club (HU-23, notificaciones
-    §4: clave `event:{event_id}:rescheduled:{change_id}`). El texto lleva la fecha y la hora
-    nuevas. Se llama después del commit de la aprobación, que nunca se deshace por esto."""
+    """`event_rescheduled` para todos los socios activados del club cuando el Admin reprograma
+    un evento publicado (HU-23B US2 escenario 10, US4 escenario 1; clave
+    `event:{event_id}:rescheduled:{reprogramming_id}`). El texto lleva la fecha y la hora
+    nuevas. Se llama después del commit, que nunca se deshace por esto. El código viejo de
+    HU-23 lo llama con el id del cambio aprobado."""
     return _event_to_club(
-        db, "event_rescheduled", event_id, f"rescheduled:{change_id}", now=now
+        db, "event_rescheduled", event_id, f"rescheduled:{reprogramming_id}", now=now
     )
 
 
@@ -231,41 +244,64 @@ def open_waves(
     )
 
 
+def _wave_groups(
+    waves: list[ScheduledWave], merged_into_order: int | None
+) -> list[tuple[int, datetime, tuple[int, int]]]:
+    """Las olas que abren por separado: orden, hora de inicio y posiciones del ranking. Con
+    una fusión, la ola k incluye las posiciones de las olas k+1 a N (HU-23B US3)."""
+    groups: list[tuple[int, datetime, tuple[int, int]]] = []
+    for scheduled in waves:
+        wave = scheduled.wave
+        if merged_into_order is not None and wave.order > merged_into_order:
+            order, starts_at, (first, _) = groups[-1]
+            groups[-1] = (order, starts_at, (first, wave.position_to))
+        else:
+            groups.append(
+                (
+                    wave.order,
+                    scheduled.starts_at,
+                    (wave.position_from, wave.position_to),
+                )
+            )
+    return groups
+
+
 def _open_schedule_waves(db: Session, schedule_id: int, now: datetime) -> int:
     catchup = timedelta(minutes=settings.wave_notification_catchup_minutes)
     try:
         schedule = db.get_one(WaveSchedule, schedule_id)
         segmentation = db.get_one(WaveSegmentation, schedule.segmentation_id)
         event = db.get_one(EventoVisibleDB, schedule.event_id)
-        closing = asegurar_utc(schedule.closing_at)
+        # Abre hasta el cierre efectivo, y las olas fusionadas por una reprogramación (HU-23B)
+        # abren con la ola a la que se sumaron, con su misma clave.
+        closing = asegurar_utc(schedule.effective_closing)
         waves = schedule_waves(
             build_waves(segmentation.ranked_total, segmentation.percentile_step),
             asegurar_utc(schedule.opening_at),
-            closing,
+            asegurar_utc(schedule.closing_at),
+            schedule.merged_into_order,
         )
         opened: list[tuple[int, list[int]]] = []
-        for scheduled in waves:
-            if wave_state(scheduled.starts_at, closing, now) != WaveState.OPEN:
+        for order, starts_at, positions in _wave_groups(
+            waves, schedule.merged_into_order
+        ):
+            if wave_state(starts_at, closing, now) != WaveState.OPEN:
                 continue
-            if now - scheduled.starts_at > catchup:
+            if now - starts_at > catchup:
                 logger.info(
                     "open_waves: se saltea la ola %s del evento %s (cronograma %s): abrió "
                     "hace más de %s minutos",
-                    scheduled.wave.order,
+                    order,
                     event.id_interno,
                     schedule_id,
                     settings.wave_notification_catchup_minutes,
                 )
                 continue
-            wave = scheduled.wave
             opened.append(
                 (
-                    wave.order,
+                    order,
                     _ranked_members(
-                        db,
-                        segmentation.ranking_id,
-                        segmentation.club_id,
-                        (wave.position_from, wave.position_to),
+                        db, segmentation.ranking_id, segmentation.club_id, positions
                     ),
                 )
             )

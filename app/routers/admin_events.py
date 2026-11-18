@@ -24,10 +24,16 @@ from ..schemas.eventos import (
     EventoRestaurarResponse,
     EventoRetiroRequest,
     EventoRetiroResponse,
+    MovedWaveOut,
     PublicarEventoRequest,
     PublicarEventoResponse,
     PublishedEventOut,
     PublishedScheduleOut,
+    RescheduleImpactOut,
+    RescheduleNotificationsOut,
+    RescheduleOut,
+    ReschedulePreviewRequest,
+    RescheduleRequest,
 )
 from ..services import published_events_service
 from ..services.evento_service import EventoService
@@ -269,29 +275,144 @@ def listar_eventos_publicados_admin(
     db: Session = Depends(get_db),
 ) -> list[PublishedEventOut]:
     return [
-        PublishedEventOut(
-            id_interno=item.event.id_interno,
-            id_externo=item.event.id_externo,
-            titulo=item.event.titulo,
-            tipo=TipoEvento(item.event.tipo),
-            fecha_hora=item.event.fecha_hora,
-            lugar=item.event.lugar,
-            clase=item.event.clase,
-            puntos=item.event.puntos,
-            cancelado_por_el_club=item.event.cancelado_por_el_club,
-            version=item.event.version,
-            schedule=(
-                PublishedScheduleOut(
-                    status=item.schedule.status.value,
-                    opening_at=item.schedule.opening_at,
-                    closing_at=item.schedule.closing_at,
-                )
-                if item.schedule is not None
-                else None
-            ),
-        )
+        _published_out(item)
         for item in published_events_service.list_upcoming(db, club_id)
     ]
+
+
+def _published_out(item: published_events_service.PublishedEvent) -> PublishedEventOut:
+    return PublishedEventOut(
+        id_interno=item.event.id_interno,
+        id_externo=item.event.id_externo,
+        titulo=item.event.titulo,
+        tipo=TipoEvento(item.event.tipo),
+        fecha_hora=item.event.fecha_hora,
+        lugar=item.event.lugar,
+        descripcion=item.event.descripcion,
+        clase=item.event.clase,
+        puntos=item.event.puntos,
+        cancelado_por_el_club=item.event.cancelado_por_el_club,
+        version=item.event.version,
+        schedule=(
+            PublishedScheduleOut(
+                status=item.schedule.status.value,
+                opening_at=item.schedule.opening_at,
+                closing_at=item.schedule.effective_closing,
+                merged_into_order=item.schedule.merged_into_order,
+                adjusted=item.schedule.effective_closing_at is not None,
+            )
+            if item.schedule is not None
+            else None
+        ),
+    )
+
+
+def _impact_out(plan: published_events_service.ReschedulePlan) -> RescheduleImpactOut:
+    impact = plan.impact
+    return RescheduleImpactOut(
+        previous_fecha_hora=plan.previous_start,
+        new_fecha_hora=plan.new_start,
+        schedule_effect=impact.effect.value,
+        previous_closing_at=impact.previous_closing,
+        new_closing_at=impact.new_closing,
+        merged_into_order=impact.merged_into_order,
+        moved_waves=[
+            MovedWaveOut(order=w.order, socios=w.socios) for w in plan.moved_waves
+        ],
+        target_wave_starts_at=plan.target_starts_at,
+        target_wave_open=impact.target_open,
+        notifications=RescheduleNotificationsOut(
+            event_rescheduled=plan.event_rescheduled
+        ),
+    )
+
+
+@router.post(
+    "/admin/events/{event_id}/reschedule/preview",
+    response_model=RescheduleImpactOut,
+    summary="Vista previa de una reprogramación (HU-23B)",
+    description=(
+        "Valida la fecha y hora nueva como la reprogramación y devuelve qué le pasaría al "
+        "cronograma de olas, sin cambiar nada. El club sale de la cuenta del Admin."
+    ),
+)
+@router.post(
+    "/api/admin/events/{event_id}/reschedule/preview",
+    response_model=RescheduleImpactOut,
+    include_in_schema=False,
+)
+@router.post(
+    "/api/v1/admin/events/{event_id}/reschedule/preview",
+    response_model=RescheduleImpactOut,
+    include_in_schema=False,
+)
+def previsualizar_reprogramacion(
+    event_id: str,
+    body: ReschedulePreviewRequest,
+    club_id: CurrentAdminClub,
+    db: Session = Depends(get_db),
+) -> RescheduleImpactOut:
+    return _impact_out(
+        published_events_service.preview(
+            db,
+            club_id,
+            event_id,
+            body.fecha_hora,
+            other_fields=(body.model_extra or {}).keys(),
+        )
+    )
+
+
+@router.post(
+    "/admin/events/{event_id}/reschedule",
+    response_model=RescheduleOut,
+    summary="Reprogramar la fecha y hora de un evento publicado (HU-23B)",
+    description=(
+        "Cambia solo la fecha y la hora: el evento sigue publicado con su clase o puntos "
+        "y los datos del club, y el cronograma de olas se ajusta como en la vista previa. "
+        "Otro campo en el cuerpo responde `FIELD_NOT_EDITABLE`; un formato inválido, "
+        "`INVALID_DATETIME`; la misma fecha, `NO_CHANGES`; una fecha que no es futura, "
+        "`START_NOT_IN_FUTURE`; una `expected_version` vieja, `EVENT_CHANGED`. Avisa "
+        "`event_rescheduled` a los socios después de guardar. El club sale de la cuenta "
+        "del Admin (decisión 34)."
+    ),
+)
+@router.post(
+    "/api/admin/events/{event_id}/reschedule",
+    response_model=RescheduleOut,
+    include_in_schema=False,
+)
+@router.post(
+    "/api/v1/admin/events/{event_id}/reschedule",
+    response_model=RescheduleOut,
+    include_in_schema=False,
+)
+def reprogramar_evento(
+    event_id: str,
+    body: RescheduleRequest,
+    admin: CurrentAdmin,
+    club_id: CurrentAdminClub,
+    db: Session = Depends(get_db),
+) -> RescheduleOut:
+    done = published_events_service.reschedule(
+        db,
+        admin,
+        club_id,
+        event_id,
+        body.fecha_hora,
+        expected_version=body.expected_version,
+        expected_schedule_effect=body.expected_schedule_effect,
+        expected_merged_into_order=body.expected_merged_into_order,
+        other_fields=(body.model_extra or {}).keys(),
+    )
+    out = RescheduleOut(
+        **_published_out(done.published).model_dump(),
+        id_reprogramacion=str(done.reprogramming_id),
+        impact=_impact_out(done.plan),
+    )
+    # Escenario 10: después del commit, sin poder deshacer la reprogramación (US4 esc. 7).
+    generators.event_rescheduled(db, event_id, str(done.reprogramming_id))
+    return out
 
 
 @router.get(
