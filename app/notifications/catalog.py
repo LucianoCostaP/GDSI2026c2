@@ -15,15 +15,15 @@ class NotificationType:
     description: str
     active: bool
     title: str
-    # Texto con `{titulo}`, `{fecha}` (dd/mm/aaaa) y `{hora}` (HH:mm) en hora de Buenos Aires
-    # (y `{motivo}` en `event_withdrawn`). Se congela al generar la notificación.
+    # Texto con `{titulo}`, `{fecha}` (dd/mm/aaaa) y `{hora}` (HH:mm) en hora de Buenos Aires.
+    # Se congela al generar la notificación.
     message: str
 
 
-# En el orden de la pantalla de preferencias (contrato §2). `event_withdrawn` y
-# `event_restored` se generan desde el retiro y la restauración de HU-23 (decisión 61);
-# `event_rescheduled` y `wave_rescheduled`, desde la reprogramación de HU-23B (decisión 62),
-# que también genera `wave_opened` cuando suma olas a una que ya abrió.
+# En el orden de la pantalla de preferencias (contrato §2). HU-23B (decisión 62) genera
+# `event_rescheduled` y `wave_rescheduled` desde la reprogramación, que también genera
+# `wave_opened` cuando suma olas a una que ya abrió, y `event_withdrawn` desde el retiro, con
+# un texto genérico sin motivo. `event_restored` queda inactivo: el retiro es definitivo.
 CATALOG: tuple[NotificationType, ...] = (
     NotificationType(
         key="event_published",
@@ -43,19 +43,14 @@ CATALOG: tuple[NotificationType, ...] = (
     ),
     NotificationType(
         key="event_withdrawn",
-        name="Evento cancelado",
+        name="Evento suspendido",
         description="Cuando se retira un evento publicado que no se va a realizar.",
         active=True,
-        title="Evento cancelado",
-        message="{titulo}, del {fecha} a las {hora}, fue cancelado. Motivo: {motivo}",
-    ),
-    NotificationType(
-        key="event_restored",
-        name="Evento restaurado",
-        description="Cuando vuelve a programarse un evento que había sido cancelado.",
-        active=True,
-        title="Evento restaurado",
-        message="{titulo} vuelve a estar programado: el {fecha} a las {hora}.",
+        title="Evento suspendido",
+        message=(
+            "{titulo}, del {fecha} a las {hora}, se suspendió. "
+            "Si compraste entradas, comunicate con el club."
+        ),
     ),
     NotificationType(
         key="wave_rescheduled",
@@ -83,6 +78,14 @@ CATALOG: tuple[NotificationType, ...] = (
         active=True,
         title="Se actualizó el ranking",
         message="Se calculó un nuevo ranking. Consultá tu puntaje y tu posición.",
+    ),
+    NotificationType(
+        key="event_restored",
+        name="Evento restaurado",
+        description="Cuando vuelve a programarse un evento que había sido retirado.",
+        active=False,
+        title="Evento restaurado",
+        message="{titulo} vuelve a estar programado: el {fecha} a las {hora}.",
     ),
 )
 

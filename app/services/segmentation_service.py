@@ -37,6 +37,7 @@ from .ranking_preflight_service import PreflightWarning
 from .ranking_service import get_ranking_in_force
 
 PARTIDO = TipoEvento.PARTIDO.value
+PUBLICADO = "publicado"
 
 
 @dataclass(frozen=True)
@@ -133,6 +134,8 @@ def list_segmentable_events(
         .where(
             EventoVisibleDB.club_id == club_id,
             EventoVisibleDB.tipo == PARTIDO,
+            # Un evento retirado (HU-23B US5) no aparece más en las olas ni el cronograma.
+            EventoVisibleDB.estado == PUBLICADO,
             EventoVisibleDB.fecha_hora > _now(now),
         )
         .order_by(EventoVisibleDB.fecha_hora, EventoVisibleDB.id_interno)
@@ -194,14 +197,15 @@ def upcoming_partido(
         )
         .with_for_update()
     )
-    if event is None:
+    # Un evento retirado (HU-23B US5) responde como desconocido.
+    if event is None or event.estado != PUBLICADO:
         pending = db.scalar(
             select(EventoPendienteDB.id_interno).where(
                 EventoPendienteDB.id_interno == event_id,
                 EventoPendienteDB.club_id == club_id,
             )
         )
-        if pending is not None:
+        if event is None and pending is not None:
             raise error(
                 status.HTTP_409_CONFLICT,
                 "EVENT_NOT_PUBLISHED",

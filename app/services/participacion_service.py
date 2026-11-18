@@ -11,6 +11,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..audit import record
+from ..core.exceptions import event_withdrawn_error
 from ..models.auth import User
 from ..models.domain import (
     ActividadRecurrenteDB,
@@ -66,16 +67,7 @@ class ParticipacionService:
         )
         if evento_vis:
             if evento_vis.estado in ("withdrawn", "retirado"):
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                    detail={
-                        "error": {
-                            "code": "EVENT_WITHDRAWN",
-                            "message": "El evento fue retirado y no admite carga de asistencia.",
-                            "field": "id_externo",
-                        }
-                    },
-                )
+                raise event_withdrawn_error()
             fh = (
                 evento_vis.fecha_hora
                 if evento_vis.fecha_hora.tzinfo

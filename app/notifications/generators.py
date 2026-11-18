@@ -131,31 +131,12 @@ def event_rescheduled(
     )
 
 
-def event_withdrawn(
-    db: Session, event_id: str, motivo: str, withdrawn_at: datetime
-) -> int:
-    """`event_withdrawn` cuando el Admin retira un evento publicado (HU-23). Un evento se puede
-    retirar y restaurar más de una vez: cada retiro es una ocurrencia, por su momento."""
-    return _event_to_club(
-        db,
-        "event_withdrawn",
-        event_id,
-        f"withdrawn:{asegurar_utc(withdrawn_at).isoformat()}",
-        params={"motivo": motivo},
-        now=withdrawn_at,
-    )
-
-
-def event_restored(db: Session, event_id: str, restored_at: datetime) -> int:
-    """`event_restored` cuando el Admin restaura un evento retirado (HU-23), una ocurrencia
-    por restauración."""
-    return _event_to_club(
-        db,
-        "event_restored",
-        event_id,
-        f"restored:{asegurar_utc(restored_at).isoformat()}",
-        now=restored_at,
-    )
+def event_withdrawn(db: Session, event_id: str, *, now: datetime | None = None) -> int:
+    """`event_withdrawn` para todos los socios activados del club cuando el Admin retira un
+    evento publicado (HU-23B US5 escenario 5). El texto es genérico, sin motivo, con la fecha
+    y la hora que tenía el evento al retirarse. El retiro es definitivo, así que hay una sola
+    ocurrencia por evento (`event:{event_id}:withdrawn`)."""
+    return _event_to_club(db, "event_withdrawn", event_id, "withdrawn", now=now)
 
 
 def _ranked_members(

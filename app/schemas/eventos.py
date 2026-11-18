@@ -291,11 +291,13 @@ class EventoCambioActionResponse(BaseModel):
 
 
 class EventoRetiroRequest(BaseModel):
+    """Descarte de un evento pendiente (HU-21)."""
+
     motivo: str = Field(
         ...,
         min_length=1,
         max_length=500,
-        description="Motivo obligatorio del retiro del evento",
+        description="Motivo obligatorio del descarte del evento",
     )
 
 
@@ -305,6 +307,22 @@ class EventoRetiroResponse(BaseModel):
     estado: str = "withdrawn"
     retirado_en: datetime
     motivo: str
+
+
+class WithdrawRequest(BaseModel):
+    """Retiro definitivo de un evento publicado (HU-23B US5)."""
+
+    # La confirmación explícita del Admin (escenario 1): sin ella, `CONFIRMATION_REQUIRED`.
+    confirmed: bool = False
+    # La `version` del listado: si otro Admin cambió el evento, `EVENT_CHANGED` (escenario 10).
+    expected_version: int
+
+
+class WithdrawOut(BaseModel):
+    id_interno: str
+    estado: str = "withdrawn"
+    segmentation_deleted: bool
+    schedule_deleted: bool
 
 
 class EventoRestaurarResponse(BaseModel):

@@ -1,4 +1,21 @@
-from fastapi import status
+from fastapi import HTTPException, status
+
+# HU-23B US5 escenario 7: un evento retirado no acepta nada más del club.
+EVENT_WITHDRAWN_MESSAGE = "El evento fue retirado y no acepta cambios ni asistencias."
+
+
+def event_withdrawn_error() -> HTTPException:
+    """422 `EVENT_WITHDRAWN` con la forma de error del contrato del club."""
+    return HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail={
+            "error": {
+                "code": "EVENT_WITHDRAWN",
+                "message": EVENT_WITHDRAWN_MESSAGE,
+                "field": "id_externo",
+            }
+        },
+    )
 
 
 class PasioDe10Exception(Exception):

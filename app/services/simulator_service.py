@@ -115,8 +115,8 @@ def _simulable_event(
 ) -> EventoVisibleDB:
     """El evento publicado y todavía no empezado del club (escenario 3, FR-001).
 
-    Uno de otro club responde igual que uno inexistente (FR-009). Uno del club que todavía no
-    está publicado, o que ya empezó, se rechaza sin calcular nada.
+    Uno de otro club, o retirado (HU-23B US5), responde igual que uno inexistente (FR-009).
+    Uno del club que todavía no está publicado, o que ya empezó, se rechaza sin calcular nada.
     """
     event = db.scalar(
         select(EventoVisibleDB).where(
@@ -124,14 +124,14 @@ def _simulable_event(
             EventoVisibleDB.club_id == club_id,
         )
     )
-    if event is None:
+    if event is None or event.estado != "publicado":
         pending = db.scalar(
             select(EventoPendienteDB.id_interno).where(
                 EventoPendienteDB.id_interno == event_id,
                 EventoPendienteDB.club_id == club_id,
             )
         )
-        if pending is not None:
+        if event is None and pending is not None:
             raise _not_simulable()
         raise PasioDe10Exception(
             EVENT_NOT_FOUND_MESSAGE, status.HTTP_404_NOT_FOUND, "EVENT_NOT_FOUND"

@@ -37,15 +37,15 @@ El catálogo vive en el backend (`notifications` §2). El front lo necesita solo
 |---|---|---|---|---|
 | `event_published` | Nuevo evento publicado | Cuando el club publica un evento nuevo. | activo | `{ "event_id": "<id_interno>" }` |
 | `event_rescheduled` | Evento reprogramado | Cuando cambia la fecha o la hora de un evento publicado. | activo (HU-23) | `{ "event_id": "<id_interno>" }` |
-| `event_withdrawn` | Evento cancelado | Cuando se retira un evento publicado que no se va a realizar. | activo (HU-23) | `{ "event_id": "<id_interno>" }` |
-| `event_restored` | Evento restaurado | Cuando vuelve a programarse un evento que había sido cancelado. | activo (HU-23) | `{ "event_id": "<id_interno>" }` |
+| `event_withdrawn` | Evento suspendido | Cuando se retira un evento publicado que no se va a realizar. | activo (HU-23B) | `{ "event_id": "<id_interno>" }` |
+| `event_restored` | Evento restaurado | Cuando vuelve a programarse un evento que había sido retirado. | **inactivo** (HU-23B: el retiro es definitivo) | `{ "event_id": "<id_interno>" }` |
 | `wave_rescheduled` | Turno de reserva reprogramado | Cuando una reprogramación cambia la hora de tu turno para reservar. | activo (HU-23B) | `{ "event_id": "<id_interno>" }` |
 | `wave_opened` | Turno de reserva habilitado | Cuando se habilita tu turno para reservar en un partido. | activo | `{ "event_id": "<id_interno>" }` |
 | `ranking_completed` | Ejecución del ranking | Cuando se calcula un nuevo ranking. | activo | `{ "ranking_id": 42 }` |
 
-- **Orden del catálogo** (el de la pantalla de preferencias): `event_published`, `event_rescheduled`, `event_withdrawn`, `event_restored`, `wave_rescheduled`, `wave_opened`, `ranking_completed` (con HU-23B US5, `event_restored` pasa a inactivo y deja de mostrarse).
+- **Orden del catálogo** (el de la pantalla de preferencias): `event_published`, `event_rescheduled`, `event_withdrawn`, `wave_rescheduled`, `wave_opened`, `ranking_completed` (`event_restored` está inactivo y no se muestra).
 - `wave_rescheduled` llega con HU-23B US4: la reprogramación que suma olas a una ola que todavía no abrió se lo avisa a los socios de las olas movidas, con la hora de inicio de la ola a la que se sumaron. Si esa ola ya abrió, en cambio reciben `wave_opened` en el momento, con el cierre nuevo.
-- `event_withdrawn` y `event_restored` llegan con HU-23 (decisión 61, notificaciones §2). Se generan al retirar un evento publicado y al restaurarlo (no al descartar o restaurar un evento pendiente de HU-21). El texto del retiro incluye el motivo que escribe el Admin.
+- `event_withdrawn` se genera al retirar un evento publicado (HU-23B US5, `POST /admin/events/{id}/withdraw`), una sola vez por evento (`event:{event_id}:withdrawn`), con un texto genérico sin motivo: "{titulo}, del {fecha} a las {hora}, se suspendió. Si compraste entradas, comunicate con el club." Descartar o restaurar un evento pendiente de HU-21 no avisa. `event_restored` queda inactivo: no hay restauración de un retirado.
 - Un tipo **inactivo** no aparece en ningún lado: ni en las preferencias, ni en la bandeja, ni en el contador (notificaciones §2). Hoy no hay ninguno: el mecanismo queda para el próximo tipo que se defina antes de generarse.
 - `event_id` es siempre el **`id_interno`** del evento (string), el mismo de `/events/upcoming` y del `slot_url` de HU-17. Nunca el `id_externo`.
 - El front tiene que tolerar un `type` que no conoce (un tipo nuevo en una versión futura del backend): lo muestra en la bandeja y, al abrirlo, solo lo marca como leído, sin navegar.
@@ -212,7 +212,7 @@ La notificación guarda tipo y referencia, nunca una URL (notificaciones §3). E
 
 | `type` | Ruta del front | Si el destino no está disponible |
 |---|---|---|
-| `event_published`, `event_rescheduled`, `event_withdrawn`, `event_restored` | `/events?highlight=<event_id>` | El evento no está en `GET /events/upcoming` (empezó, se descartó, se retiró, no está publicado o no es del club): se muestra **"Este evento ya no está disponible."** y la lista sin resaltar. Para `event_withdrawn` es lo esperado mientras siga retirado |
+| `event_published`, `event_rescheduled`, `event_withdrawn`, `event_restored` | `/events?highlight=<event_id>` | El evento no está en `GET /events/upcoming` (empezó, se descartó, se retiró, no está publicado o no es del club): se muestra **"Este evento ya no está disponible."** y la lista sin resaltar. Si el evento se retiró (el turno de HU-39 responde `status: "withdrawn"`), se muestra **"Este evento fue suspendido."** (HU-23B US5 escenario 6) |
 | `wave_rescheduled`, `wave_opened` | `/member/events/<event_id>/slot` | `GET /member/events/{id}/slot` responde `404 EVENT_NOT_FOUND`: se muestra **"Este evento ya no está disponible."**. Los demás estados (cerrado, sin turno, etc.) los explica la pantalla de HU-39 como hoy |
 | `ranking_completed` | `/ranking` | Ninguno: HU-14 explica sus propios estados |
 | desconocido | sin navegación | Solo se marca como leída |

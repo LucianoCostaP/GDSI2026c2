@@ -18,11 +18,13 @@ from ..core.date_utils import (
     validar_evento_futuro,
 )
 from ..core.exceptions import (
+    EVENT_WITHDRAWN_MESSAGE,
     AntelacionInsuficienteError,
     EventoDuplicadoError,
     EventoNoEncontradoError,
     EventoYaPublicadoError,
     PublicacionInvalidaError,
+    event_withdrawn_error,
 )
 from ..models.domain import EventoPendienteDB, EventoVisibleDB
 from ..models.enums import (
@@ -76,6 +78,10 @@ class EventoService:
         - Regla de 48 horas: Valida antelación mínima para eventos futuros (422).
         - Flujo de estado: Se guarda estrictamente en 'pendiente_definicion_importancia' (o 'Historico').
         """
+        # HU-23B US5 escenario 7: reenviar el `id_externo` de un evento retirado no lo revive;
+        # el club manda el evento de nuevo con otro `id_externo`.
+        if self._esta_retirado(club_id, evento.id_externo):
+            raise event_withdrawn_error()
         if self.repo.exists_externo(club_id, evento.id_externo):
             raise EventoDuplicadoError(
                 "Ya existe un evento registrado con ese id_externo."
@@ -103,6 +109,17 @@ class EventoService:
 
         return EventoCreateResponse(
             mensaje="Evento creado exitosamente.", id_interno=id_interno
+        )
+
+    def _esta_retirado(self, club_id: str, id_externo: str) -> bool:
+        """El evento del club con ese `id_externo` fue retirado (HU-23B US5)."""
+        evento = self.repo.get_evento_visible(
+            id_externo_o_interno=id_externo, club_id=club_id
+        )
+        return bool(
+            evento
+            and evento.get("id_externo") == id_externo
+            and evento.get("estado") in ("withdrawn", "retirado")
         )
 
     def crear_eventos_batch(
@@ -161,6 +178,16 @@ class EventoService:
                 fallidos.append(
                     BatchFailedItem(
                         id_externo=ev.id_externo, error=err.message, codigo=422
+                    )
+                )
+                continue
+
+            if self._esta_retirado(club_id, ev.id_externo):
+                fallidos.append(
+                    BatchFailedItem(
+                        id_externo=ev.id_externo,
+                        error=EVENT_WITHDRAWN_MESSAGE,
+                        codigo=422,
                     )
                 )
                 continue
@@ -718,16 +745,7 @@ class EventoService:
         if evento_vis:
             # Validar que no esté retirado (FR-004 / Esc. 6)
             if evento_vis.get("estado") in ("withdrawn", "retirado"):
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                    detail={
-                        "error": {
-                            "code": "EVENT_WITHDRAWN",
-                            "message": "El evento fue retirado y no admite actualizaciones.",
-                            "field": "id_externo",
-                        }
-                    },
-                )
+                raise event_withdrawn_error()
 
             # Validar que no haya comenzado (FR-004 / Esc. 6)
             fh_actual = asegurar_utc(
@@ -928,6 +946,12 @@ class EventoService:
         Registra la notificación de cancelación enviada por el club (HU-23 User Story 2 / Esc. 1).
         Marca el evento con la bandera 'cancelado_por_el_club'.
         """
+        evento = self.repo.get_evento_visible(
+            id_externo_o_interno=id_externo_o_interno, club_id=club_id
+        )
+        # HU-23B US5 escenario 7: la cancelación de un retirado se rechaza; sigue retirado.
+        if evento and evento.get("estado") in ("withdrawn", "retirado"):
+            raise event_withdrawn_error()
         res = self.repo.marcar_cancelado_club(club_id, id_externo_o_interno)
         if not res:
             raise EventoNoEncontradoError(
@@ -1215,7 +1239,7 @@ class EventoService:
             estado="rechazado",
         )
 
-    def retirar_evento(
+    def descartar_evento_pendiente(
         self,
         db: Session,
         club_id: str | None,
@@ -1225,11 +1249,8 @@ class EventoService:
         now: datetime | None = None,
     ) -> EventoRetiroResponse:
         """
-        Retira un evento publicado (HU-23 User Story 2 / Esc. 2, 3, 4, 9 y FR-008, FR-009)
-        o descarta un evento pendiente (HU-21 / HU-23).
-        - Requiere motivo obligatorio.
-        - Para eventos publicados: pasa a 'withdrawn', anula segmentación/cronograma, audita y notifica.
-        - Para eventos pendientes: pasa a 'descartado' y audita.
+        Descarta un evento pendiente (HU-21): pasa a 'descartado' y se audita.
+        Un evento publicado se retira con `published_events_service.withdraw` (HU-23B US5).
         """
         if not motivo or not motivo.strip():
             raise HTTPException(
@@ -1239,81 +1260,6 @@ class EventoService:
 
         ahora = asegurar_utc(now or datetime.now(UTC))
 
-        # 1. Buscar en eventos visibles (publicados / retirados)
-        evento_vis = self.repo.get_evento_visible(
-            id_externo_o_interno=id_externo_o_interno, club_id=club_id
-        )
-        if evento_vis:
-            if evento_vis.get("estado") in ("withdrawn", "retirado"):
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="El evento ya fue retirado previamente.",
-                )
-
-            fh_utc = asegurar_utc(
-                evento_vis["fecha_hora"]
-                if isinstance(evento_vis["fecha_hora"], datetime)
-                else datetime.fromisoformat(str(evento_vis["fecha_hora"]))
-            )
-            if fh_utc <= ahora:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                    detail="No se puede retirar un evento que ya comenzó o finalizó.",
-                )
-
-            self.repo.retirar_evento(
-                id_interno=evento_vis["id_interno"],
-                admin_id=admin_id,
-                motivo=motivo.strip(),
-            )
-
-            ev_db = db.get(EventoVisibleDB, evento_vis["id_interno"])
-            if ev_db:
-                ev_db.estado = "withdrawn"
-                ev_db.retirado_en = ahora
-                ev_db.retirado_por_id = admin_id
-                ev_db.motivo_retiro = motivo.strip()
-
-            # Anular cronograma de olas si existía (Esc. 4 & FR-009)
-            schedule = db.scalar(
-                select(WaveSchedule).where(
-                    WaveSchedule.event_id == evento_vis["id_interno"]
-                )
-            )
-            if schedule:
-                prev_status = schedule.status.value
-                schedule.status = WaveScheduleStatus.INVALIDATED
-                audit.record(
-                    db,
-                    "wave_schedule.voided",
-                    actor_id=admin_id,
-                    entity="wave_schedule",
-                    entity_id=schedule.id,
-                    event_id=evento_vis["id_interno"],
-                    previous={"status": prev_status},
-                    new={"status": "voided"},
-                )
-
-            audit.record(
-                db,
-                "event.withdrawn",
-                actor_id=admin_id,
-                entity="event",
-                entity_id=evento_vis["id_interno"],
-                motivo=motivo.strip(),
-                previous={"estado": "publicado"},
-                new={"estado": "withdrawn"},
-            )
-
-            return EventoRetiroResponse(
-                mensaje="Evento retirado exitosamente.",
-                id_interno=evento_vis["id_interno"],
-                estado="withdrawn",
-                retirado_en=ahora,
-                motivo=motivo.strip(),
-            )
-
-        # 2. Fallback a eventos pendientes
         evento_pend = self.repo.get_evento_pendiente(
             club_id=club_id, id_externo_o_interno=id_externo_o_interno
         )
@@ -1354,7 +1300,7 @@ class EventoService:
             motivo=motivo.strip(),
         )
 
-    def restaurar_evento(
+    def restaurar_evento_descartado(
         self,
         db: Session,
         club_id: str | None,
@@ -1363,64 +1309,12 @@ class EventoService:
         now: datetime | None = None,
     ) -> EventoRestaurarResponse:
         """
-        Restaura un evento retirado o descartado (HU-23 User Story 2 / Esc. 7, 9 y FR-010).
-        - Solo si su fecha de inicio no ha pasado.
-        - Para eventos visibles: vuelve al estado 'publicado', su cronograma de olas se mantiene anulado.
-        - Para eventos pendientes: vuelve al estado 'pendiente_definicion_importancia'.
+        Vuelve un evento pendiente descartado a 'pendiente_definicion_importancia', si su
+        fecha de inicio no pasó. Un evento retirado no se restaura: el retiro es definitivo
+        (HU-23B, decisión 62).
         """
         ahora = asegurar_utc(now or datetime.now(UTC))
 
-        # 1. Buscar en eventos visibles (publicados / retirados)
-        evento_vis = self.repo.get_evento_visible(
-            id_externo_o_interno=id_externo_o_interno, club_id=club_id
-        )
-        if evento_vis:
-            if evento_vis.get("estado") not in ("withdrawn", "retirado"):
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="El evento no se encuentra en estado retirado.",
-                )
-
-            fh_utc = asegurar_utc(
-                evento_vis["fecha_hora"]
-                if isinstance(evento_vis["fecha_hora"], datetime)
-                else datetime.fromisoformat(str(evento_vis["fecha_hora"]))
-            )
-            if fh_utc <= ahora:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                    detail="No se puede restaurar un evento cuya fecha de inicio ya pasó.",
-                )
-
-            self.repo.restaurar_evento(
-                id_interno=evento_vis["id_interno"],
-                admin_id=admin_id,
-            )
-
-            ev_db = db.get(EventoVisibleDB, evento_vis["id_interno"])
-            if ev_db:
-                ev_db.estado = "publicado"
-                ev_db.restaurado_en = ahora
-                ev_db.restaurado_por_id = admin_id
-
-            audit.record(
-                db,
-                "event.restored",
-                actor_id=admin_id,
-                entity="event",
-                entity_id=evento_vis["id_interno"],
-                previous={"estado": "withdrawn"},
-                new={"estado": "publicado"},
-            )
-
-            return EventoRestaurarResponse(
-                mensaje="Evento restaurado exitosamente.",
-                id_interno=evento_vis["id_interno"],
-                estado="publicado",
-                restaurado_en=ahora,
-            )
-
-        # 2. Fallback a eventos pendientes descartados
         evento_pend = self.repo.get_evento_pendiente(
             club_id=club_id, id_externo_o_interno=id_externo_o_interno
         )

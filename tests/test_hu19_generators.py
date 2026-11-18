@@ -774,7 +774,9 @@ def test_un_evento_institucional_no_tiene_avisos_de_ola(club: Club) -> None:
 # `test_notify_no_genera_un_tipo_inactivo` y los de inactivos de HU-20, con `inactive_type`.
 
 
+# `event_restored` queda inactivo con HU-23B (decisión 62): no lo genera nadie.
 HU23_TYPES = ("event_rescheduled", "event_withdrawn", "event_restored")
+HU23B_ACTIVE_TYPES = ("event_rescheduled", "event_withdrawn")
 
 
 def test_ningun_disparador_genera_los_tipos_de_hu23(club: Club) -> None:
@@ -877,22 +879,18 @@ def test_un_socio_del_ranking_dado_de_baja_no_recibe_el_aviso(club: Club) -> Non
 
 def hu23_generator(type: str) -> Callable[[Session, str], int]:
     """El generador de HU-23 de `type`, como lo llama el router después del commit."""
-    moment = datetime(2030, 3, 10, 15, 0, tzinfo=UTC)
     generator: Callable[[Session, str], int] = {
         "event_rescheduled": lambda db, event_id: generators.event_rescheduled(
             db, event_id, "c-1"
         ),
         "event_withdrawn": lambda db, event_id: generators.event_withdrawn(
-            db, event_id, "Suspendido", moment
-        ),
-        "event_restored": lambda db, event_id: generators.event_restored(
-            db, event_id, moment
+            db, event_id
         ),
     }[type]
     return generator
 
 
-@pytest.mark.parametrize("type", HU23_TYPES)
+@pytest.mark.parametrize("type", HU23B_ACTIVE_TYPES)
 def test_los_tipos_de_hu23_solo_llegan_a_los_socios_activados_y_de_alta_del_club(
     client: TestClient,
     db: Session,

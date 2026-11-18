@@ -14,17 +14,14 @@ Cubre:
   - Escenario 8 & 9: Ventana de 24 horas para ajuste de clase/puntos tras aprobación (SC-003).
   - Escenarios 10, 11 y 12: Reglas de impacto sobre cronograma de olas confirmado (FR-006, SC-004).
   - Escenario 13: Auditoría con valores previos y nuevos de cada campo (FR-011, SC-002).
-- User Story 2: Retiro y restauración de eventos (FR-007 a FR-012, SC-005)
+- User Story 2: Retiro de eventos. HU-23B US5 lo reemplaza (retiro definitivo, sin motivo ni
+  restauración; sus tests están en `test_hu23b_withdraw.py`). Acá quedan:
   - Escenario 1: Club envía cancelación -> marca bandera 'cancelado_por_el_club'.
-  - Escenario 2 & 3: Admin retira evento publicado con motivo obligatorio -> pasa a 'withdrawn', desaparece de HU-17.
-  - Escenario 4: Cronograma y segmentación son anulados.
-  - Escenario 5: No admite carga de asistencia (HU-24) ni cuenta para scoring (SC-005).
-  - Escenario 6: Socio abriendo link antiguo (HU-39) recibe mensaje de evento retirado.
-  - Escenario 7: Admin restaura evento -> vuelve a 'publicado', cronograma permanece anulado.
-  - Escenario 9: Auditoría completa de retiro y restauración.
+  - El retiro oculta el evento de HU-17 y bloquea la carga de asistencia (HU-24).
+  - El descarte y la restauración de un evento pendiente (HU-21).
 - Notificaciones (contrato `notify` de HU-19/20):
-  - `event_rescheduled`, `event_withdrawn` y `event_restored` en la bandeja de los socios, con el
-    texto exacto, una ocurrencia por retiro y nada al rechazar o al descartar un pendiente.
+  - `event_rescheduled` en la bandeja de los socios, con el texto exacto, y nada al rechazar
+    o al descartar un pendiente.
   - El texto de una notificación queda congelado aunque el evento cambie (HU-20, edge cases).
 - Seguridad y Autorización:
   - Acciones restringidas exclusivamente a administradores (401 y 403).
@@ -690,10 +687,20 @@ def test_club_sends_cancellation_flags_event(
     assert len(evs) == 1
 
 
-def test_admin_withdraws_event_requires_reason_and_hides_from_socio(
+def _retirar(client: TestClient, token: str, id_int: str, version: int = 1):
+    """Retiro de HU-23B US5 (el de HU-23, con motivo y restauración, ya no existe)."""
+    return client.post(
+        f"/admin/events/{id_int}/withdraw",
+        json={"confirmed": True, "expected_version": version},
+        headers=bearer(token),
+    )
+
+
+def test_admin_withdraws_event_hides_it_and_blocks_attendance(
     client: TestClient, db: Session, outbox: Outbox, admin: User, socio_boca: Member
 ):
-    """Escenarios 2, 3, 4, 5, 6, 9: Retiro de evento requiere motivo, oculta de HU-17 y bloquea HU-24."""
+    """El retiro de HU-23B US5 oculta el evento de HU-17, el link viejo dice que se suspendió
+    y la carga de asistencia (HU-24) lo rechaza."""
     token = admin_token(client, outbox, admin)
     socio_tok = member_token(client, outbox, socio_boca)
     id_ext = f"EVT-WITHDRAW-{uuid.uuid4().hex[:6]}"
@@ -701,41 +708,21 @@ def test_admin_withdraws_event_requires_reason_and_hides_from_socio(
         client, token, id_ext, horas_adelante=80, db=db
     )
 
-    # 1. Intentar retirar sin motivo -> 422
-    res_bad = client.post(
-        f"/admin/events/{id_int}/withdraw",
-        json={"motivo": ""},
-        headers=bearer(token),
-    )
-    assert res_bad.status_code == 422
-
-    # 2. Retirar con motivo válido
-    motivo_txt = "Partido suspendido por disposición municipal"
-    res_with = client.post(
-        f"/admin/events/{id_int}/withdraw",
-        json={"motivo": motivo_txt},
-        headers=bearer(token),
-    )
-    assert res_with.status_code == 200
+    res_with = _retirar(client, token, id_int)
+    assert res_with.status_code == 200, res_with.text
     assert res_with.json()["estado"] == "withdrawn"
-    assert res_with.json()["motivo"] == motivo_txt
 
-    # 3. Desaparece de HU-17 (próximos eventos para socio)
+    # Desaparece de HU-17 (próximos eventos para socio)
     res_socio = client.get("/events/upcoming", headers=bearer(socio_tok))
     evs = [e for e in res_socio.json()["eventos"] if e["id_interno"] == id_int]
     assert len(evs) == 0
 
-    # 4. Socio que ingresa por link viejo (HU-39) recibe mensaje de retirado
-    res_slot = client.get(
-        f"/member/events/{id_int}/slot",
-        headers={"Authorization": f"Bearer {socio_tok}", "X-Club-ID": BOCA_ID},
-    )
+    # Socio que ingresa por link viejo (HU-39)
+    res_slot = client.get(f"/member/events/{id_int}/slot", headers=bearer(socio_tok))
     assert res_slot.status_code == 200
-    data_slot = res_slot.json()
-    assert data_slot["status"] == "withdrawn"
-    assert "retirado" in data_slot["message"].lower()
+    assert res_slot.json()["status"] == "withdrawn"
+    assert res_slot.json()["message"] == "Este evento fue suspendido."
 
-    # 5. Auditoría registrada
     audit_entry = db.scalar(
         select(AuditLog).where(
             AuditLog.entity == "event",
@@ -745,69 +732,16 @@ def test_admin_withdraws_event_requires_reason_and_hides_from_socio(
     )
     assert audit_entry is not None
     assert audit_entry.actor_user_id == admin.id
-    assert (
-        audit_entry.details.get("reason") == motivo_txt
-        or audit_entry.details.get("motivo") == motivo_txt
-    )
 
-    # 6. Notificación `event_withdrawn` con el motivo
     notif = _notificacion(db, socio_boca, id_int, "event_withdrawn")
-    assert notif.title == "Evento cancelado"
-    assert notif.message.endswith(f"fue cancelado. Motivo: {motivo_txt}")
+    assert notif.title == "Evento suspendido"
 
-    # 7. No admite asistencia (HU-24)
+    # No admite asistencia (HU-24)
     from app.services.participacion_service import ParticipacionService
 
     with pytest.raises(Exception) as excinfo:
         ParticipacionService._verificar_evento_elegible(uuid.UUID(BOCA_ID), id_ext, db)
     assert "EVENT_WITHDRAWN" in str(excinfo.value)
-
-
-def test_admin_restores_event_reappears_in_hu17(
-    client: TestClient, db: Session, outbox: Outbox, admin: User, socio_boca: Member
-):
-    """Escenario 7 & FR-010: Restaurar evento retirado lo devuelve a publicado y HU-17."""
-    token = admin_token(client, outbox, admin)
-    token_socio = member_token(client, outbox, socio_boca)
-    id_ext = f"EVT-RESTORE-{uuid.uuid4().hex[:6]}"
-    id_int, _ = _crear_y_publicar_partido(
-        client, token, id_ext, horas_adelante=80, db=db
-    )
-
-    # Retirar
-    client.post(
-        f"/admin/events/{id_int}/withdraw",
-        json={"motivo": "Cancelación temporal"},
-        headers=bearer(token),
-    )
-
-    # Restaurar
-    res_rest = client.post(
-        f"/admin/events/{id_int}/restore",
-        headers=bearer(token),
-    )
-    assert res_rest.status_code == 200
-    assert res_rest.json()["estado"] == "publicado"
-
-    # Reaparece en HU-17
-    res_socio = client.get("/events/upcoming", headers=bearer(token_socio))
-    evs = [e for e in res_socio.json()["eventos"] if e["id_interno"] == id_int]
-    assert len(evs) == 1
-
-    # Auditoría registrada
-    audit_entry = db.scalar(
-        select(AuditLog).where(
-            AuditLog.entity == "event",
-            AuditLog.entity_id == id_int,
-            AuditLog.action == "event.restored",
-        )
-    )
-    assert audit_entry is not None
-
-    # Notificación `event_restored` (y la del retiro previo)
-    notif = _notificacion(db, socio_boca, id_int, "event_restored")
-    assert notif.title == "Evento restaurado"
-    _notificacion(db, socio_boca, id_int, "event_withdrawn")
 
 
 def test_security_admin_endpoints_restricted(
@@ -819,7 +753,10 @@ def test_security_admin_endpoints_restricted(
     # Sin token -> 401
     assert client.get("/admin/events/changes").status_code == 401
     assert (
-        client.post("/admin/events/EVT-X/withdraw", json={"motivo": "x"}).status_code
+        client.post(
+            "/admin/events/EVT-X/withdraw",
+            json={"confirmed": True, "expected_version": 1},
+        ).status_code
         == 401
     )
 
@@ -831,7 +768,7 @@ def test_security_admin_endpoints_restricted(
     assert (
         client.post(
             "/admin/events/EVT-X/withdraw",
-            json={"motivo": "x"},
+            json={"confirmed": True, "expected_version": 1},
             headers=bearer(socio_tok),
         ).status_code
         == 403
@@ -841,7 +778,7 @@ def test_security_admin_endpoints_restricted(
 def test_admin_published_events_and_operations_by_name(
     client: TestClient, db: Session, outbox: Outbox, admin: User
 ):
-    """Verifica el listado de eventos publicados y el retiro/restauración/ajuste por NOMBRE de evento."""
+    """Verifica el listado de eventos publicados (el retiro de HU-23B es por id, no por nombre)."""
     token = admin_token(client, outbox, admin)
     titulo_unico = f"Superclásico Exclusivo {uuid.uuid4().hex[:6]}"
     id_ext = f"EVT-NOM-{uuid.uuid4().hex[:6]}"
@@ -857,30 +794,11 @@ def test_admin_published_events_and_operations_by_name(
     assert encontrado[0]["titulo"] == titulo_unico
     assert encontrado[0]["id_externo"] == id_ext
 
-    # 2. Retirar por NOMBRE (titulo)
-    res_with = client.post(
-        f"/admin/events/{titulo_unico}/withdraw",
-        json={"motivo": "Retiro buscando por nombre del evento"},
-        headers=bearer(token),
-    )
-    assert res_with.status_code == 200
-    assert res_with.json()["estado"] == "withdrawn"
-    assert res_with.json()["id_interno"] == id_int
 
-    # 3. Restaurar por NOMBRE (titulo)
-    res_rest = client.post(
-        f"/admin/events/{titulo_unico}/restore",
-        headers=bearer(token),
-    )
-    assert res_rest.status_code == 200
-    assert res_rest.json()["estado"] == "publicado"
-    assert res_rest.json()["id_interno"] == id_int
-
-
-def test_retirar_y_restaurar_evento_pendiente_por_id_y_nombre(
+def test_descartar_y_restaurar_evento_pendiente_por_id_y_nombre(
     client: TestClient, db: Session, outbox: Outbox, admin: User
 ):
-    """Verifica que un evento pendiente puede ser retirado/descartado y restaurado por ID o por Nombre."""
+    """Un evento pendiente se descarta (HU-21) y se restaura por ID o por Nombre."""
     token = admin_token(client, outbox, admin)
     id_ext = f"EVT-PEND-{uuid.uuid4().hex[:6]}"
     titulo_pend = f"Evento Pendiente Gala {uuid.uuid4().hex[:6]}"
@@ -902,9 +820,9 @@ def test_retirar_y_restaurar_evento_pendiente_por_id_y_nombre(
     assert res_crear.status_code == 201
     id_int = res_crear.json()["id_interno"]
 
-    # 2. Retirar por ID externo
+    # 2. Descartar por ID externo
     res_with = client.post(
-        f"/admin/events/{id_ext}/withdraw",
+        f"/admin/events/{id_ext}/discard",
         json={"motivo": "Descarte de prueba por id"},
         headers=bearer(token),
     )
@@ -960,8 +878,8 @@ def _reprogramar(client: TestClient, id_ext: str, **cambios: str) -> str:
 def test_notification_texts_are_the_exact_ones_of_the_spec(
     client: TestClient, db: Session, outbox: Outbox, admin: User, socio_boca: Member
 ):
-    """Texto exacto de cada tipo (decisión 24): la fecha nueva al reprogramar, el inicio del
-    evento y el motivo al retirar, el inicio al restaurar."""
+    """Texto exacto de `event_rescheduled` (decisión 24): la fecha nueva. El de
+    `event_withdrawn` se prueba en `test_hu23b_withdraw.py`."""
     token = admin_token(client, outbox, admin)
     id_ext = f"EVT-TEXTS-{uuid.uuid4().hex[:6]}"
     id_int, fh_orig = _crear_y_publicar_partido(
@@ -975,31 +893,9 @@ def test_notification_texts_are_the_exact_ones_of_the_spec(
         ).status_code
         == 200
     )
-    motivo = "Suspendido por lluvia"
-    assert (
-        client.post(
-            f"/admin/events/{id_int}/withdraw",
-            json={"motivo": motivo},
-            headers=bearer(token),
-        ).status_code
-        == 200
-    )
-    assert (
-        client.post(
-            f"/admin/events/{id_int}/restore", headers=bearer(token)
-        ).status_code
-        == 200
-    )
-
     fecha, hora = _fecha_hora(nueva_fh)
     assert _notificacion(db, socio_boca, id_int, "event_rescheduled").message == (
         f"Boca vs. Lanús cambió: ahora es el {fecha} a las {hora}."
-    )
-    assert _notificacion(db, socio_boca, id_int, "event_withdrawn").message == (
-        f"Boca vs. Lanús, del {fecha} a las {hora}, fue cancelado. Motivo: {motivo}"
-    )
-    assert _notificacion(db, socio_boca, id_int, "event_restored").message == (
-        f"Boca vs. Lanús vuelve a estar programado: el {fecha} a las {hora}."
     )
 
 
@@ -1046,7 +942,7 @@ def test_discarding_and_restoring_a_pending_event_generates_nothing(
     id_int = res_crear.json()["id_interno"]
 
     res_desc = client.post(
-        f"/admin/events/{id_int}/withdraw",
+        f"/admin/events/{id_int}/discard",
         json={"motivo": "El club lo canceló"},
         headers=bearer(token),
     )
@@ -1059,34 +955,7 @@ def test_discarding_and_restoring_a_pending_event_generates_nothing(
     assert _notificaciones_del_evento(db, id_int) == []
 
 
-def test_each_withdrawal_is_its_own_occurrence(
-    client: TestClient, db: Session, outbox: Outbox, admin: User, socio_boca: Member
-):
-    """Retirar, restaurar y volver a retirar: dos avisos de retiro, con claves distintas."""
-    token = admin_token(client, outbox, admin)
-    id_ext = f"EVT-TWICE-{uuid.uuid4().hex[:6]}"
-    id_int, _ = _crear_y_publicar_partido(
-        client, token, id_ext, horas_adelante=80, db=db
-    )
-    for paso in ("withdraw", "restore", "withdraw"):
-        res = client.post(
-            f"/admin/events/{id_int}/{paso}",
-            json={"motivo": "Cancelación"} if paso == "withdraw" else None,
-            headers=bearer(token),
-        )
-        assert res.status_code == 200, (paso, res.text)
-
-    notifs = _notificaciones_del_evento(db, id_int)
-    withdrawn = [n for n in notifs if n.type == "event_withdrawn"]
-    assert len(withdrawn) == 2
-    assert len({n.occurrence_key for n in withdrawn}) == 2
-    assert all(
-        n.occurrence_key.startswith(f"event:{id_int}:withdrawn:") for n in withdrawn
-    )
-    assert [n.type for n in notifs].count("event_restored") == 1
-
-
-def test_failed_notification_never_undoes_the_withdrawal_or_the_restoration(
+def test_failed_notification_never_undoes_the_withdrawal(
     client: TestClient,
     db: Session,
     outbox: Outbox,
@@ -1108,21 +977,11 @@ def test_failed_notification_never_undoes_the_withdrawal_or_the_restoration(
 
     monkeypatch.setattr(generators, "_club_members", broken)
 
-    res_with = client.post(
-        f"/admin/events/{id_int}/withdraw",
-        json={"motivo": "Cancelación"},
-        headers=bearer(token),
-    )
+    res_with = _retirar(client, token, id_int)
     assert res_with.status_code == 200
     assert res_with.json()["estado"] == "withdrawn"
     upcoming = client.get("/events/upcoming", headers=bearer(token_socio)).json()
     assert id_int not in [e["id_interno"] for e in upcoming["eventos"]]
-
-    res_rest = client.post(f"/admin/events/{id_int}/restore", headers=bearer(token))
-    assert res_rest.status_code == 200
-    assert res_rest.json()["estado"] == "publicado"
-    upcoming = client.get("/events/upcoming", headers=bearer(token_socio)).json()
-    assert id_int in [e["id_interno"] for e in upcoming["eventos"]]
 
     assert [n.type for n in _notificaciones_del_evento(db, id_int)] == [
         "event_published"

@@ -34,6 +34,8 @@ from ..schemas.eventos import (
     RescheduleOut,
     ReschedulePreviewRequest,
     RescheduleRequest,
+    WithdrawOut,
+    WithdrawRequest,
 )
 from ..services import published_events_service
 from ..services.evento_service import EventoService
@@ -530,48 +532,74 @@ def rechazar_cambio_evento(
 
 
 @router.post(
-    "/admin/events/{id_externo_o_interno}/withdraw",
-    response_model=EventoRetiroResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Retirar un evento publicado",
-    description="Pasa el evento publicado a 'withdrawn', anulando su segmentación y cronograma de olas (HU-23).",
+    "/admin/events/{event_id}/withdraw",
+    response_model=WithdrawOut,
+    summary="Retirar un evento publicado (HU-23B)",
+    description=(
+        "Retira para siempre un evento publicado que no empezó: pasa a `withdrawn`, deja de "
+        "verse para los socios y la administración, y se borran su segmentación y su "
+        "cronograma de olas. Pide `confirmed: true` (`CONFIRMATION_REQUIRED`) y la "
+        "`expected_version` del listado (`EVENT_CHANGED`). Después de guardar avisa "
+        "`event_withdrawn` a los socios. El club sale de la cuenta del Admin (decisión 34)."
+    ),
 )
 @router.post(
-    "/api/admin/events/{id_externo_o_interno}/withdraw",
-    response_model=EventoRetiroResponse,
-    status_code=status.HTTP_200_OK,
+    "/api/admin/events/{event_id}/withdraw",
+    response_model=WithdrawOut,
     include_in_schema=False,
 )
 @router.post(
-    "/api/v1/admin/events/{id_externo_o_interno}/withdraw",
-    response_model=EventoRetiroResponse,
-    status_code=status.HTTP_200_OK,
+    "/api/v1/admin/events/{event_id}/withdraw",
+    response_model=WithdrawOut,
     include_in_schema=False,
 )
 def retirar_evento(
+    event_id: str,
+    body: WithdrawRequest,
+    admin: CurrentAdmin,
+    club_id: CurrentAdminClub,
+    db: Session = Depends(get_db),
+) -> WithdrawOut:
+    done = published_events_service.withdraw(
+        db,
+        admin,
+        club_id,
+        event_id,
+        confirmed=body.confirmed,
+        expected_version=body.expected_version,
+    )
+    # Escenarios 5 y 11: después del commit, sin poder deshacer el retiro.
+    published_events_service.notify_withdrawn(db, done)
+    return WithdrawOut(
+        id_interno=done.event_id,
+        segmentation_deleted=done.segmentation_deleted,
+        schedule_deleted=done.schedule_deleted,
+    )
+
+
+@router.post(
+    "/admin/events/{id_externo_o_interno}/discard",
+    response_model=EventoRetiroResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Descartar un evento pendiente (HU-21)",
+    description="Pasa un evento pendiente a 'descartado'. Un publicado se retira con /withdraw.",
+)
+def descartar_evento(
     id_externo_o_interno: str,
     payload: EventoRetiroRequest,
     admin: CurrentAdmin,
+    club_id: CurrentAdminClub,
     db: Annotated[Session, Depends(get_db)],
-    x_club_id: str | None = Header(None, alias="X-Club-ID"),
-    reloj_simulado: str | None = Query(
-        None, description="Reloj simulado para pruebas (formato ISO)"
-    ),
     service: EventoService = Depends(get_evento_service),
 ) -> EventoRetiroResponse:
-    sim_now = _parse_clock(reloj_simulado)
-    res = service.retirar_evento(
+    res = service.descartar_evento_pendiente(
         db=db,
-        club_id=x_club_id,
+        club_id=str(club_id),
         id_externo_o_interno=id_externo_o_interno,
         admin_id=admin.id,
         motivo=payload.motivo,
-        now=sim_now,
     )
     db.commit()
-    # Solo el retiro de un publicado avisa; descartar un pendiente (HU-21) no.
-    if res.estado == "withdrawn":
-        generators.event_withdrawn(db, res.id_interno, res.motivo, res.retirado_en)
     return res
 
 
@@ -579,43 +607,26 @@ def retirar_evento(
     "/admin/events/{id_externo_o_interno}/restore",
     response_model=EventoRestaurarResponse,
     status_code=status.HTTP_200_OK,
-    summary="Restaurar un evento retirado",
-    description="Devuelve el evento al estado 'publicado'. Su cronograma de olas permanece anulado hasta generarse uno nuevo (HU-23).",
-)
-@router.post(
-    "/api/admin/events/{id_externo_o_interno}/restore",
-    response_model=EventoRestaurarResponse,
-    status_code=status.HTTP_200_OK,
-    include_in_schema=False,
-)
-@router.post(
-    "/api/v1/admin/events/{id_externo_o_interno}/restore",
-    response_model=EventoRestaurarResponse,
-    status_code=status.HTTP_200_OK,
-    include_in_schema=False,
+    summary="Restaurar un evento pendiente descartado",
+    description=(
+        "Devuelve un evento pendiente descartado a 'pendiente_definicion_importancia'. Un "
+        "evento retirado no se restaura: el retiro es definitivo (HU-23B)."
+    ),
 )
 def restaurar_evento(
     id_externo_o_interno: str,
     admin: CurrentAdmin,
+    club_id: CurrentAdminClub,
     db: Annotated[Session, Depends(get_db)],
-    x_club_id: str | None = Header(None, alias="X-Club-ID"),
-    reloj_simulado: str | None = Query(
-        None, description="Reloj simulado para pruebas (formato ISO)"
-    ),
     service: EventoService = Depends(get_evento_service),
 ) -> EventoRestaurarResponse:
-    sim_now = _parse_clock(reloj_simulado)
-    res = service.restaurar_evento(
+    res = service.restaurar_evento_descartado(
         db=db,
-        club_id=x_club_id,
+        club_id=str(club_id),
         id_externo_o_interno=id_externo_o_interno,
         admin_id=admin.id,
-        now=sim_now,
     )
     db.commit()
-    # Solo vuelve a avisar un evento que vuelve a `publicado`, no un pendiente restaurado.
-    if res.estado == "publicado":
-        generators.event_restored(db, res.id_interno, res.restaurado_en)
     return res
 
 

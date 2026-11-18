@@ -33,7 +33,8 @@ NO_SCHEDULE_MESSAGE = (
 )
 NO_WAVE_MESSAGE = "No tenés un turno asignado para este evento. Contactá al club."
 CLOSED_MESSAGE = "El período de reserva de este evento terminó."
-WITHDRAWN_MESSAGE = "Este evento fue retirado."
+# HU-23B US5 escenario 6: el mismo texto venga de un enlace viejo o de una notificación.
+WITHDRAWN_MESSAGE = "Este evento fue suspendido."
 
 _SOCIO_EVENT_TYPES = {"Partido", "Institucional"}
 

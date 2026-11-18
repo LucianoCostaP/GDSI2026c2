@@ -446,3 +446,114 @@ def notify_rescheduled(db: Session, done: Rescheduled) -> None:
             first_moved_order=plan.impact.moved_orders[0],
             joined_open=plan.impact.target_open,
         )
+
+
+WITHDRAWN = "withdrawn"
+
+
+@dataclass(frozen=True)
+class Withdrawn:
+    event_id: str
+    segmentation_deleted: bool
+    schedule_deleted: bool
+
+
+def withdraw(
+    db: Session,
+    admin: User,
+    club_id: uuid.UUID,
+    event_id: str,
+    *,
+    confirmed: bool,
+    expected_version: int,
+    now: datetime | None = None,
+) -> Withdrawn:
+    """Retira para siempre un evento publicado que no empezó (US5, escenarios 3 y 4).
+
+    El evento pasa a `withdrawn`: sale del listado del Admin, de las olas y el cronograma
+    (HU-36, HU-37) y de todo lo que ven los Socios (HU-17, HU-18, HU-39). Su segmentación y su
+    cronograma se borran en cualquier estado, aunque ya hayan abierto olas, así el trabajo de
+    olas no genera nada más. La fila del evento se conserva para la auditoría, las
+    notificaciones viejas y el `id_externo` del club. Todo se audita en la misma transacción
+    (escenario 9). El aviso `event_withdrawn` lo genera quien llama, después del commit, con
+    `notify_withdrawn`.
+    """
+    if not confirmed:
+        raise error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "CONFIRMATION_REQUIRED",
+            "Confirmá el retiro del evento.",
+        )
+    moment = asegurar_utc(now or utcnow())
+    event = _listed_event(db, club_id, event_id, moment)
+    # Escenario 10: otro Admin reprogramó el evento después de abrir la confirmación.
+    if expected_version != event.version:
+        raise error(
+            status.HTTP_409_CONFLICT,
+            "EVENT_CHANGED",
+            "El evento cambió mientras lo editabas. Revisá los datos actuales y volvé a "
+            "intentar.",
+        )
+    schedule = _find_schedule(db, event.id_interno)
+    segmentation = db.scalar(
+        select(WaveSegmentation).where(WaveSegmentation.event_id == event.id_interno)
+    )
+    # El cronograma depende de la segmentación: se borra primero.
+    if schedule is not None:
+        audit.record(
+            db,
+            "wave_schedule.deleted",
+            actor_id=admin.id,
+            entity="wave_schedule",
+            entity_id=schedule.id,
+            event_id=event.id_interno,
+            reason="event.withdrawn",
+            previous={
+                **_schedule_values(schedule),
+                "opening_at": asegurar_utc(schedule.opening_at).isoformat(),
+                "generated_closing_at": asegurar_utc(schedule.closing_at).isoformat(),
+                "segmentation_id": schedule.segmentation_id,
+            },
+        )
+        db.delete(schedule)
+        db.flush()
+    if segmentation is not None:
+        audit.record(
+            db,
+            "wave_segmentation.deleted",
+            actor_id=admin.id,
+            entity="wave_segmentation",
+            entity_id=segmentation.id,
+            event_id=event.id_interno,
+            reason="event.withdrawn",
+            previous={
+                "ranking_id": segmentation.ranking_id,
+                "ranked_total": segmentation.ranked_total,
+                "percentile_step": segmentation.percentile_step,
+                "generated_at": asegurar_utc(segmentation.generated_at).isoformat(),
+            },
+        )
+        db.delete(segmentation)
+    event.estado = WITHDRAWN
+    event.retirado_en = moment
+    event.retirado_por_id = admin.id
+    event.version += 1
+    audit.record(
+        db,
+        "event.withdrawn",
+        actor_id=admin.id,
+        entity="event",
+        entity_id=event.id_interno,
+        previous={"estado": PUBLICADO},
+        new={"estado": WITHDRAWN},
+        segmentation_deleted=segmentation is not None,
+        schedule_deleted=schedule is not None,
+    )
+    db.commit()
+    return Withdrawn(event.id_interno, segmentation is not None, schedule is not None)
+
+
+def notify_withdrawn(db: Session, done: Withdrawn) -> None:
+    """El aviso de un retiro ya confirmado (escenario 5): `event_withdrawn` a todo el club.
+    Nunca falla (escenario 11)."""
+    generators.event_withdrawn(db, done.event_id)

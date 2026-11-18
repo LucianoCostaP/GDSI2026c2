@@ -694,7 +694,7 @@ def test_la_lectura_queda_guardada_y_baja_el_contador(
         ("event_published", {"event_id": "evt-1"}),
         ("event_rescheduled", {"event_id": "evt-2"}),
         ("event_withdrawn", {"event_id": "evt-4"}),
-        ("event_restored", {"event_id": "evt-5"}),
+        ("wave_rescheduled", {"event_id": "evt-5"}),
         ("wave_opened", {"event_id": "evt-3"}),
         ("ranking_completed", {"ranking_id": 42}),
     ],
@@ -1231,21 +1231,22 @@ def test_marcar_como_leida_es_solo_para_socios(
 # --- Catálogo: un tipo inactivo no aparece en ningún lado (notificaciones §2) ----------------
 
 
-def test_el_catalogo_trae_los_siete_tipos_activos_desde_hu23b() -> None:
+def test_el_catalogo_trae_seis_tipos_activos_desde_hu23b() -> None:
+    """HU-23B (decisión 62): el retiro es definitivo, así que `event_restored` queda
+    inactivo y no se muestra."""
     assert [(t.key, t.active) for t in CATALOG] == [
         ("event_published", True),
         ("event_rescheduled", True),
         ("event_withdrawn", True),
-        ("event_restored", True),
         ("wave_rescheduled", True),
         ("wave_opened", True),
         ("ranking_completed", True),
+        ("event_restored", False),
     ]
     assert ACTIVE_TYPES == (
         "event_published",
         "event_rescheduled",
         "event_withdrawn",
-        "event_restored",
         "wave_rescheduled",
         "wave_opened",
         "ranking_completed",
@@ -1256,7 +1257,7 @@ def test_el_catalogo_tiene_los_nombres_y_textos_del_spec() -> None:
     assert {t.key: (t.name, t.title) for t in CATALOG} == {
         "event_published": ("Nuevo evento publicado", "Nuevo evento publicado"),
         "event_rescheduled": ("Evento reprogramado", "Evento reprogramado"),
-        "event_withdrawn": ("Evento cancelado", "Evento cancelado"),
+        "event_withdrawn": ("Evento suspendido", "Evento suspendido"),
         "event_restored": ("Evento restaurado", "Evento restaurado"),
         "wave_rescheduled": (
             "Turno de reserva reprogramado",
@@ -1273,6 +1274,12 @@ def test_el_catalogo_tiene_los_nombres_y_textos_del_spec() -> None:
     ) == (
         "Ya podés reservar para Fecha 12 vs. Rival. "
         "Tu acceso está habilitado hasta el 07/11/2026 a las 18:00."
+    )
+    assert BY_KEY["event_withdrawn"].message.format(
+        titulo="Fecha 12 vs. Rival", fecha="07/11/2026", hora="18:00"
+    ) == (
+        "Fecha 12 vs. Rival, del 07/11/2026 a las 18:00, se suspendió. "
+        "Si compraste entradas, comunicate con el club."
     )
     assert BY_KEY["wave_rescheduled"].message.format(
         titulo="Fecha 12 vs. Rival", fecha="07/11/2026", hora="15:00"
