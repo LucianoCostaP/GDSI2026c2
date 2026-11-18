@@ -55,11 +55,13 @@ def _now(now: datetime | None) -> datetime:
 
 def _view(db: Session, schedule: WaveSchedule, now: datetime) -> ScheduleView:
     segmentation = db.get_one(WaveSegmentation, schedule.segmentation_id)
-    closing_at = asegurar_utc(schedule.closing_at)
+    # Las horas salen del cierre generado; las olas abren hasta el cierre efectivo (HU-23B).
+    closing_at = asegurar_utc(schedule.effective_closing)
     waves = schedule_waves(
         build_waves(segmentation.ranked_total, segmentation.percentile_step),
         asegurar_utc(schedule.opening_at),
-        closing_at,
+        asegurar_utc(schedule.closing_at),
+        schedule.merged_into_order,
     )
     states: list[WaveState | None] = (
         list(wave_states([w.starts_at for w in waves], closing_at, now))
@@ -82,11 +84,19 @@ def _view(db: Session, schedule: WaveSchedule, now: datetime) -> ScheduleView:
 
 
 def _audit_values(schedule: WaveSchedule) -> dict[str, Any]:
-    return {
+    values: dict[str, Any] = {
         "segmentation_id": schedule.segmentation_id,
         "opening_at": asegurar_utc(schedule.opening_at).isoformat(),
         "closing_at": asegurar_utc(schedule.closing_at).isoformat(),
     }
+    # Ajustes de una reprogramación (HU-23B), solo si los hay.
+    if schedule.effective_closing_at is not None:
+        values["effective_closing_at"] = asegurar_utc(
+            schedule.effective_closing_at
+        ).isoformat()
+    if schedule.merged_into_order is not None:
+        values["merged_into_order"] = schedule.merged_into_order
+    return values
 
 
 def _schedule_of(
@@ -199,7 +209,7 @@ def generate(
         select(WaveSchedule).where(WaveSchedule.event_id == event.id_interno)
     )
     previous = None
-    # Uno invalidado (se regeneraron las olas) ya no vale: se pisa sin pedir confirmación.
+    # Uno invalidado (se regeneraron las olas o una reprogramación lo dejó sin olas) ya no vale: se pisa sin pedir confirmación.
     if schedule is not None and schedule.status != WaveScheduleStatus.INVALIDATED:
         if not confirmed:
             raise error(
@@ -213,6 +223,10 @@ def generate(
         "segmentation_id": segmentation.id,
         "opening_at": opening_at,
         "closing_at": closing_at,
+        # Regenerar descarta los ajustes de las reprogramaciones (HU-23B US3, escenario 8).
+        "effective_closing_at": None,
+        "merged_into_order": None,
+        "invalidation_reason": None,
         # Un cronograma regenerado vuelve a borrador: hay que confirmarlo de nuevo.
         "status": WaveScheduleStatus.DRAFT,
         "generated_at": utcnow(),

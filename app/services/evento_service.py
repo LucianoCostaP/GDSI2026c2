@@ -1,8 +1,12 @@
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from fastapi import HTTPException, status
 from pydantic import ValidationError
+from sqlalchemy.orm import Session
 
+from .. import audit
 from ..config import settings
 from ..core.date_utils import (
     a_hora_buenos_aires,
@@ -12,12 +16,15 @@ from ..core.date_utils import (
     validar_evento_futuro,
 )
 from ..core.exceptions import (
+    EVENT_WITHDRAWN_MESSAGE,
     AntelacionInsuficienteError,
     EventoDuplicadoError,
     EventoNoEncontradoError,
     EventoYaPublicadoError,
     PublicacionInvalidaError,
+    event_withdrawn_error,
 )
+from ..models.domain import EventoPendienteDB
 from ..models.enums import (
     DEMANDA_CLASE_PARTIDO,
     FACTORES_CLASE_PARTIDO,
@@ -33,8 +40,10 @@ from ..schemas.eventos import (
     BatchSuccessItem,
     BatchSummary,
     ClaseInfoResponse,
+    ClubEventoUpdateRequest,
     EventoCreateRequest,
     EventoCreateResponse,
+    EventoDescarteResponse,
     EventoDetailResponse,
     EventoPendientePublicacionResponse,
     ProximoEventoItem,
@@ -45,6 +54,7 @@ from ..schemas.eventos import (
 
 # HU-17 FR-004 y decisión 24: texto exacto, los tests lo comparan por igualdad.
 MENSAJE_SIN_EVENTOS_PROXIMOS = "No hay eventos próximos publicados."
+logger = logging.getLogger(__name__)
 
 
 class EventoService:
@@ -60,6 +70,10 @@ class EventoService:
         - Regla de 48 horas: Valida antelación mínima para eventos futuros (422).
         - Flujo de estado: Se guarda estrictamente en 'pendiente_definicion_importancia' (o 'Historico').
         """
+        # HU-23B US5 escenario 7: reenviar el `id_externo` de un evento retirado no lo revive;
+        # el club manda el evento de nuevo con otro `id_externo`.
+        if self._esta_retirado(club_id, evento.id_externo):
+            raise event_withdrawn_error()
         if self.repo.exists_externo(club_id, evento.id_externo):
             raise EventoDuplicadoError(
                 "Ya existe un evento registrado con ese id_externo."
@@ -87,6 +101,17 @@ class EventoService:
 
         return EventoCreateResponse(
             mensaje="Evento creado exitosamente.", id_interno=id_interno
+        )
+
+    def _esta_retirado(self, club_id: str, id_externo: str) -> bool:
+        """El evento del club con ese `id_externo` fue retirado (HU-23B US5)."""
+        evento = self.repo.get_evento_visible(
+            id_externo_o_interno=id_externo, club_id=club_id
+        )
+        return bool(
+            evento
+            and evento.get("id_externo") == id_externo
+            and evento.get("estado") in ("withdrawn", "retirado")
         )
 
     def crear_eventos_batch(
@@ -145,6 +170,16 @@ class EventoService:
                 fallidos.append(
                     BatchFailedItem(
                         id_externo=ev.id_externo, error=err.message, codigo=422
+                    )
+                )
+                continue
+
+            if self._esta_retirado(club_id, ev.id_externo):
+                fallidos.append(
+                    BatchFailedItem(
+                        id_externo=ev.id_externo,
+                        error=EVENT_WITHDRAWN_MESSAGE,
+                        codigo=422,
                     )
                 )
                 continue
@@ -534,8 +569,14 @@ class EventoService:
                 continue
 
             # Verificar si se perdió la antelación mínima de 48 horas
-            lead_minimo = ahora_utc + timedelta(
-                hours=settings.min_publication_lead_hours
+            # Según SC-001, las publicaciones automáticas ocurren dentro de los 2 minutos
+            # de su deadline. Para un evento con deadline = fecha_hora - 48h (ej. evento a 60h),
+            # una tolerancia de 2 minutos evita omitir erróneamente eventos cuyo deadline recién venció.
+            tolerancia_scheduler = timedelta(minutes=2)
+            lead_minimo = (
+                ahora_utc
+                + timedelta(hours=settings.min_publication_lead_hours)
+                - tolerancia_scheduler
             )
             if fecha_hora_utc < lead_minimo:
                 # Se perdió la antelación mínima: no se puede publicar automáticamente
@@ -666,4 +707,198 @@ class EventoService:
             total=len(items),
             eventos=items,
             mensaje=mensaje,
+        )
+
+    # ==========================================================================
+    # CAMBIOS Y CANCELACIONES DEL CLUB (HU-21, HU-23B) Y DESCARTE DE PENDIENTES
+    # ==========================================================================
+
+    def recibir_actualizacion_club(
+        self,
+        club_id: str,
+        id_externo_o_interno: str,
+        payload: ClubEventoUpdateRequest,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        """
+        Recibe una actualización enviada por el club (PUT /api/v1/eventos/{id}).
+        - Un evento publicado no cambia con los datos del club: el cambio se omite, como en
+          el MVP (HU-21 escenario 5, HU-23B edge case "Changes sent by the club"); la fecha y
+          la hora las reprograma el Admin.
+        - Un evento retirado lo rechaza con `EVENT_WITHDRAWN` (HU-23B US5 escenario 7).
+        """
+        ahora = asegurar_utc(now or datetime.now(UTC))
+
+        # 1. Buscar en eventos visibles (publicados / retirados)
+        evento_vis = self.repo.get_evento_visible(
+            id_externo_o_interno=id_externo_o_interno, club_id=club_id
+        )
+
+        if evento_vis:
+            if evento_vis.get("estado") in ("withdrawn", "retirado"):
+                raise event_withdrawn_error()
+            return {
+                "mensaje": (
+                    "El evento ya está publicado: el cambio se omite. Si cambió la fecha "
+                    "o la hora, avisale a la administración del club."
+                ),
+                "omitido": True,
+                "id_interno": evento_vis["id_interno"],
+            }
+
+        # 2. Si no es visible, buscar en pendientes
+        matching_pend = self.repo.get_evento_pendiente(
+            club_id=club_id, id_externo_o_interno=id_externo_o_interno
+        )
+
+        if matching_pend:
+            if (
+                matching_pend.get("es_historico")
+                or matching_pend.get("estado") == "Historico"
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail={
+                        "error": {
+                            "code": "EVENT_NOT_ELIGIBLE",
+                            "message": "No se pueden actualizar eventos históricos.",
+                            "field": "id_externo",
+                        }
+                    },
+                )
+            if matching_pend.get("estado") == "descartado":
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail={
+                        "error": {
+                            "code": "EVENT_DISCARDED",
+                            "message": "No se pueden actualizar eventos descartados.",
+                            "field": "id_externo",
+                        }
+                    },
+                )
+
+            fh_pend = asegurar_utc(
+                matching_pend["fecha_hora"]
+                if isinstance(matching_pend["fecha_hora"], datetime)
+                else datetime.fromisoformat(str(matching_pend["fecha_hora"]))
+            )
+            if fh_pend <= ahora:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail={
+                        "error": {
+                            "code": "EVENT_ALREADY_STARTED",
+                            "message": "El evento ya comenzó o finalizó y no puede ser modificado.",
+                            "field": "id_externo",
+                        }
+                    },
+                )
+
+            if (
+                payload.tipo
+                and payload.tipo.strip().lower()
+                != str(matching_pend["tipo"]).strip().lower()
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail={
+                        "error": {
+                            "code": "EVENT_TYPE_CHANGE_NOT_ALLOWED",
+                            "message": "No se permite cambiar el tipo de evento ya que define el modelo de puntuación.",
+                            "field": "tipo",
+                        }
+                    },
+                )
+
+            return {
+                "mensaje": "Evento pendiente actualizado.",
+                "omitido": False,
+                "id_interno": matching_pend["id_interno"],
+            }
+
+        raise EventoNoEncontradoError("No se encontró el evento especificado.")
+
+    def recibir_cancelacion_club(
+        self,
+        club_id: str,
+        id_externo_o_interno: str,
+        motivo: str | None = None,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        """
+        Registra la cancelación enviada por el club (HU-23B US1: marca informativa; el
+        Admin decide si retira el evento).
+        Marca el evento con la bandera 'cancelado_por_el_club'.
+        """
+        evento = self.repo.get_evento_visible(
+            id_externo_o_interno=id_externo_o_interno, club_id=club_id
+        )
+        # HU-23B US5 escenario 7: la cancelación de un retirado se rechaza; sigue retirado.
+        if evento and evento.get("estado") in ("withdrawn", "retirado"):
+            raise event_withdrawn_error()
+        res = self.repo.marcar_cancelado_club(club_id, id_externo_o_interno)
+        if not res:
+            raise EventoNoEncontradoError(
+                "No se encontró el evento especificado para marcar cancelación."
+            )
+        return {
+            "mensaje": "Cancelación registrada por el club.",
+            "cancelado_por_el_club": True,
+            "id_interno": res["id_interno"],
+        }
+
+    def descartar_evento_pendiente(
+        self,
+        db: Session,
+        club_id: str | None,
+        id_externo_o_interno: str,
+        admin_id: int,
+        motivo: str | None = None,
+        now: datetime | None = None,
+    ) -> EventoDescarteResponse:
+        """
+        Descarta un evento pendiente (HU-21 escenario 10): pasa a 'descartado', nunca se
+        publica ni lo ven los socios, y se audita. El motivo es opcional y solo va a la
+        auditoría. Un evento publicado se retira con `published_events_service.withdraw`
+        (HU-23B US5).
+        """
+        ahora = asegurar_utc(now or datetime.now(UTC))
+        motivo_limpio = motivo.strip() if motivo and motivo.strip() else None
+
+        evento_pend = self.repo.get_evento_pendiente(
+            club_id=club_id, id_externo_o_interno=id_externo_o_interno
+        )
+        if not evento_pend:
+            raise EventoNoEncontradoError("No se encontró el evento para descartar.")
+
+        if evento_pend.get("estado") == "descartado":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="El evento ya fue descartado previamente.",
+            )
+
+        self.repo.descartar_evento_pendiente(id_interno=evento_pend["id_interno"])
+
+        ev_pend_db = db.get(EventoPendienteDB, evento_pend["id_interno"])
+        if ev_pend_db:
+            ev_pend_db.estado = "descartado"
+            ev_pend_db.actualizado_en = ahora
+
+        audit.record(
+            db,
+            "event.discarded",
+            actor_id=admin_id,
+            entity="event",
+            entity_id=evento_pend["id_interno"],
+            motivo=motivo_limpio,
+            previous={
+                "estado": evento_pend.get("estado", "pendiente_definicion_importancia")
+            },
+            new={"estado": "descartado"},
+        )
+
+        return EventoDescarteResponse(
+            id_interno=evento_pend["id_interno"],
+            descartado_en=ahora,
         )

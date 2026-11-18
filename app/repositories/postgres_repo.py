@@ -200,9 +200,31 @@ class PostgresEventoRepository(EventoRepository):
             SELECT id_interno, id_externo, club_id, titulo, fecha_hora, lugar, tipo,
                    descripcion, estado, creado_en, actualizado_en
             FROM eventos_pendientes_verificacion
-            WHERE {filtro_club}(id_externo = :id OR id_interno = :id);
+            WHERE {filtro_club}(
+                id_externo = :id 
+                OR id_interno = :id 
+                OR LOWER(TRIM(titulo)) = LOWER(TRIM(:id))
+            )
+            ORDER BY creado_en DESC
+            LIMIT 1;
             """,
-            {"club_id": club_id, "id": id_externo_o_interno},
+            {"club_id": club_id, "id": id_externo_o_interno.strip()},
+        )
+
+    def descartar_evento_pendiente(
+        self,
+        id_interno: str,
+    ) -> None:
+        self.db.execute(
+            text(
+                """
+                UPDATE eventos_pendientes_verificacion
+                SET estado = 'descartado',
+                    actualizado_en = CURRENT_TIMESTAMP
+                WHERE id_interno = :id_interno;
+                """
+            ),
+            {"id_interno": id_interno},
         )
 
     def is_already_published(
@@ -290,7 +312,10 @@ class PostgresEventoRepository(EventoRepository):
         Consulta los próximos eventos publicados (visibles para socios) ordenados
         cronológicamente (HU-17).
         """
-        condiciones = ["fecha_hora > :ahora"]
+        condiciones = [
+            "fecha_hora > :ahora",
+            "COALESCE(estado, 'publicado') = 'publicado'",
+        ]
         params: dict[str, Any] = {"ahora": now or datetime.now(UTC)}
 
         if club_id:
@@ -302,10 +327,67 @@ class PostgresEventoRepository(EventoRepository):
             f"""
             SELECT id_interno, id_externo, club_id, titulo, fecha_hora, lugar, tipo,
                    descripcion, clase, puntos, publicado_por, es_default,
-                   publicado_en, actualizado_en
+                   publicado_en, actualizado_en, estado, cancelado_por_el_club,
+                   retirado_en, retirado_por_id
             FROM eventos_visibles
             WHERE {where_clause}
             ORDER BY fecha_hora ASC;
             """,
             params,
         )
+
+    def get_evento_visible(
+        self,
+        id_externo_o_interno: str,
+        club_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        filtro_club = "club_id = :club_id AND " if club_id else ""
+        return self._row(
+            f"""
+            SELECT id_interno, id_externo, club_id, titulo, fecha_hora, lugar, tipo,
+                   descripcion, clase, puntos, publicado_por, es_default,
+                   publicado_en, actualizado_en, estado, cancelado_por_el_club,
+                   retirado_en, retirado_por_id
+            FROM eventos_visibles
+            WHERE {filtro_club}(
+                id_externo = :id 
+                OR id_interno = :id 
+                OR LOWER(TRIM(titulo)) = LOWER(TRIM(:id))
+            )
+            ORDER BY publicado_en DESC
+            LIMIT 1;
+            """,
+            {"club_id": club_id, "id": id_externo_o_interno.strip()},
+        )
+
+    def marcar_cancelado_club(
+        self,
+        club_id: str,
+        id_externo_o_interno: str,
+    ) -> dict[str, Any] | None:
+        # Primero buscar en eventos_visibles
+        row = self._row(
+            """
+            UPDATE eventos_visibles
+            SET cancelado_por_el_club = TRUE,
+                actualizado_en = CURRENT_TIMESTAMP
+            WHERE club_id = :club_id AND (id_externo = :id OR id_interno = :id)
+            RETURNING id_interno, id_externo, estado;
+            """,
+            {"club_id": club_id, "id": id_externo_o_interno},
+        )
+        if row:
+            return dict(row)
+
+        # Si no está en visibles, buscar en pendientes
+        row_p = self._row(
+            """
+            UPDATE eventos_pendientes_verificacion
+            SET cancelado_por_el_club = TRUE,
+                actualizado_en = CURRENT_TIMESTAMP
+            WHERE club_id = :club_id AND (id_externo = :id OR id_interno = :id)
+            RETURNING id_interno, id_externo, estado;
+            """,
+            {"club_id": club_id, "id": id_externo_o_interno},
+        )
+        return dict(row_p) if row_p else None

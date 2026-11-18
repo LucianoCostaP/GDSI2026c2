@@ -235,3 +235,148 @@ class AutoPublishResponse(BaseModel):
     omitidos: int
     eventos_publicados: list[str]
     detalle: list[PublicarEventoResponse] = []
+
+
+# ==============================================================================
+# ESQUEMAS DE CAMBIOS DEL CLUB, DESCARTE Y RETIRO DE EVENTOS (HU-21, HU-23B)
+# ==============================================================================
+
+
+class ClubEventoUpdateRequest(BaseModel):
+    titulo: str | None = Field(None, max_length=255)
+    fecha_hora: datetime | None = None
+    lugar: str | None = Field(None, max_length=255)
+    tipo: str | None = None
+    descripcion: str | None = None
+
+
+class ClubCancelacionRequest(BaseModel):
+    motivo: str | None = Field(None, max_length=500)
+
+
+class EventoDescarteRequest(BaseModel):
+    """Descarte de un evento pendiente (HU-21 escenario 10). El motivo es opcional y solo
+    queda en la auditoría."""
+
+    motivo: str | None = Field(None, max_length=500)
+
+
+class EventoDescarteResponse(BaseModel):
+    mensaje: str = "Evento descartado."
+    id_interno: str
+    estado: str = "descartado"
+    descartado_en: datetime
+
+
+class WithdrawRequest(BaseModel):
+    """Retiro definitivo de un evento publicado (HU-23B US5)."""
+
+    # La confirmación explícita del Admin (escenario 1): sin ella, `CONFIRMATION_REQUIRED`.
+    confirmed: bool = False
+    # La `version` del listado: si otro Admin cambió el evento, `EVENT_CHANGED` (escenario 10).
+    expected_version: int
+
+
+class WithdrawOut(BaseModel):
+    id_interno: str
+    estado: str = "withdrawn"
+    segmentation_deleted: bool
+    schedule_deleted: bool
+
+
+class PublishedScheduleOut(BaseModel):
+    """Resumen del cronograma de olas (HU-37) de un Partido publicado."""
+
+    status: str
+    opening_at: datetime
+    # Cierre general vigente: el ajustado por una reprogramación, si la hubo (HU-23B US3).
+    closing_at: datetime
+    # Última ola separada tras una fusión: las siguientes abren con ella. `null` si no hubo.
+    merged_into_order: int | None = None
+    # Una reprogramación movió el cierre o fusionó olas ("ajustado" en el listado, US1).
+    adjusted: bool = False
+
+
+class PublishedEventOut(BaseModel):
+    """Un evento publicado que todavía no empezó (HU-23B US1)."""
+
+    id_interno: str
+    id_externo: str
+    titulo: str
+    tipo: TipoEvento
+    fecha_hora: datetime
+    lugar: str
+    # Se muestra de solo lectura en el formulario de reprogramación (US2, escenario 1).
+    descripcion: str | None
+    # Clase (Partido) o puntos (institucional/amateur): el otro va en null.
+    clase: str | None
+    puntos: int | None
+    cancelado_por_el_club: bool
+    # La que el Admin manda al reprogramar o retirar (FR-011).
+    version: int
+    schedule: PublishedScheduleOut | None
+
+
+class ReschedulePreviewRequest(BaseModel):
+    """Fecha y hora nueva de un evento publicado (HU-23B US2): lo único editable.
+
+    Cualquier otro campo (tipo, clase, puntos, título, lugar, descripción…) se rechaza con
+    `FIELD_NOT_EDITABLE` (escenario 3), por eso se aceptan campos extra y se revisan en el
+    servicio en vez de ignorarlos. La fecha llega como texto para responder un formato
+    inválido con el motivo en español (`INVALID_DATETIME`, escenario 6); sin zona horaria se
+    lee en Buenos Aires.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    fecha_hora: str | None = None
+
+
+class RescheduleRequest(ReschedulePreviewRequest):
+    """Reprogramación confirmada (HU-23B US2)."""
+
+    # La `version` del listado: si otro Admin cambió el evento, `EVENT_CHANGED` (escenario 9).
+    expected_version: int
+    # El efecto que mostró la vista previa (escenario 7). Si llega y ya no es el mismo, la
+    # reprogramación falla con `EVENT_CHANGED` en vez de aplicar otro.
+    expected_schedule_effect: str | None = None
+    expected_merged_into_order: int | None = None
+
+
+class MovedWaveOut(BaseModel):
+    order: int
+    socios: int
+
+
+class RescheduleNotificationsOut(BaseModel):
+    """Cuántos socios reciben cada aviso (cuentas activadas)."""
+
+    event_rescheduled: int
+    # Avisos de turno de HU-23B US4, a los socios de las olas movidas: uno u otro, según si
+    # la ola a la que se suman ya abrió.
+    wave_rescheduled: int = 0
+    wave_opened: int = 0
+
+
+class RescheduleImpactOut(BaseModel):
+    """Qué le pasa al cronograma con la reprogramación (HU-23B US2 escenario 7, US3)."""
+
+    previous_fecha_hora: datetime
+    new_fecha_hora: datetime
+    # `no_schedule`, `none`, `closing_adjusted`, `waves_merged` o `invalidated`.
+    schedule_effect: str
+    previous_closing_at: datetime | None
+    new_closing_at: datetime | None
+    merged_into_order: int | None
+    moved_waves: list[MovedWaveOut]
+    # Hora de inicio de la ola a la que se suman las olas movidas, y si ya abrió.
+    target_wave_starts_at: datetime | None
+    target_wave_open: bool
+    notifications: RescheduleNotificationsOut
+
+
+class RescheduleOut(PublishedEventOut):
+    """El evento reprogramado, la reprogramación y el efecto aplicado."""
+
+    id_reprogramacion: str
+    impact: RescheduleImpactOut
