@@ -404,7 +404,8 @@ class RescheduleNotificationsOut(BaseModel):
     """Cuántos socios reciben cada aviso (cuentas activadas)."""
 
     event_rescheduled: int
-    # Avisos de turno de HU-23B US4: todavía no se generan.
+    # Avisos de turno de HU-23B US4, a los socios de las olas movidas: uno u otro, según si
+    # la ola a la que se suman ya abrió.
     wave_rescheduled: int = 0
     wave_opened: int = 0
 

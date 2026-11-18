@@ -184,6 +184,83 @@ def _ranked_members(
     return list(db.scalars(query))
 
 
+def ranked_member_ids(
+    db: Session, ranking_id: int, club_id: uuid.UUID, positions: tuple[int, int]
+) -> list[int]:
+    """Los destinatarios de un aviso de turno entre dos posiciones del ranking (para contarlos
+    antes de generarlo, como la vista previa de una reprogramación de HU-23B)."""
+    return _ranked_members(db, ranking_id, club_id, positions)
+
+
+def waves_moved(
+    db: Session,
+    event_id: str,
+    reprogramming_id: str,
+    *,
+    schedule_id: int,
+    joined_order: int,
+    first_moved_order: int,
+    joined_open: bool,
+    now: datetime | None = None,
+) -> int:
+    """El aviso a los socios de las olas que una reprogramación sumó a la ola `joined_order`
+    (HU-23B US4, escenarios 2 y 3). Se llama después del commit, con el cronograma ya ajustado.
+
+    Si la ola a la que se sumaron todavía no abrió, `wave_rescheduled` con su hora de inicio
+    (clave `event:{event_id}:wave-moved:{reprogramming_id}`); el trabajo de olas les avisa
+    `wave_opened` cuando llegue. Si ya abrió, `wave_opened` en el momento, con el cierre
+    nuevo y la misma clave del trabajo, que así no lo repite. Devuelve cuántas creó.
+    """
+    try:
+        schedule = db.get_one(WaveSchedule, schedule_id)
+        segmentation = db.get_one(WaveSegmentation, schedule.segmentation_id)
+        event = db.get_one(EventoVisibleDB, event_id)
+        waves = schedule_waves(
+            build_waves(segmentation.ranked_total, segmentation.percentile_step),
+            asegurar_utc(schedule.opening_at),
+            asegurar_utc(schedule.closing_at),
+            schedule.merged_into_order,
+        )
+        # Las olas movidas son las últimas: de `first_moved_order` a la N.
+        recipients = _ranked_members(
+            db,
+            segmentation.ranking_id,
+            segmentation.club_id,
+            (
+                waves[first_moved_order - 1].wave.position_from,
+                waves[-1].wave.position_to,
+            ),
+        )
+        joined_starts_at = waves[joined_order - 1].starts_at
+        closing = asegurar_utc(schedule.effective_closing)
+        titulo, club_id = event.titulo, event.club_id
+    except Exception:
+        db.rollback()
+        logger.exception("waves_moved: no se pudieron leer los destinatarios")
+        return 0
+    if joined_open:
+        return notify(
+            db,
+            "wave_opened",
+            f"event:{event_id}:wave:{joined_order}:schedule:{schedule_id}",
+            recipients,
+            club_id=club_id,
+            reference={"event_id": event_id},
+            params={"titulo": titulo, **_when(closing)},
+            now=now,
+        )
+    return notify(
+        db,
+        "wave_rescheduled",
+        f"event:{event_id}:wave-moved:{reprogramming_id}",
+        recipients,
+        club_id=club_id,
+        reference={"event_id": event_id},
+        params={"titulo": titulo, **_when(joined_starts_at)},
+        now=now,
+    )
+
+
 def ranking_completed(db: Session, ranking_id: int) -> int:
     """`ranking_completed` para los socios activados con entrada en el ranking (escenario 5).
 

@@ -30,7 +30,8 @@ from ..models import (
     WaveSegmentation,
     utcnow,
 )
-from ..notifications.generators import club_member_ids
+from ..notifications import generators
+from ..notifications.generators import club_member_ids, ranked_member_ids
 from ..scoring.wave_schedule import (
     RescheduleImpact,
     ScheduleEffect,
@@ -161,10 +162,21 @@ class ReschedulePlan:
     target_starts_at: datetime | None
     # Cuántos socios reciben `event_rescheduled` (las cuentas activadas del club).
     event_rescheduled: int
+    # Cuántos socios de las olas movidas reciben su aviso de turno (US4): `wave_opened` si
+    # la ola a la que se suman ya abrió, `wave_rescheduled` si no.
+    moved_members: int = 0
 
     @property
     def moved_waves(self) -> list[Wave]:
         return [w for w in self.waves if w.order in self.impact.moved_orders]
+
+    @property
+    def wave_rescheduled(self) -> int:
+        return 0 if self.impact.target_open else self.moved_members
+
+    @property
+    def wave_opened(self) -> int:
+        return self.moved_members if self.impact.target_open else 0
 
 
 @dataclass(frozen=True)
@@ -227,6 +239,7 @@ def _plan(
     )
     impact = RescheduleImpact(ScheduleEffect.NO_SCHEDULE)
     target_starts_at = None
+    moved_members = 0
     if schedule is not None and waves:
         starts = effective_wave_starts(
             asegurar_utc(schedule.opening_at),
@@ -244,8 +257,17 @@ def _plan(
             min_step_minutes=settings.wave_min_step_minutes,
         )
         if impact.effect == ScheduleEffect.WAVES_MERGED:
-            assert impact.merged_into_order is not None
+            assert impact.merged_into_order is not None and segmentation is not None
             target_starts_at = starts[impact.merged_into_order - 1]
+            moved = [w for w in waves if w.order in impact.moved_orders]
+            moved_members = len(
+                ranked_member_ids(
+                    db,
+                    segmentation.ranking_id,
+                    club_id,
+                    (moved[0].position_from, moved[-1].position_to),
+                )
+            )
     return ReschedulePlan(
         event=event,
         previous_start=previous_start,
@@ -255,6 +277,7 @@ def _plan(
         waves=waves,
         target_starts_at=target_starts_at,
         event_rescheduled=len(club_member_ids(db, club_id)),
+        moved_members=moved_members,
     )
 
 
@@ -342,7 +365,8 @@ def reschedule(
 
     Si llega el efecto que vio el Admin en la vista previa y ya no es el mismo (por ejemplo,
     abrió una ola en el medio), falla con `EVENT_CHANGED` en vez de aplicar otro efecto.
-    Las notificaciones (escenario 10) las genera quien llama, después del commit.
+    Las notificaciones (escenario 10, US4) las genera quien llama, después del commit, con
+    `notify_rescheduled`.
     """
     plan = _plan(
         db,
@@ -397,3 +421,28 @@ def reschedule(
         reprogramming.id,
         plan,
     )
+
+
+def notify_rescheduled(db: Session, done: Rescheduled) -> None:
+    """Los avisos de una reprogramación ya confirmada (US4): `event_rescheduled` a todo el
+    club y, si sumó olas, el aviso de turno a los socios movidos. Un cronograma invalidado
+    no genera avisos de turno (escenario 4). Nunca falla (escenario 7)."""
+    event_id = done.published.event.id_interno
+    reprogramming_id = str(done.reprogramming_id)
+    generators.event_rescheduled(db, event_id, reprogramming_id)
+    plan = done.plan
+    if (
+        plan.impact.effect == ScheduleEffect.WAVES_MERGED
+        and plan.schedule is not None
+        and plan.impact.merged_into_order is not None
+        and plan.impact.moved_orders
+    ):
+        generators.waves_moved(
+            db,
+            event_id,
+            reprogramming_id,
+            schedule_id=plan.schedule.id,
+            joined_order=plan.impact.merged_into_order,
+            first_moved_order=plan.impact.moved_orders[0],
+            joined_open=plan.impact.target_open,
+        )

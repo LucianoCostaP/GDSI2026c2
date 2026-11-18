@@ -322,7 +322,9 @@ def _impact_out(plan: published_events_service.ReschedulePlan) -> RescheduleImpa
         target_wave_starts_at=plan.target_starts_at,
         target_wave_open=impact.target_open,
         notifications=RescheduleNotificationsOut(
-            event_rescheduled=plan.event_rescheduled
+            event_rescheduled=plan.event_rescheduled,
+            wave_rescheduled=plan.wave_rescheduled,
+            wave_opened=plan.wave_opened,
         ),
     )
 
@@ -372,9 +374,10 @@ def previsualizar_reprogramacion(
         "y los datos del club, y el cronograma de olas se ajusta como en la vista previa. "
         "Otro campo en el cuerpo responde `FIELD_NOT_EDITABLE`; un formato inválido, "
         "`INVALID_DATETIME`; la misma fecha, `NO_CHANGES`; una fecha que no es futura, "
-        "`START_NOT_IN_FUTURE`; una `expected_version` vieja, `EVENT_CHANGED`. Avisa "
-        "`event_rescheduled` a los socios después de guardar. El club sale de la cuenta "
-        "del Admin (decisión 34)."
+        "`START_NOT_IN_FUTURE`; una `expected_version` vieja, `EVENT_CHANGED`. Después de "
+        "guardar avisa `event_rescheduled` a los socios y, a los de las olas sumadas, "
+        "`wave_rescheduled` (o `wave_opened` si la ola de destino ya abrió). El club sale "
+        "de la cuenta del Admin (decisión 34)."
     ),
 )
 @router.post(
@@ -410,8 +413,9 @@ def reprogramar_evento(
         id_reprogramacion=str(done.reprogramming_id),
         impact=_impact_out(done.plan),
     )
-    # Escenario 10: después del commit, sin poder deshacer la reprogramación (US4 esc. 7).
-    generators.event_rescheduled(db, event_id, str(done.reprogramming_id))
+    # Escenario 10 y US4: después del commit, sin poder deshacer la reprogramación (US4
+    # escenario 7).
+    published_events_service.notify_rescheduled(db, done)
     return out
 
 

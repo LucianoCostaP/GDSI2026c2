@@ -20,9 +20,10 @@ class NotificationType:
     message: str
 
 
-# En el orden de la pantalla de preferencias (contrato §2). Los tres tipos de HU-23
-# (`event_rescheduled`, `event_withdrawn`, `event_restored`) se generan desde su aprobación,
-# retiro y restauración (decisión 61).
+# En el orden de la pantalla de preferencias (contrato §2). `event_withdrawn` y
+# `event_restored` se generan desde el retiro y la restauración de HU-23 (decisión 61);
+# `event_rescheduled` y `wave_rescheduled`, desde la reprogramación de HU-23B (decisión 62),
+# que también genera `wave_opened` cuando suma olas a una que ya abrió.
 CATALOG: tuple[NotificationType, ...] = (
     NotificationType(
         key="event_published",
@@ -55,6 +56,14 @@ CATALOG: tuple[NotificationType, ...] = (
         active=True,
         title="Evento restaurado",
         message="{titulo} vuelve a estar programado: el {fecha} a las {hora}.",
+    ),
+    NotificationType(
+        key="wave_rescheduled",
+        name="Turno de reserva reprogramado",
+        description="Cuando una reprogramación cambia la hora de tu turno para reservar.",
+        active=True,
+        title="Tu turno de reserva cambió",
+        message="Tu turno de reserva para {titulo} cambió: se habilita el {fecha} a las {hora}.",
     ),
     NotificationType(
         key="wave_opened",
