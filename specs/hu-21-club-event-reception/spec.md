@@ -40,7 +40,7 @@ The club organizes the events and is the source of truth. It **sends** them to e
 - **Types**: **Partido** (counts in the attendance pillar, needs a class, takes part in waves) or **Evento institucional/amateur** (counts in the institutional pillar, has no class and no waves; its points are set at publication, also for elections and assemblies). Every Partido takes place at the club stadium; events held elsewhere are institutional/amateur.
 - **History is a state, not a type**: an event becomes `historical` by being sent through the historical endpoint.
 - **Reference**: `id_externo` is unique per club and is the key HU-24 uses to receive attendance.
-- **Updates of published events**: in the MVP a resent published event is omitted (scenario 5). Reviewing and applying changes to published events, and withdrawing them, is HU-23, outside the MVP.
+- **Updates of published events**: in the MVP a resent published event is omitted (scenario 5). Reprogramming and withdrawing published events is done by the Admin in HU-23B (outside the MVP, replaces HU-23); the club's changes to them stay omitted.
 - **Batch results**: a batch answers `207 Multi-Status` with a summary (total, created, omitted, failed) and the detail of each event.
 - **Volume**: the received events list in the admin view is paginated.
 
@@ -101,3 +101,4 @@ Gaps to close when porting it to this backend:
 
 - v3.4: events imported by calling the club API.
 - v4: aligned with the backlog: the club sends the events (push); the Admin no longer selects events to import; updates of pending events and cancellations come from the club; historical events arrive by their own endpoint. Contract aligned with the prototype.
+- v4.1: HU-23B replaces HU-23 (decision 62): the club's changes to published events stay omitted.

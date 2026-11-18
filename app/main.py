@@ -22,6 +22,7 @@ from .routers import (
     admin_accounts,
     admin_events,
     admin_formulas,
+    admin_notifications,
     admin_participacion,
     admin_ranking,
     admin_rules_simulation,
@@ -33,6 +34,7 @@ from .routers import (
     eventos,
     member_auth,
     member_events,
+    member_notifications,
     member_scoring,
     participacion_club,
     socios,
@@ -133,6 +135,8 @@ app.include_router(admin_simulator.router)
 app.include_router(admin_wave_schedule.router)
 app.include_router(member_events.router)
 app.include_router(member_scoring.router)
+app.include_router(member_notifications.router)
+app.include_router(admin_notifications.router)
 app.include_router(debug_inbox.router)
 
 # Rutas de API unificada de clubes (HU-21, HU-22, HU-43, HU-24)

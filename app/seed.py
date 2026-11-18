@@ -6,6 +6,7 @@ Incluye:
 3. Eventos en `eventos_visibles` (eventos pasados elegibles para HU-24 y futuros para HU-17).
 4. Eventos en `eventos_pendientes_verificacion` (pendientes de definir importancia para HU-22 e históricos para HU-24).
 5. Asistencia previa de prueba en `asistencias` y `cargas_participacion` para probar reemplazos en HU-24.
+6. Notificaciones de demo (HU-20) para las cuentas de socio ya activadas del club.
 """
 
 import uuid
@@ -13,11 +14,14 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import Session
 
 from .config import settings
+from .core.date_utils import a_hora_buenos_aires
 from .db import SessionLocal
-from .models import FeeStatus, Member
+from .models import FeeStatus, Member, Notification, NotificationState, Role, User
 from .models.domain import (
     AsistenciaDB,
     CargaParticipacionDB,
@@ -27,6 +31,8 @@ from .models.domain import (
     Socio,
 )
 from .models.enums import EstadoCargaParticipacion, OrigenCarga, TipoParticipacion
+from .notifications.catalog import BY_KEY
+from .services.ranking_service import get_ranking_in_force
 
 BOCA_ID = uuid.UUID("11111111-1111-1111-1111-111111111111")
 
@@ -423,9 +429,120 @@ def main() -> None:
                 "✓ Asistencia previa de prueba inicializada para EVT-BOCA-PAS-04 (para probar reemplazos en HU-24)."
             )
 
+        # 7. Notificaciones de demo (HU-20)
+        db.flush()
+        created = seed_demo_notifications(db, club_id, now=ahora)
+        print(
+            f"✓ {created} notificaciones de demo creadas (solo para cuentas de socio ya "
+            "activadas: activá una y volvé a correr el seed para verlas)."
+        )
+
         db.commit()
 
     print("\n Seed completado exitosamente.")
+
+
+# Eventos del seed a los que apuntan las notificaciones de demo.
+DEMO_PARTIDO = "INT-EVT-BOCA-FUT-PUB-01"
+DEMO_INSTITUCIONAL = "INT-EVT-BOCA-FUT-PUB-02"
+
+
+def _texts(type: str, event: EventoVisibleDB, until: datetime) -> tuple[str, str]:
+    """Título y mensaje congelados, como los generaría HU-19 (notificaciones §2, "Texts")."""
+    local = a_hora_buenos_aires(until)
+    entry = BY_KEY[type]
+    message = entry.message.format(
+        titulo=event.titulo,
+        fecha=local.strftime("%d/%m/%Y"),
+        hora=local.strftime("%H:%M"),
+    )
+    return entry.title, message
+
+
+def seed_demo_notifications(db: Session, club_id: uuid.UUID, *, now: datetime) -> int:
+    """Una notificación por tipo activo para cada cuenta de socio activada del club, para
+    mostrar la bandeja antes de que existan los generadores de HU-19 (HU-20, decisión 60).
+
+    `event_published` queda leída y las otras dos sin leer. Apuntan a eventos y al ranking
+    reales del seed; si falta alguno, esa notificación se saltea. Las claves llevan el prefijo
+    `demo:` para no chocar con las que generará HU-19, y volver a correr el seed no duplica.
+    Devuelve cuántas creó.
+    """
+    events = {
+        e.id_interno: e
+        for e in db.scalars(
+            select(EventoVisibleDB).where(
+                EventoVisibleDB.club_id == club_id,
+                EventoVisibleDB.id_interno.in_([DEMO_PARTIDO, DEMO_INSTITUCIONAL]),
+            )
+        )
+    }
+    ranking = get_ranking_in_force(db, club_id)
+
+    demos: list[dict[str, Any]] = []
+    if institucional := events.get(DEMO_INSTITUCIONAL):
+        title, message = _texts(
+            "event_published", institucional, institucional.fecha_hora
+        )
+        created_at = now - timedelta(days=2)
+        demos.append(
+            {
+                "type": "event_published",
+                "occurrence_key": f"demo:event:{institucional.id_interno}:published",
+                "reference": {"event_id": institucional.id_interno},
+                "title": title,
+                "message": message,
+                "created_at": created_at,
+                "state": NotificationState.READ,
+                "read_at": created_at + timedelta(hours=1),
+            }
+        )
+    if partido := events.get(DEMO_PARTIDO):
+        # El cierre general del cronograma, inventado: un día antes del partido.
+        title, message = _texts(
+            "wave_opened", partido, partido.fecha_hora - timedelta(days=1)
+        )
+        demos.append(
+            {
+                "type": "wave_opened",
+                "occurrence_key": f"demo:event:{partido.id_interno}:wave:1",
+                "reference": {"event_id": partido.id_interno},
+                "title": title,
+                "message": message,
+                "created_at": now - timedelta(hours=1),
+            }
+        )
+    if ranking is not None:
+        entry = BY_KEY["ranking_completed"]
+        demos.append(
+            {
+                "type": "ranking_completed",
+                "occurrence_key": f"demo:ranking:{ranking.id}",
+                "reference": {"ranking_id": ranking.id},
+                "title": entry.title,
+                "message": entry.message,
+                "created_at": ranking.completed_at or now,
+            }
+        )
+
+    accounts = db.scalars(
+        select(User).where(User.role == Role.MEMBER, User.club_id == club_id)
+    ).all()
+    created = 0
+    for account in accounts:
+        existing = set(
+            db.scalars(
+                select(Notification.occurrence_key).where(
+                    Notification.user_id == account.id
+                )
+            )
+        )
+        for demo in demos:
+            if demo["occurrence_key"] not in existing:
+                db.add(Notification(club_id=club_id, user_id=account.id, **demo))
+                created += 1
+    db.flush()
+    return created
 
 
 if __name__ == "__main__":

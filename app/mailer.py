@@ -128,19 +128,18 @@ def send_email(to: str, subject: str, body: str) -> None:
     )
     RECENT_EMAILS.appendleft(recorded)
 
-    # 3. Si es un correo de prueba (ej. socio1@example.com), no intentamos enviarlo a internet para evitar rebotes
-    if is_dummy_email(to):
-        print(
-            f"[MAILER] Omitiendo envío externo para correo de prueba: {to}", flush=True
-        )
-        return
-
-    # 4. Si está activo el modo mock de consola, no enviamos por API ni SMTP
+    # 3. Si está activo el modo mock de consola, no enviamos por API ni SMTP
     if settings.smtp_mock_console:
         return
 
-    # 5. Brevo HTTP API (Puerto 443 - no requiere dominio propio y funciona en Render Free)
+    # 4. Brevo HTTP API (Puerto 443 - no requiere dominio propio y funciona en Render Free)
     if settings.brevo_api_key:
+        if is_dummy_email(to):
+            print(
+                f"[MAILER] Omitiendo envío externo Brevo para correo de prueba: {to}",
+                flush=True,
+            )
+            return
         try:
             sender_email = settings.brevo_sender_email or (
                 settings.mail_from.split("<")[-1].replace(">", "").strip()
@@ -183,8 +182,14 @@ def send_email(to: str, subject: str, body: str) -> None:
             print(f"[MAILER ERROR] Error de conexión con Brevo API: {err}", flush=True)
             return
 
-    # 6. Resend HTTP API (Puerto 443)
+    # 5. Resend HTTP API (Puerto 443)
     if settings.resend_api_key:
+        if is_dummy_email(to):
+            print(
+                f"[MAILER] Omitiendo envío externo Resend para correo de prueba: {to}",
+                flush=True,
+            )
+            return
         try:
             from_addr = settings.resend_from or settings.mail_from
             payload_data = {
@@ -228,7 +233,10 @@ def send_email(to: str, subject: str, body: str) -> None:
             print(f"[MAILER ERROR] Error al conectar con Resend API: {err}", flush=True)
             return
 
-    # 7. Fallback: Servidor SMTP estándar
+    # 6. Fallback: Servidor SMTP estándar
+    if settings.app_env == "production" and is_dummy_email(to):
+        print(f"[MAILER] Omitiendo envío SMTP para correo de prueba: {to}", flush=True)
+        return
     try:
         message = EmailMessage()
         message["From"] = settings.mail_from

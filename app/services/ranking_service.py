@@ -95,7 +95,7 @@ FEES_OVERDUE_MESSAGE = (
 ZERO_SCORE = "0.00"
 
 
-def _socio_of(db: Session, member_user: User, club_id: uuid.UUID) -> Socio | None:
+def socio_of(db: Session, member_user: User, club_id: uuid.UUID) -> Socio | None:
     """El socio del padrón del club que corresponde a la cuenta: por club y documento, porque
     el documento solo es único dentro de cada club."""
     if member_user.member_id is None:
@@ -118,7 +118,7 @@ def member_standing(
     vista de cuotas vencidas aunque tenga entrada en el ranking vigente (escenario 5).
     """
     ranking = get_ranking_in_force(db, club_id)
-    socio = _socio_of(db, member_user, club_id)
+    socio = socio_of(db, member_user, club_id)
 
     ranked_total = ranking.population_size if ranking is not None else 0
     ranking_out = None
@@ -188,7 +188,7 @@ def get_member_score_breakdown(
     club_id: uuid.UUID,
 ) -> ScoreBreakdownResponse:
     """Devuelve el desglose oficial de componentes del puntaje de un socio (HU-16)."""
-    socio = _socio_of(db, member_user, club_id)
+    socio = socio_of(db, member_user, club_id)
     if socio is None:
         return ScoreBreakdownResponse(
             has_ranking=False,

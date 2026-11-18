@@ -1,8 +1,10 @@
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Query, status
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..database import get_db
 from ..dependencies import get_current_club
 from ..models.domain import Club
@@ -10,6 +12,8 @@ from ..repositories.base import EventoRepository
 from ..repositories.factory import get_evento_repository
 from ..schemas.eventos import (
     BatchResponse,
+    ClubCancelacionRequest,
+    ClubEventoUpdateRequest,
     EventoCreateRequest,
     EventoCreateResponse,
     EventoDetailResponse,
@@ -17,6 +21,17 @@ from ..schemas.eventos import (
 from ..services.evento_service import EventoService
 
 router = APIRouter(prefix="/eventos", tags=["Carga y Gestión de Eventos"])
+
+
+def _parse_clock(raw: str | None) -> datetime | None:
+    if not raw or settings.app_env == "production":
+        return None
+    raw_clean = raw.strip().replace(" ", "+")
+    try:
+        dt = datetime.fromisoformat(raw_clean)
+        return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+    except ValueError:
+        return None
 
 
 def get_evento_service(
@@ -152,5 +167,72 @@ def crear_eventos_historicos_batch(
     db: Session = Depends(get_db),
 ) -> BatchResponse:
     res = service.crear_eventos_historicos_batch(str(club.id), payload)
+    db.commit()
+    return res
+
+
+# ==============================================================================
+# ENDPOINT E: Actualización de evento por el club (HU-21; omitida si está publicado, HU-23B)
+# PUT /api/v1/eventos/{id_externo_o_interno}
+# ==============================================================================
+@router.put(
+    "/{id_externo_o_interno}",
+    status_code=status.HTTP_200_OK,
+    summary="Actualización de evento enviada por el club",
+    description=(
+        "Un evento pendiente se valida con los datos del club. Un evento publicado no "
+        "cambia: el cambio se omite (`omitido: true`) y la fecha y hora las reprograma el "
+        "Admin. Un evento retirado responde `EVENT_WITHDRAWN`."
+    ),
+)
+def actualizar_evento_club(
+    id_externo_o_interno: str,
+    payload: ClubEventoUpdateRequest,
+    club: Club = Depends(get_current_club),
+    reloj_simulado: str | None = Query(
+        None, description="Reloj simulado para pruebas (formato ISO)"
+    ),
+    service: EventoService = Depends(get_evento_service),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    sim_now = _parse_clock(reloj_simulado)
+    res = service.recibir_actualizacion_club(
+        club_id=str(club.id),
+        id_externo_o_interno=id_externo_o_interno,
+        payload=payload,
+        now=sim_now,
+    )
+    db.commit()
+    return res
+
+
+# ==============================================================================
+# ENDPOINT F: Notificación de cancelación de evento por el club (HU-23B US1)
+# POST /api/v1/eventos/{id_externo_o_interno}/cancelacion
+# ==============================================================================
+@router.post(
+    "/{id_externo_o_interno}/cancelacion",
+    status_code=status.HTTP_200_OK,
+    summary="Notificación de cancelación de evento enviada por el club",
+    description="Permite al club notificar que un evento fue cancelado. Marca el evento como cancelado por el club para que el administrador pueda retirarlo.",
+)
+def notificar_cancelacion_evento_club(
+    id_externo_o_interno: str,
+    payload: ClubCancelacionRequest | None = None,
+    club: Club = Depends(get_current_club),
+    reloj_simulado: str | None = Query(
+        None, description="Reloj simulado para pruebas (formato ISO)"
+    ),
+    service: EventoService = Depends(get_evento_service),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    sim_now = _parse_clock(reloj_simulado)
+    motivo = payload.motivo if payload else None
+    res = service.recibir_cancelacion_club(
+        club_id=str(club.id),
+        id_externo_o_interno=id_externo_o_interno,
+        motivo=motivo,
+        now=sim_now,
+    )
     db.commit()
     return res

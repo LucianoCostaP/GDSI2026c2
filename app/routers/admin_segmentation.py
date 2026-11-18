@@ -93,7 +93,8 @@ def segmentable_events(club_id: CurrentAdminClub, db: Db) -> list[SegmentableEve
                 ScheduleSummaryOut(
                     status=item.schedule.status,
                     opening_at=item.schedule.opening_at,
-                    closing_at=item.schedule.closing_at,
+                    closing_at=item.schedule.effective_closing,
+                    merged_into_order=item.schedule.merged_into_order,
                 )
                 if item.schedule
                 else None

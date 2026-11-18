@@ -1,6 +1,6 @@
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -305,6 +305,9 @@ class EventoPendienteDB(Base):
     estado: Mapped[str] = mapped_column(
         String(50), default="pendiente_definicion_importancia", nullable=False
     )
+    cancelado_por_el_club: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
     creado_en: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -339,6 +342,19 @@ class EventoVisibleDB(Base):
     descripcion: Mapped[str | None] = mapped_column(Text, nullable=True)
     clase: Mapped[str | None] = mapped_column(String(1), nullable=True)
     puntos: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Estado del evento: 'publicado' o 'withdrawn' (retiro definitivo de HU-23B US5).
+    estado: Mapped[str] = mapped_column(
+        String(20), default="publicado", server_default="publicado", nullable=False
+    )
+    cancelado_por_el_club: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    retirado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    retirado_por_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
     # HU-22 FR-007: 'admin' o 'system', y si la clase o los puntos fueron por defecto.
     publicado_por: Mapped[str] = mapped_column(
         String(10), server_default="admin", nullable=False
@@ -352,12 +368,18 @@ class EventoVisibleDB(Base):
     actualizado_en: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # HU-23B FR-011: sube con cada reprogramación o retiro; el Admin manda la que vio y
+    # la acción falla si el evento cambió mientras tanto.
+    version: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1", nullable=False
+    )
 
     club: Mapped["Club"] = relationship("Club", back_populates="eventos_visibles")
 
 
 class EventoCambioPendienteDB(Base):
-    """Cambios de eventos publicados enviados por el club (HU-23, fuera del MVP)."""
+    """Cambios de eventos publicados enviados por el club. Sin uso desde HU-23B: un cambio del
+    club sobre un publicado se omite (HU-21 escenario 5) y el Admin reprograma."""
 
     __tablename__ = "eventos_cambios_pendientes"
     __table_args__ = (Index("idx_cambios_evento", "id_interno", "club_id"),)
@@ -365,6 +387,7 @@ class EventoCambioPendienteDB(Base):
     id_cambio: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
+        default=uuid.uuid4,
         server_default=text("gen_random_uuid()"),
     )
     id_interno: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -378,10 +401,16 @@ class EventoCambioPendienteDB(Base):
     lugar: Mapped[str | None] = mapped_column(String(200), nullable=True)
     descripcion: Mapped[str | None] = mapped_column(Text, nullable=True)
     estado_revision: Mapped[str] = mapped_column(
-        String(50), server_default="pendiente_revision", nullable=False
+        String(50),
+        default="pendiente_revision",
+        server_default="pendiente_revision",
+        nullable=False,
     )
     solicitado_en: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+        nullable=False,
     )
 
 
@@ -603,6 +632,10 @@ class EventoPendiente(EventoBase):
 class EventoVisible(EventoBase):
     clase: ClasePartido | None = None
     puntos: int | None = None
+    estado: str = "publicado"
+    cancelado_por_el_club: bool = False
+    retirado_en: datetime | None = None
+    retirado_por_id: int | None = None
     publicado_en: datetime | None = None
     actualizado_en: datetime | None = None
 
@@ -615,6 +648,7 @@ class EventoCambioPendiente:
     titulo: str
     fecha_hora: datetime
     lugar: str
+    tipo: str | None = None
     descripcion: str | None = None
     estado_revision: str = "pendiente_revision"
     solicitado_en: datetime | None = None

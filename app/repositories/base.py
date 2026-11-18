@@ -63,6 +63,13 @@ class EventoRepository(ABC):
         """Obtiene un evento pendiente por su id_externo o id_interno."""
 
     @abstractmethod
+    def descartar_evento_pendiente(
+        self,
+        id_interno: str,
+    ) -> None:
+        """Marca un evento pendiente como descartado."""
+
+    @abstractmethod
     def is_already_published(
         self,
         club_id: str | None,
@@ -97,3 +104,19 @@ class EventoRepository(ABC):
         Consulta los próximos eventos publicados (visibles para socios) ordenados
         cronológicamente (HU-17).
         """
+
+    @abstractmethod
+    def get_evento_visible(
+        self,
+        id_externo_o_interno: str,
+        club_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Obtiene un evento publicado/visible por su id_externo o id_interno."""
+
+    @abstractmethod
+    def marcar_cancelado_club(
+        self,
+        club_id: str,
+        id_externo_o_interno: str,
+    ) -> dict[str, Any] | None:
+        """Marca un evento (pendiente o visible) como cancelado por el club."""
