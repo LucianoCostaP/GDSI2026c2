@@ -30,6 +30,7 @@ from .routers import (
     admin_simulator,
     admin_wave_schedule,
     auth,
+    debug_inbox,
     eventos,
     member_auth,
     member_club,
@@ -138,6 +139,7 @@ app.include_router(member_scoring.router)
 app.include_router(member_club.router)
 app.include_router(member_notifications.router)
 app.include_router(admin_notifications.router)
+app.include_router(debug_inbox.router)
 
 # Rutas de API unificada de clubes (HU-21, HU-22, HU-43, HU-24)
 app.include_router(eventos.router, prefix=settings.api_v1_prefix)

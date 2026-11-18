@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     smtp_use_ssl: bool = False
     smtp_mock_console: bool = False
     mail_from: str = "Pasión de 10 <no-reply@pasionde10.local>"
+    resend_api_key: str | None = None
+    resend_from: str = "Pasión de 10 <onboarding@resend.dev>"
+    brevo_api_key: str | None = None
+    brevo_sender_email: str | None = None
+    brevo_sender_name: str = "Pasión de 10"
+    enable_debug_inbox: bool = True
     # Pedidos de código (activación y login), cross-cutting sección 3.
     ip_rate_limit: int = 10
     ip_rate_window_seconds: int = 60
