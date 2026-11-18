@@ -21,8 +21,19 @@ class WaveScheduleStatus(enum.StrEnum):
     DRAFT = "draft"
     # Confirmado por el Admin: es el que ven los socios (HU-39).
     CONFIRMED = "confirmed"
-    # Las olas se regeneraron (HU-36): ya no vale y hay que generar otro.
+    # Ya no vale y hay que generar otro: se regeneraron las olas (HU-36) o una
+    # reprogramación dejó todas las olas después del inicio (HU-23B). Ver `invalidation_reason`.
     INVALIDATED = "invalidated"
+
+
+class WaveScheduleInvalidation(enum.StrEnum):
+    """Por qué se invalidó un cronograma, para decírselo al Admin (HU-37, HU-23B US3)."""
+
+    # Se regeneraron las olas del Partido (HU-36 FR-007).
+    WAVES_REGENERATED = "waves_regenerated"
+    # Una reprogramación dejó todas las olas afectadas o solapó un borrador (HU-23B US3,
+    # escenarios 6 y 7).
+    EVENT_RESCHEDULED = "event_rescheduled"
 
 
 class WaveSchedule(Base):
@@ -56,6 +67,9 @@ class WaveSchedule(Base):
         pg_enum(WaveScheduleStatus, "wave_schedule_status"),
         default=WaveScheduleStatus.DRAFT,
     )
+    # Solo con `status = invalidated` (un `WaveScheduleInvalidation`); `None` en los
+    # invalidados antes de que existiera. Regenerar lo limpia.
+    invalidation_reason: Mapped[str | None] = mapped_column(String(32))
     generated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow
     )

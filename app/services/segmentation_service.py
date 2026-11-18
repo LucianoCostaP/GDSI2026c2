@@ -24,6 +24,7 @@ from ..models import (
     TipoEvento,
     User,
     WaveSchedule,
+    WaveScheduleInvalidation,
     WaveScheduleStatus,
     WaveSegmentation,
     utcnow,
@@ -83,6 +84,7 @@ def invalidate_schedule(db: Session, event_id: str, actor: User) -> None:
         return
     previous_status = schedule.status.value
     schedule.status = WaveScheduleStatus.INVALIDATED
+    schedule.invalidation_reason = WaveScheduleInvalidation.WAVES_REGENERATED
     audit.record(
         db,
         "wave_schedule.invalidated",

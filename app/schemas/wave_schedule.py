@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from pydantic import BaseModel, field_validator
 
 from ..core.date_utils import BUENOS_AIRES_TZ
-from ..models import WaveScheduleStatus
+from ..models import WaveScheduleInvalidation, WaveScheduleStatus
 from ..scoring.wave_schedule import WaveState
 from .segmentation import SegmentationEventOut, WaveOut
 
@@ -44,6 +44,9 @@ class WaveScheduleOut(BaseModel):
     # Última ola separada tras una fusión (HU-23B US3): las olas siguientes abren con ella,
     # "Ola k (incluye las olas k+1 a N)". `null` si no hubo fusión.
     merged_into_order: int | None = None
+    # Solo con `status = invalidated`: `waves_regenerated` (HU-36) o `event_rescheduled`
+    # (HU-23B US3); `None` si se invalidó antes de guardarse el motivo.
+    invalidation_reason: WaveScheduleInvalidation | None = None
     # Tiempo entre la apertura de dos olas seguidas: (cierre generado − apertura) / N.
     step_seconds: int
     # Mínimo vigente entre oleadas (setting), para mostrarlo al Admin.

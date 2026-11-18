@@ -209,7 +209,7 @@ def generate(
         select(WaveSchedule).where(WaveSchedule.event_id == event.id_interno)
     )
     previous = None
-    # Uno invalidado (se regeneraron las olas) ya no vale: se pisa sin pedir confirmación.
+    # Uno invalidado (se regeneraron las olas o una reprogramación lo dejó sin olas) ya no vale: se pisa sin pedir confirmación.
     if schedule is not None and schedule.status != WaveScheduleStatus.INVALIDATED:
         if not confirmed:
             raise error(
@@ -226,6 +226,7 @@ def generate(
         # Regenerar descarta los ajustes de las reprogramaciones (HU-23B US3, escenario 8).
         "effective_closing_at": None,
         "merged_into_order": None,
+        "invalidation_reason": None,
         # Un cronograma regenerado vuelve a borrador: hay que confirmarlo de nuevo.
         "status": WaveScheduleStatus.DRAFT,
         "generated_at": utcnow(),

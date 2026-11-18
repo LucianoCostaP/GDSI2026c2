@@ -25,6 +25,7 @@ from ..models import (
     TipoEvento,
     User,
     WaveSchedule,
+    WaveScheduleInvalidation,
     WaveScheduleStatus,
     WaveSegmentation,
     utcnow,
@@ -299,6 +300,7 @@ def _apply_to_schedule(db: Session, admin: User, plan: ReschedulePlan) -> None:
         # Escenarios 6 y 7: la segmentación se conserva; hay que generar el cronograma de
         # nuevo (HU-37).
         schedule.status = WaveScheduleStatus.INVALIDATED
+        schedule.invalidation_reason = WaveScheduleInvalidation.EVENT_RESCHEDULED
         action = "wave_schedule.invalidated"
     else:
         schedule.effective_closing_at = impact.new_closing

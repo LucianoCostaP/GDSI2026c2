@@ -53,7 +53,7 @@ from .notification import Notification, NotificationState
 from .ranking import Ranking, RankingEntry, RankingState
 from .rules import FormulaLock, FormulaLockState, RulesVersion, RulesVersionState
 from .segmentation import WaveSegmentation
-from .wave_schedule import WaveSchedule, WaveScheduleStatus
+from .wave_schedule import WaveSchedule, WaveScheduleInvalidation, WaveScheduleStatus
 
 __all__ = [
     "AccessCode",
@@ -109,6 +109,7 @@ __all__ = [
     "User",
     "UserSession",
     "WaveSchedule",
+    "WaveScheduleInvalidation",
     "WaveScheduleStatus",
     "WaveSegmentation",
     "pg_enum",

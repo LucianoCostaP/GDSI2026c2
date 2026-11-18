@@ -13,6 +13,7 @@ from ..auth import CurrentAdmin, CurrentAdminClub
 from ..config import settings
 from ..core.date_utils import asegurar_utc
 from ..db import get_db
+from ..models import WaveScheduleInvalidation
 from ..schemas.segmentation import SegmentationEventOut
 from ..schemas.wave_schedule import (
     GenerateScheduleIn,
@@ -41,6 +42,11 @@ def _schedule_out(view: wave_schedule_service.ScheduleView) -> WaveScheduleOut:
         closing_at=schedule.effective_closing,
         generated_closing_at=schedule.closing_at,
         merged_into_order=schedule.merged_into_order,
+        invalidation_reason=(
+            WaveScheduleInvalidation(schedule.invalidation_reason)
+            if schedule.invalidation_reason
+            else None
+        ),
         step_seconds=step_seconds(
             asegurar_utc(schedule.opening_at),
             asegurar_utc(schedule.closing_at),
