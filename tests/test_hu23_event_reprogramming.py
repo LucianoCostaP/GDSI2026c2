@@ -23,7 +23,9 @@ Cubre:
   - Escenario 7: Admin restaura evento -> vuelve a 'publicado', cronograma permanece anulado.
   - Escenario 9: Auditoría completa de retiro y restauración.
 - Notificaciones (contrato `notify` de HU-19/20):
-  - `event_rescheduled`, `event_withdrawn` y `event_restored` en la bandeja de los socios.
+  - `event_rescheduled`, `event_withdrawn` y `event_restored` en la bandeja de los socios, con el
+    texto exacto, una ocurrencia por retiro y nada al rechazar o al descartar un pendiente.
+  - El texto de una notificación queda congelado aunque el evento cambie (HU-20, edge cases).
 - Seguridad y Autorización:
   - Acciones restringidas exclusivamente a administradores (401 y 403).
 """
@@ -36,7 +38,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.date_utils import asegurar_utc
+from app.core.date_utils import a_hora_buenos_aires, asegurar_utc
 from app.models import AuditLog, FeeStatus, Member, Notification, Ranking, User
 from app.models.domain import EventoVisibleDB
 from app.models.segmentation import WaveSegmentation
@@ -924,3 +926,246 @@ def test_retirar_y_restaurar_evento_pendiente_por_id_y_nombre(
     # Verificar que vuelve a aparecer en pendientes
     res_pend2 = client.get("/admin/events/pending", headers=bearer(token))
     assert any(e["id_interno"] == id_int for e in res_pend2.json())
+
+
+# ==============================================================================
+# NOTIFICACIONES (notificaciones §2 y §4, edge case "Notifications", decisión 61)
+# ==============================================================================
+
+
+def _fecha_hora(moment: datetime) -> tuple[str, str]:
+    """`{fecha}` y `{hora}` de los textos, en hora de Buenos Aires."""
+    local = a_hora_buenos_aires(moment)
+    return local.strftime("%d/%m/%Y"), local.strftime("%H:%M")
+
+
+def _notificaciones_del_evento(db: Session, id_int: str) -> list[Notification]:
+    return list(
+        db.scalars(
+            select(Notification).where(
+                Notification.reference["event_id"].as_string() == id_int
+            )
+        )
+    )
+
+
+def _reprogramar(client: TestClient, id_ext: str, **cambios: str) -> str:
+    res_put = client.put(
+        f"/api/v1/eventos/{id_ext}", json=cambios, headers=BOCA_HEADERS
+    )
+    assert res_put.status_code in (200, 201, 202), res_put.text
+    return str(res_put.json()["id_cambio"])
+
+
+def test_notification_texts_are_the_exact_ones_of_the_spec(
+    client: TestClient, db: Session, outbox: Outbox, admin: User, socio_boca: Member
+):
+    """Texto exacto de cada tipo (decisión 24): la fecha nueva al reprogramar, el inicio del
+    evento y el motivo al retirar, el inicio al restaurar."""
+    token = admin_token(client, outbox, admin)
+    id_ext = f"EVT-TEXTS-{uuid.uuid4().hex[:6]}"
+    id_int, fh_orig = _crear_y_publicar_partido(
+        client, token, id_ext, horas_adelante=80, titulo="Boca vs. Lanús", db=db
+    )
+    nueva_fh = fh_orig + timedelta(days=2)
+    id_cambio = _reprogramar(client, id_ext, fecha_hora=nueva_fh.isoformat())
+    assert (
+        client.post(
+            f"/admin/events/changes/{id_cambio}/approve", headers=bearer(token)
+        ).status_code
+        == 200
+    )
+    motivo = "Suspendido por lluvia"
+    assert (
+        client.post(
+            f"/admin/events/{id_int}/withdraw",
+            json={"motivo": motivo},
+            headers=bearer(token),
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            f"/admin/events/{id_int}/restore", headers=bearer(token)
+        ).status_code
+        == 200
+    )
+
+    fecha, hora = _fecha_hora(nueva_fh)
+    assert _notificacion(db, socio_boca, id_int, "event_rescheduled").message == (
+        f"Boca vs. Lanús cambió: ahora es el {fecha} a las {hora}."
+    )
+    assert _notificacion(db, socio_boca, id_int, "event_withdrawn").message == (
+        f"Boca vs. Lanús, del {fecha} a las {hora}, fue cancelado. Motivo: {motivo}"
+    )
+    assert _notificacion(db, socio_boca, id_int, "event_restored").message == (
+        f"Boca vs. Lanús vuelve a estar programado: el {fecha} a las {hora}."
+    )
+
+
+def test_rejecting_a_change_generates_nothing(
+    client: TestClient, db: Session, outbox: Outbox, admin: User, socio_boca: Member
+):
+    token = admin_token(client, outbox, admin)
+    id_ext = f"EVT-REJ-NOTIF-{uuid.uuid4().hex[:6]}"
+    id_int, _ = _crear_y_publicar_partido(
+        client, token, id_ext, horas_adelante=80, db=db
+    )
+    id_cambio = _reprogramar(client, id_ext, lugar="Otra sede")
+
+    res = client.post(
+        f"/admin/events/changes/{id_cambio}/reject", headers=bearer(token)
+    )
+
+    assert res.status_code == 200
+    assert [n.type for n in _notificaciones_del_evento(db, id_int)] == [
+        "event_published"
+    ]
+
+
+def test_discarding_and_restoring_a_pending_event_generates_nothing(
+    client: TestClient, db: Session, outbox: Outbox, admin: User, socio_boca: Member
+):
+    """Descartar un evento pendiente es el descarte de HU-21 (escenario 8), no un retiro:
+    no avisa, y restaurarlo tampoco."""
+    token = admin_token(client, outbox, admin)
+    id_ext = f"EVT-PEND-NOTIF-{uuid.uuid4().hex[:6]}"
+    res_crear = client.post(
+        "/api/v1/eventos",
+        json={
+            "id_externo": id_ext,
+            "titulo": "Asamblea pendiente",
+            "fecha_hora": (datetime.now(UTC) + timedelta(hours=80)).isoformat(),
+            "lugar": "Sede social",
+            "tipo": "Partido",
+            "descripcion": "Sin publicar",
+        },
+        headers=BOCA_HEADERS,
+    )
+    assert res_crear.status_code == 201, res_crear.text
+    id_int = res_crear.json()["id_interno"]
+
+    res_desc = client.post(
+        f"/admin/events/{id_int}/withdraw",
+        json={"motivo": "El club lo canceló"},
+        headers=bearer(token),
+    )
+    assert res_desc.status_code == 200
+    assert res_desc.json()["estado"] == "descartado"
+    res_rest = client.post(f"/admin/events/{id_int}/restore", headers=bearer(token))
+    assert res_rest.status_code == 200
+    assert res_rest.json()["estado"] == "pendiente_definicion_importancia"
+
+    assert _notificaciones_del_evento(db, id_int) == []
+
+
+def test_each_withdrawal_is_its_own_occurrence(
+    client: TestClient, db: Session, outbox: Outbox, admin: User, socio_boca: Member
+):
+    """Retirar, restaurar y volver a retirar: dos avisos de retiro, con claves distintas."""
+    token = admin_token(client, outbox, admin)
+    id_ext = f"EVT-TWICE-{uuid.uuid4().hex[:6]}"
+    id_int, _ = _crear_y_publicar_partido(
+        client, token, id_ext, horas_adelante=80, db=db
+    )
+    for paso in ("withdraw", "restore", "withdraw"):
+        res = client.post(
+            f"/admin/events/{id_int}/{paso}",
+            json={"motivo": "Cancelación"} if paso == "withdraw" else None,
+            headers=bearer(token),
+        )
+        assert res.status_code == 200, (paso, res.text)
+
+    notifs = _notificaciones_del_evento(db, id_int)
+    withdrawn = [n for n in notifs if n.type == "event_withdrawn"]
+    assert len(withdrawn) == 2
+    assert len({n.occurrence_key for n in withdrawn}) == 2
+    assert all(
+        n.occurrence_key.startswith(f"event:{id_int}:withdrawn:") for n in withdrawn
+    )
+    assert [n.type for n in notifs].count("event_restored") == 1
+
+
+def test_failed_notification_never_undoes_the_withdrawal_or_the_restoration(
+    client: TestClient,
+    db: Session,
+    outbox: Outbox,
+    admin: User,
+    socio_boca: Member,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.notifications import generators
+
+    token = admin_token(client, outbox, admin)
+    token_socio = member_token(client, outbox, socio_boca)
+    id_ext = f"EVT-FAIL-WR-{uuid.uuid4().hex[:6]}"
+    id_int, _ = _crear_y_publicar_partido(
+        client, token, id_ext, horas_adelante=80, db=db
+    )
+
+    def broken(*_: object, **__: object) -> list[int]:
+        raise RuntimeError("se cayó la base")
+
+    monkeypatch.setattr(generators, "_club_members", broken)
+
+    res_with = client.post(
+        f"/admin/events/{id_int}/withdraw",
+        json={"motivo": "Cancelación"},
+        headers=bearer(token),
+    )
+    assert res_with.status_code == 200
+    assert res_with.json()["estado"] == "withdrawn"
+    upcoming = client.get("/events/upcoming", headers=bearer(token_socio)).json()
+    assert id_int not in [e["id_interno"] for e in upcoming["eventos"]]
+
+    res_rest = client.post(f"/admin/events/{id_int}/restore", headers=bearer(token))
+    assert res_rest.status_code == 200
+    assert res_rest.json()["estado"] == "publicado"
+    upcoming = client.get("/events/upcoming", headers=bearer(token_socio)).json()
+    assert id_int in [e["id_interno"] for e in upcoming["eventos"]]
+
+    assert [n.type for n in _notificaciones_del_evento(db, id_int)] == [
+        "event_published"
+    ]
+
+
+def test_published_notification_keeps_its_text_after_a_reprogramming(
+    client: TestClient, db: Session, outbox: Outbox, admin: User, socio_boca: Member
+):
+    """HU-20 edge case "Frozen text" (notificaciones §2): la notificación muestra el texto que
+    tenía al generarse, aunque el evento cambie después."""
+    token = admin_token(client, outbox, admin)
+    token_socio = member_token(client, outbox, socio_boca)
+    id_ext = f"EVT-FROZEN-{uuid.uuid4().hex[:6]}"
+    id_int, fh_orig = _crear_y_publicar_partido(
+        client, token, id_ext, horas_adelante=80, titulo="Boca vs. Tigre", db=db
+    )
+    nueva_fh = fh_orig + timedelta(days=3)
+    id_cambio = _reprogramar(
+        client,
+        id_ext,
+        titulo="Boca vs. Tigre (reprogramado)",
+        fecha_hora=nueva_fh.isoformat(),
+    )
+    assert (
+        client.post(
+            f"/admin/events/changes/{id_cambio}/approve", headers=bearer(token)
+        ).status_code
+        == 200
+    )
+
+    inbox = client.get("/member/notifications", headers=bearer(token_socio)).json()
+    messages = {
+        i["type"]: i["message"]
+        for i in inbox["items"]
+        if i["reference"] == {"event_id": id_int}
+    }
+    fecha_vieja, hora_vieja = _fecha_hora(fh_orig)
+    fecha_nueva, hora_nueva = _fecha_hora(nueva_fh)
+    assert messages == {
+        "event_published": f"Ya podés ver Boca vs. Tigre, el {fecha_vieja} a las {hora_vieja}.",
+        "event_rescheduled": (
+            f"Boca vs. Tigre (reprogramado) cambió: ahora es el {fecha_nueva} "
+            f"a las {hora_nueva}."
+        ),
+    }
