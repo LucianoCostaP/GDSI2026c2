@@ -32,6 +32,7 @@ from .routers import (
     auth,
     eventos,
     member_auth,
+    member_club,
     member_events,
     member_notifications,
     member_scoring,
@@ -134,6 +135,7 @@ app.include_router(admin_simulator.router)
 app.include_router(admin_wave_schedule.router)
 app.include_router(member_events.router)
 app.include_router(member_scoring.router)
+app.include_router(member_club.router)
 app.include_router(member_notifications.router)
 app.include_router(admin_notifications.router)
 
