@@ -78,6 +78,8 @@ As a Socio of the club, I want to be notified when something I care about happen
 7. **Given** an institutional/amateur event, **When** it is published, **Then** `event_published` is generated like for a Partido; no `wave_opened` exists for it.
 8. **Given** the types of HU-23B (`event_rescheduled`, `event_withdrawn`, `wave_rescheduled`), **When** a publication, a wave opening or a ranking runs, **Then** none of them is generated: only the reprogramming and the withdrawal of HU-23B generate them (decisions 61 and 62). An inactive type (`event_restored`) is never generated nor offered to the Socio.
 9. **Given** a Socio without an `activated` account or dado de baja when the notification is generated, **When** it is generated, **Then** they get nothing.
+10. **Given** a Partido with a `draft` schedule (HU-37), **When** the Admin confirms it, **Then** every Socio of every wave with an `activated` account gets `wave_schedule_confirmed` with the start of their own wave, and the Socios outside the ranking get nothing. Generating or regenerating a draft generates nothing; confirming again after a regeneration notifies again with the new times; the schedule is `confirmed` whether or not the notifications succeed.
+11. **Given** a `wave_schedule_confirmed` or `wave_opened` notification in the inbox, **When** the Socio opens it, **Then** it takes them to their own slot of that Partido ("Mi turno", HU-39, notifications section 3).
 
 ---
 
@@ -170,4 +172,5 @@ Audit: `notification_preference.changed`, `entity = "notification_preference"`, 
 - v1.1: built after HU-20; adds the email fields to the table that HU-20 creates (notifications section 10, decision 60).
 - Created with HU-20. Decisions 50 to 60 of the specs README.
 - v1.2: the catalog grows to six types with HU-23 (`event_withdrawn`, `event_restored`) and `event_rescheduled` becomes active; scenario 2, scenario 8 and FR-012 updated (decision 61).
+- v1.4: new type `wave_schedule_confirmed` when the Admin confirms a schedule (HU-37), opening the Socio's slot like `wave_opened`; scenarios 10 and 11 (decision 63).
 - v1.3: HU-23B replaces HU-23: `wave_rescheduled` added, `event_withdrawn` becomes "Evento suspendido" with a generic text, `event_restored` inactive; scenario 2, scenario 8 and FR-012 updated (decision 62).

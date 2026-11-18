@@ -241,6 +241,65 @@ def waves_moved(
     )
 
 
+def schedule_confirmed(
+    db: Session, schedule_id: int, *, now: datetime | None = None
+) -> int:
+    """`wave_schedule_confirmed` para los socios de todas las olas del cronograma recién
+    confirmado (HU-19 escenario 10, decisión 63), cada uno con la hora de inicio de su ola. Se
+    llama después del commit de la confirmación (HU-37). La clave lleva el momento de la
+    confirmación: confirmar de nuevo después de regenerar avisa las horas nuevas, y reintentar
+    la misma confirmación no duplica. Devuelve cuántas creó."""
+    try:
+        schedule = db.get_one(WaveSchedule, schedule_id)
+        if (
+            schedule.status != WaveScheduleStatus.CONFIRMED
+            or schedule.confirmed_at is None
+        ):
+            return 0
+        segmentation = db.get_one(WaveSegmentation, schedule.segmentation_id)
+        event = db.get_one(EventoVisibleDB, schedule.event_id)
+        waves = schedule_waves(
+            build_waves(segmentation.ranked_total, segmentation.percentile_step),
+            asegurar_utc(schedule.opening_at),
+            asegurar_utc(schedule.closing_at),
+            schedule.merged_into_order,
+        )
+        groups = [
+            (
+                starts_at,
+                _ranked_members(
+                    db, segmentation.ranking_id, segmentation.club_id, positions
+                ),
+            )
+            for _, starts_at, positions in _wave_groups(
+                waves, schedule.merged_into_order
+            )
+        ]
+        key = (
+            f"event:{event.id_interno}:schedule:{schedule_id}:confirmed:"
+            f"{asegurar_utc(schedule.confirmed_at).isoformat()}"
+        )
+        event_id, titulo, club_id = event.id_interno, event.titulo, event.club_id
+    except Exception:
+        db.rollback()
+        logger.exception("schedule_confirmed: falló el cronograma %s", schedule_id)
+        return 0
+    # Una llamada por ola, porque cada una lleva su hora; la clave es la misma para todas.
+    return sum(
+        notify(
+            db,
+            "wave_schedule_confirmed",
+            key,
+            recipients,
+            club_id=club_id,
+            reference={"event_id": event_id},
+            params={"titulo": titulo, **_when(starts_at)},
+            now=now,
+        )
+        for starts_at, recipients in groups
+    )
+
+
 def ranking_completed(db: Session, ranking_id: int) -> int:
     """`ranking_completed` para los socios activados con entrada en el ranking (escenario 5).
 

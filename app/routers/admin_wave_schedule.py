@@ -14,6 +14,7 @@ from ..config import settings
 from ..core.date_utils import asegurar_utc
 from ..db import get_db
 from ..models import WaveScheduleInvalidation
+from ..notifications import generators
 from ..schemas.segmentation import SegmentationEventOut
 from ..schemas.wave_schedule import (
     GenerateScheduleIn,
@@ -108,5 +109,9 @@ def generate_schedule(
 def confirm_schedule(
     event_id: str, admin: CurrentAdmin, club_id: CurrentAdminClub, db: Db
 ) -> WaveScheduleOut:
-    """Confirma el borrador: desde ahí lo ven los socios."""
-    return _schedule_out(wave_schedule_service.confirm(db, admin, club_id, event_id))
+    """Confirma el borrador: desde ahí lo ven los socios, y se les avisa su turno después
+    del commit (`wave_schedule_confirmed`, decisión 63)."""
+    view = wave_schedule_service.confirm(db, admin, club_id, event_id)
+    out = _schedule_out(view)
+    generators.schedule_confirmed(db, view.schedule.id)
+    return out

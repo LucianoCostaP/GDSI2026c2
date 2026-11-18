@@ -356,7 +356,12 @@ def test_con_el_cronograma_nuevo_confirmado_vuelven_a_recibir_wave_opened(
         club.db, now=club.wave_start(1) + MINUTE, club_id=club.event.club_id
     )
 
-    assert types_of(club, de_la_ola_1) == ["event_rescheduled", "wave_opened"]
+    # Confirmar el cronograma nuevo también le avisa su turno (decisión 63).
+    assert types_of(club, de_la_ola_1) == [
+        "event_rescheduled",
+        "wave_opened",
+        "wave_schedule_confirmed",
+    ]
 
 
 # --- Escenario 5: las olas no afectadas reciben solo `event_rescheduled` ---

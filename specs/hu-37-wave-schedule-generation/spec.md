@@ -107,7 +107,7 @@ Audit (`entity = "wave_schedule"`): `wave_schedule.generated`, `wave_schedule.re
 ## Assumptions
 
 - "Equitable" means evenly spaced starts beginning at the opening, as in the formula above.
-- The opening of a wave notifies its Socios (`wave_opened`, HU-19) through a periodic job that only reads `confirmed` schedules. This story does not change: it generates, confirms and invalidates schedules exactly as above.
+- Confirming the schedule notifies the Socios of every wave with the start of their own wave (`wave_schedule_confirmed`, HU-19), after the confirmation commits. The opening of a wave notifies its Socios (`wave_opened`, HU-19) through a periodic job that only reads `confirmed` schedules. Both open the Socio's slot (HU-39). This story does not change otherwise: it generates, confirms and invalidates schedules exactly as above, and a failed notification never undoes the confirmation.
 - A time zone is fixed (cross-cutting section 1).
 - Outside the MVP, a reprogramming of the Partido (HU-23B) can move the general closing and merge the last waves; HU-23B defines the extra fields of WaveSchedule (effective closing, `merged_into_order`) and its rules. Nothing in this story depends on it.
 
@@ -117,4 +117,5 @@ Audit (`entity = "wave_schedule"`): `wave_schedule.generated`, `wave_schedule.re
 - v3: only for Partido events; empty waves omitted.
 - v4: API contract, error codes and messages; period boundaries and rule order; input time zone; stale drafts; regenerating a confirmed schedule returns it to draft; definition of "first wave opened".
 - v5: wave state (`pending` / `open` / `closed`) only for confirmed schedules; `locked` in the response; regenerating the waves (HU-36) invalidates the schedule and a new one needs no confirmation; schedule summary in the HU-36 list; `EVENT_NOT_PUBLISHED` for a Partido pending publication; `min_step_minutes` in the HU-36 waves response.
+- v7: confirming the schedule notifies its Socios (`wave_schedule_confirmed`, decision 63); no change to the rules of this story.
 - v6: assumption on the schedule adjustment of a reprogramming (HU-23B, decision 62); no change to this story.

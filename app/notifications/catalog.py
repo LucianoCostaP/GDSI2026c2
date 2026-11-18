@@ -24,6 +24,7 @@ class NotificationType:
 # `event_rescheduled` y `wave_rescheduled` desde la reprogramación, que también genera
 # `wave_opened` cuando suma olas a una que ya abrió, y `event_withdrawn` desde el retiro, con
 # un texto genérico sin motivo. `event_restored` queda inactivo: el retiro es definitivo.
+# `wave_schedule_confirmed` sale de la confirmación del cronograma de HU-37 (decisión 63).
 CATALOG: tuple[NotificationType, ...] = (
     NotificationType(
         key="event_published",
@@ -50,6 +51,17 @@ CATALOG: tuple[NotificationType, ...] = (
         message=(
             "{titulo}, del {fecha} a las {hora}, se suspendió. "
             "Si compraste entradas, comunicate con el club."
+        ),
+    ),
+    NotificationType(
+        key="wave_schedule_confirmed",
+        name="Cronograma de reserva",
+        description="Cuando el club confirma el cronograma de reservas de un partido.",
+        active=True,
+        title="Ya tenés tu turno de reserva",
+        message=(
+            "Ya está el cronograma de reservas para {titulo}. "
+            "Tu turno se habilita el {fecha} a las {hora}."
         ),
     ),
     NotificationType(

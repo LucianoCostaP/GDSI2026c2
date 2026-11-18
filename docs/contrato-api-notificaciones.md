@@ -39,11 +39,13 @@ El catálogo vive en el backend (`notifications` §2). El front lo necesita solo
 | `event_rescheduled` | Evento reprogramado | Cuando cambia la fecha o la hora de un evento publicado. | activo (HU-23) | `{ "event_id": "<id_interno>" }` |
 | `event_withdrawn` | Evento suspendido | Cuando se retira un evento publicado que no se va a realizar. | activo (HU-23B) | `{ "event_id": "<id_interno>" }` |
 | `event_restored` | Evento restaurado | Cuando vuelve a programarse un evento que había sido retirado. | **inactivo** (HU-23B: el retiro es definitivo) | `{ "event_id": "<id_interno>" }` |
+| `wave_schedule_confirmed` | Cronograma de reserva | Cuando el club confirma el cronograma de reservas de un partido. | activo (decisión 63) | `{ "event_id": "<id_interno>" }` |
 | `wave_rescheduled` | Turno de reserva reprogramado | Cuando una reprogramación cambia la hora de tu turno para reservar. | activo (HU-23B) | `{ "event_id": "<id_interno>" }` |
 | `wave_opened` | Turno de reserva habilitado | Cuando se habilita tu turno para reservar en un partido. | activo | `{ "event_id": "<id_interno>" }` |
 | `ranking_completed` | Ejecución del ranking | Cuando se calcula un nuevo ranking. | activo | `{ "ranking_id": 42 }` |
 
-- **Orden del catálogo** (el de la pantalla de preferencias): `event_published`, `event_rescheduled`, `event_withdrawn`, `wave_rescheduled`, `wave_opened`, `ranking_completed` (`event_restored` está inactivo y no se muestra).
+- **Orden del catálogo** (el de la pantalla de preferencias): `event_published`, `event_rescheduled`, `event_withdrawn`, `wave_schedule_confirmed`, `wave_rescheduled`, `wave_opened`, `ranking_completed` (`event_restored` está inactivo y no se muestra).
+- `wave_schedule_confirmed` se genera al confirmar el cronograma de un partido (HU-37, `POST /admin/events/{id}/schedule/confirm`), para los socios de todas las olas, cada uno con la hora de inicio de su ola: "Ya está el cronograma de reservas para {titulo}. Tu turno se habilita el {fecha} a las {hora}." Confirmar de nuevo después de regenerar el cronograma vuelve a avisar, con las horas nuevas. Lleva al turno, como `wave_opened`.
 - `wave_rescheduled` llega con HU-23B US4: la reprogramación que suma olas a una ola que todavía no abrió se lo avisa a los socios de las olas movidas, con la hora de inicio de la ola a la que se sumaron. Si esa ola ya abrió, en cambio reciben `wave_opened` en el momento, con el cierre nuevo.
 - `event_withdrawn` se genera al retirar un evento publicado (HU-23B US5, `POST /admin/events/{id}/withdraw`), una sola vez por evento (`event:{event_id}:withdrawn`), con un texto genérico sin motivo: "{titulo}, del {fecha} a las {hora}, se suspendió. Si compraste entradas, comunicate con el club." Descartar o restaurar un evento pendiente de HU-21 no avisa. `event_restored` queda inactivo: no hay restauración de un retirado.
 - Un tipo **inactivo** no aparece en ningún lado: ni en las preferencias, ni en la bandeja, ni en el contador (notificaciones §2). Hoy no hay ninguno: el mecanismo queda para el próximo tipo que se defina antes de generarse.
@@ -213,7 +215,7 @@ La notificación guarda tipo y referencia, nunca una URL (notificaciones §3). E
 | `type` | Ruta del front | Si el destino no está disponible |
 |---|---|---|
 | `event_published`, `event_rescheduled`, `event_withdrawn`, `event_restored` | `/events?highlight=<event_id>` | El evento no está en `GET /events/upcoming` (empezó, se descartó, se retiró, no está publicado o no es del club): se muestra **"Este evento ya no está disponible."** y la lista sin resaltar. Si el evento se retiró (el turno de HU-39 responde `status: "withdrawn"`), se muestra **"Este evento fue suspendido."** (HU-23B US5 escenario 6) |
-| `wave_rescheduled`, `wave_opened` | `/member/events/<event_id>/slot` | `GET /member/events/{id}/slot` responde `404 EVENT_NOT_FOUND`: se muestra **"Este evento ya no está disponible."**. Los demás estados (cerrado, sin turno, etc.) los explica la pantalla de HU-39 como hoy |
+| `wave_schedule_confirmed`, `wave_rescheduled`, `wave_opened` | `/member/events/<event_id>/slot` | `GET /member/events/{id}/slot` responde `404 EVENT_NOT_FOUND`: se muestra **"Este evento ya no está disponible."**. Los demás estados (cerrado, sin turno, etc.) los explica la pantalla de HU-39 como hoy |
 | `ranking_completed` | `/ranking` | Ninguno: HU-14 explica sus propios estados |
 | desconocido | sin navegación | Solo se marca como leída |
 
@@ -229,7 +231,7 @@ El backend arma el botón del correo con `FRONTEND_BASE_URL` y **las mismas ruta
 | `type` | Botón del correo |
 |---|---|
 | `event_published`, `event_rescheduled`, `event_withdrawn`, `event_restored` | `{FRONTEND_BASE_URL}/events?highlight={event_id}` |
-| `wave_rescheduled`, `wave_opened` | `{FRONTEND_BASE_URL}/member/events/{event_id}/slot?from=notification` |
+| `wave_schedule_confirmed`, `wave_rescheduled`, `wave_opened` | `{FRONTEND_BASE_URL}/member/events/{event_id}/slot?from=notification` |
 | `ranking_completed` | `{FRONTEND_BASE_URL}/ranking` |
 
 - Abrir el correo o tocar el botón **no** marca la notificación como leída: eso pasa solo al abrirla desde la bandeja (notificaciones §3).
