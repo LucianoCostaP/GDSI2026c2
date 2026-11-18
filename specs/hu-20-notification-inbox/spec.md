@@ -42,7 +42,7 @@ As a Socio of the club, I want to open a notification to go to what it talks abo
 
 **Acceptance Scenarios**:
 
-1. **Given** an unread notification, **When** the Socio taps it, **Then** it is marked as read and the Socio goes to its destination: the event for `event_published` and `event_rescheduled`, their own slot for `wave_opened`, "Mi puntaje" for `ranking_completed` (notifications section 3).
+1. **Given** an unread notification, **When** the Socio taps it, **Then** it is marked as read and the Socio goes to its destination: the event for `event_published`, `event_rescheduled`, `event_withdrawn` and `event_restored`, their own slot for `wave_opened`, "Mi puntaje" for `ranking_completed` (notifications section 3).
 2. **Given** a notification whose event is no longer available, **When** the Socio taps it, **Then** it is marked as read, they see "Este evento ya no está disponible." and the inbox stays accessible.
 3. **Given** an already read notification, **When** the Socio taps it again, **Then** it goes to the destination and nothing else changes (the first read time is kept).
 4. **Given** unread notifications, **When** the Socio chooses "Marcar todas como leídas", **Then** all of their notifications become read and the counter goes to zero.
@@ -138,4 +138,5 @@ Nothing exists yet: no model, router or screen. Needs, in this order:
 ## Revision Notes (v1)
 
 - v1.1: built before HU-19 and owner of the notifications table; seed of demo notifications (notifications section 10, decision 60).
+- v1.2: the event destinations also cover `event_withdrawn` and `event_restored` (decision 61).
 - Created with HU-19. The "mark as read" and the counter are added to the backlog criteria so that the read/unread distinction can change (decisions 50 to 60 of the specs README).

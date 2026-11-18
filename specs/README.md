@@ -1,6 +1,6 @@
-# MVP Specs Index (v4.4)
+# MVP Specs Index (v4.5)
 
-27 specs: the 26 stories the backlog marks as MVP, plus HU-23 (outside the MVP, kept as a ready spec), and 4 shared documents. Titles, estimates, priorities and MVP scope follow the backlog (`Backlog - US.csv`). v4 aligns the specs with the backlog and with the integration prototypes: **the club sends its data to an API the system exposes; the system never calls the club.** v4.1 applies the review in `CORRECCIONES_SPECS.txt` (decisions 24–33 and the table at the end). v4.2 reworks HU-27 and HU-13 around a formula catalog and per-club rules (decisions 34–40). v4.3 reworks HU-29 and HU-30 around four business questions of the Admin: who is rewarded, whom the change harms or favors, which parameter causes the effect and whether the ranking flattens (decisions 44–48). v4.4 brings HU-19 and HU-20 into the MVP: in-app notifications and their email channel, with per-type and general preferences (decisions 50–60).
+27 specs: the 26 stories the backlog marks as MVP, plus HU-23 (outside the MVP, kept as a ready spec), and 4 shared documents. Titles, estimates, priorities and MVP scope follow the backlog (`Backlog - US.csv`). v4 aligns the specs with the backlog and with the integration prototypes: **the club sends its data to an API the system exposes; the system never calls the club.** v4.1 applies the review in `CORRECCIONES_SPECS.txt` (decisions 24–33 and the table at the end). v4.2 reworks HU-27 and HU-13 around a formula catalog and per-club rules (decisions 34–40). v4.3 reworks HU-29 and HU-30 around four business questions of the Admin: who is rewarded, whom the change harms or favors, which parameter causes the effect and whether the ranking flattens (decisions 44–48). v4.4 brings HU-19 and HU-20 into the MVP: in-app notifications and their email channel, with per-type and general preferences (decisions 50–60). v4.5 makes HU-23 notify its approved changes, withdrawals and restorations through the notifications contract, adding two types to the catalog (decision 61).
 
 ## Shared documents
 
@@ -98,6 +98,8 @@
 48. **The simulator never applies values.** HU-28 remains the only way to change the rules, with its cut-off, lock and confirmation. The result lists the changed parameters with their previous and hypothetical values, and can be downloaded as a CSV generated at that moment and never stored. Simulations change nothing and are not audited. A stored or executive report is HU-42, outside the MVP.
 49. **The tiebreak lives in the snapshot.** Each ranking entry stores, besides the dates of rule 5, the Socio's document number (scoring model, rule 4), so HU-18, HU-29 and HU-30 rebuild the exact order from the snapshot without re-reading the roster. Entries calculated before this decision are completed once from the roster by a data migration.
 
+61. **HU-23 notifies through the notifications contract.** Approving a change generates `event_rescheduled` (now active); withdrawing a published event generates `event_withdrawn` and restoring it generates `event_restored`, two types the team added to the catalog, which goes from four to six types. Each is generated after the action commits, for every Socio of the club with an `activated` account, and never undoes the action. The withdrawal text includes the Admin's reason as written. The separate queue of the first HU-23 implementation (`notificaciones_eventos`) is removed. This replaces the earlier rule that a withdrawal does not notify (notifications sections 2 to 4, HU-23 edge cases).
+
 ## Defaults set by this revision (change them in one place)
 
 Default class B for Partidos not classified in time and 20 default points for institutional events without points when the automatic publication runs; row-error tolerance of 5% for CSV files; code, session and lockout parameters; time zone Buenos Aires; attendance window of previous calendar year plus current year to date; rounding to two decimals; minimum 5 minutes between wave openings; roster staleness limit of 24 hours; 60-minute expiry for paged loads; size limits of decision 27; HU-29 target of under 3 seconds up to 50,000 Socios and under 10 seconds up to 500,000 (9 and 30 seconds for its effect by parameter); fixed thresholds of HU-29 and HU-30 (decisions 45 and 47); 20 notifications per page, email batches of 500, a 60-minute catch-up window for wave openings and no expiry of notifications (notifications section 7).
@@ -110,7 +112,7 @@ Default class B for Partidos not classified in time and 20 default points for in
 - **Thresholds of HU-29 and HU-30**: the relevant movement (1 %), the flatness alert (80 %), the marks of the equity analysis (2 % and 5 % of the ranking) and the minimum group (10 Socios) are proposals to review with the club on real simulations (decisions 45 and 47).
 - **Constitution amendment** for decision 40 (DoR exception): written in `docs/constitution.md` 1.1.0; it still needs the 2 approvals of its PR.
 
-- **Estimate of HU-19**: the backlog says 3, but it now covers preferences, generation of four types, a dispatch queue and a periodic job. It is a candidate for re-estimation.
+- **Estimate of HU-19**: the backlog says 3, but it now covers preferences, generation of six types (decision 61), a dispatch queue and a periodic job. It is a candidate for re-estimation.
 - **`FRONTEND_BASE_URL`** must be configured per environment for the email buttons.
 - **Retention** of notifications is open: they are kept without expiry in the MVP.
 
@@ -142,7 +144,8 @@ The backlog already describes the push model for HU-21 and HU-43. Pending:
 
 ## Residual risks
 
-- Socios are notified when an event is published, a wave opens or a ranking completes, but **not** when a published event changes: `event_rescheduled` waits for HU-23, so until then they see the change only when they open the app.
+- Socios are notified when an event is published, a wave opens or a ranking completes, but a change, withdrawal or restoration of a published event is notified only where HU-23 (outside the MVP) is deployed; without it they see nothing until they open the app (decision 61).
+- The withdrawal notification shows the Admin's reason as written to every Socio of the club: Admins must keep it free of personal data.
 - Notifications are best effort with no retries: a failed email or a crash between a change and its notification is not recovered. The inbox and the app screens remain the reliable source.
 - The wave schedule is informative: with no reservation or ticket-office export in the MVP, nothing enforces it, even though Socios are now notified when their wave opens. State this clearly in the demo.
 - Using age as a score component is a policy choice the club should be able to defend before its Socios.

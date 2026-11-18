@@ -79,7 +79,7 @@ Un **módulo** es un grupo de historias relacionadas que se construyen juntas, d
 | 7 | Vistas del socio | HU-14, HU-16, HU-13 | El socio ve su puntaje, su posición y el desglose, y cómo se calcula | Módulos 3 y 6 (HU-13 solo necesita HU-27; el aviso del último ranking usa HU-25 si existe) |
 | 8 | Reglas y simuladores | HU-28, HU-29, HU-30, HU-18 | El Admin ajusta y simula reglas con su análisis de equidad; el socio simula su asistencia | Módulos 1, 4 y 6 |
 | 9 | Oleadas | HU-36, HU-37, HU-39 | Oleadas por percentil, cronograma y turno de cada socio | Módulos 3, 4 y 6 |
-| 10 | Notificaciones | HU-20 y después HU-19 | Primero (HU-20): el socio ve su bandeja con el contador, con notificaciones sembradas. Después (HU-19): se generan las de evento publicado, turno habilitado y ranking, y el socio elige qué avisos recibe por correo (el de evento reprogramado se activa con HU-23) | HU-20: módulos 1 y 3, y que existan HU-17, HU-39 y HU-14. HU-19: además módulos 4, 6 y 9; correo y `FRONTEND_BASE_URL` |
+| 10 | Notificaciones | HU-20 y después HU-19 | Primero (HU-20): el socio ve su bandeja con el contador, con notificaciones sembradas. Después (HU-19): se generan las de evento publicado, turno habilitado y ranking, y el socio elige qué avisos recibe por correo (los de evento reprogramado, cancelado y restaurado los genera HU-23, decisión 61) | HU-20: módulos 1 y 3, y que existan HU-17, HU-39 y HU-14. HU-19: además módulos 4, 6 y 9; correo y `FRONTEND_BASE_URL` |
 
 Los módulos 7, 8 y 9 pueden avanzar en paralelo una vez listo el 6. El módulo 10 va al final porque escucha lo que producen HU-22, HU-25 y HU-37, sin modificarlos; HU-20 (bandeja) se construye primero y es dueña de la tabla de notificaciones, con notificaciones sembradas; HU-19 sigue con los generadores (historia 3), después las preferencias y el envío de correos (historias 1 y 2). HU-27 (fórmula base publicada desde el catálogo, con bloqueo y vista previa) es requisito de HU-25, HU-28 y HU-13, y por eso está en el módulo 6. Dentro del módulo, HU-27 va primero y HU-13 puede construirse apenas HU-27 esté lista. HU-23 queda fuera del MVP.
 
@@ -133,7 +133,7 @@ Reglas comunes: token Bearer por club guardado con hash, validación de estructu
 - **Puntualidad y calidad de los envíos del club:** determinan la frescura del ranking.
 - **Sin HU-23 en el MVP**, un partido publicado que el club reprograma o cancela conserva sus datos viejos.
 - **La edad como componente del puntaje** es una decisión de política que el club debe poder defender ante los socios.
-- **Avisos por correo y bandeja de mejor esfuerzo** (HU-19 y HU-20): sin reintentos, y sin aviso de reprogramación hasta que exista HU-23. Un correo fallido o una caída entre un cambio y su aviso no se recupera; la bandeja y las pantallas son la fuente confiable.
+- **Avisos por correo y bandeja de mejor esfuerzo** (HU-19 y HU-20): sin reintentos, y sin avisos de reprogramación, retiro o restauración donde no esté desplegada HU-23 (decisión 61). Un correo fallido o una caída entre un cambio y su aviso no se recupera; la bandeja y las pantallas son la fuente confiable.
 - **El cronograma de oleadas es informativo:** nada lo hace cumplir dentro del MVP.
 - **Objetivos de rendimiento** para 500.000 socios: son propuestas que hay que validar con una prueba de carga.
 

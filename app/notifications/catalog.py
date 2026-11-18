@@ -15,13 +15,14 @@ class NotificationType:
     description: str
     active: bool
     title: str
-    # Texto con `{titulo}`, `{fecha}` (dd/mm/aaaa) y `{hora}` (HH:mm) en hora de Buenos Aires.
-    # Se congela al generar la notificación.
+    # Texto con `{titulo}`, `{fecha}` (dd/mm/aaaa) y `{hora}` (HH:mm) en hora de Buenos Aires
+    # (y `{motivo}` en `event_withdrawn`). Se congela al generar la notificación.
     message: str
 
 
-# En el orden de la pantalla de preferencias (contrato §2): `event_rescheduled` va después del
-# primero cuando se active.
+# En el orden de la pantalla de preferencias (contrato §2). Los tres tipos de HU-23
+# (`event_rescheduled`, `event_withdrawn`, `event_restored`) se generan desde su aprobación,
+# retiro y restauración (decisión 61).
 CATALOG: tuple[NotificationType, ...] = (
     NotificationType(
         key="event_published",
@@ -35,9 +36,25 @@ CATALOG: tuple[NotificationType, ...] = (
         key="event_rescheduled",
         name="Evento reprogramado",
         description="Cuando cambia la fecha o la hora de un evento publicado.",
-        active=False,  # Hasta que exista HU-23.
+        active=True,
         title="Evento reprogramado",
         message="{titulo} cambió: ahora es el {fecha} a las {hora}.",
+    ),
+    NotificationType(
+        key="event_withdrawn",
+        name="Evento cancelado",
+        description="Cuando se retira un evento publicado que no se va a realizar.",
+        active=True,
+        title="Evento cancelado",
+        message="{titulo}, del {fecha} a las {hora}, fue cancelado. Motivo: {motivo}",
+    ),
+    NotificationType(
+        key="event_restored",
+        name="Evento restaurado",
+        description="Cuando vuelve a programarse un evento que había sido cancelado.",
+        active=True,
+        title="Evento restaurado",
+        message="{titulo} vuelve a estar programado: el {fecha} a las {hora}.",
     ),
     NotificationType(
         key="wave_opened",

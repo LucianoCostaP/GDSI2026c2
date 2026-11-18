@@ -6,7 +6,8 @@ Escenario 2: `wave_opened` cuando llega la hora de inicio de una ola de un crono
 Escenarios 3 y 4: cronogramas que no avisan y ventana de recuperación.
 Escenarios 5 y 6: `ranking_completed` al completar el ranking (HU-25), nada si falla.
 Escenario 7: un evento institucional se avisa como un Partido y no tiene `wave_opened`.
-Escenario 8: `event_rescheduled` no se genera hasta HU-23.
+Escenario 8: `event_rescheduled` solo lo genera la aprobación de un cambio de HU-23
+(se prueba en `tests/test_hu23_event_reprogramming.py`); ningún otro disparador.
 Escenario 9: sin cuenta activada o dado de baja al generar, el Socio no recibe nada.
 
 Las notificaciones se ven por la bandeja de HU-20, que es lo que recibe el Socio.
@@ -314,13 +315,13 @@ def test_notify_nunca_le_tira_el_error_a_quien_lo_llama(
 
 
 def test_notify_no_genera_un_tipo_inactivo(
-    db: Session, make_member: MakeMember
+    db: Session, make_member: MakeMember, inactive_type: str
 ) -> None:
     user = account_of(db, make_member(activated=True))
 
     created = notify(
         db,
-        "event_rescheduled",
+        inactive_type,
         "event:x:rescheduled:1",
         [user.id],
         club_id=BOCA_ID,
@@ -765,12 +766,11 @@ def test_un_evento_institucional_no_tiene_avisos_de_ola(club: Club) -> None:
     assert institucional.id_interno not in references
 
 
-# === Escenario 8: `event_rescheduled` antes de HU-23 =========================================
+# === Escenario 8: `event_rescheduled` ======================================================
 #
-# Que el tipo está inactivo y no aparece en la bandeja ni en el contador ya lo prueba HU-20
-# (`test_el_catalogo_trae_los_cuatro_tipos_con_event_rescheduled_inactivo` y siguientes), y que
-# `notify` no lo genera, `test_notify_no_genera_un_tipo_inactivo`. Que no se le ofrece en la
-# pantalla de preferencias se prueba con la user story 1 de HU-19.
+# Desde HU-23 el tipo está activo y lo genera la aprobación de un cambio (tests de HU-23). Que un
+# tipo inactivo no se genera ni aparece en la bandeja lo siguen probando
+# `test_notify_no_genera_un_tipo_inactivo` y los de inactivos de HU-20, con `inactive_type`.
 
 
 def test_ningun_disparador_genera_event_rescheduled(club: Club) -> None:

@@ -36,12 +36,15 @@ El catálogo vive en el backend (`notifications` §2). El front lo necesita solo
 | `type` | Nombre (viene en la API) | Descripción de una línea (viene en la API) | Estado | `reference` |
 |---|---|---|---|---|
 | `event_published` | Nuevo evento publicado | Cuando el club publica un evento nuevo. | activo | `{ "event_id": "<id_interno>" }` |
+| `event_rescheduled` | Evento reprogramado | Cuando cambia la fecha o la hora de un evento publicado. | activo (HU-23) | `{ "event_id": "<id_interno>" }` |
+| `event_withdrawn` | Evento cancelado | Cuando se retira un evento publicado que no se va a realizar. | activo (HU-23) | `{ "event_id": "<id_interno>" }` |
+| `event_restored` | Evento restaurado | Cuando vuelve a programarse un evento que había sido cancelado. | activo (HU-23) | `{ "event_id": "<id_interno>" }` |
 | `wave_opened` | Turno de reserva habilitado | Cuando se habilita tu turno para reservar en un partido. | activo | `{ "event_id": "<id_interno>" }` |
 | `ranking_completed` | Ejecución del ranking | Cuando se calcula un nuevo ranking. | activo | `{ "ranking_id": 42 }` |
-| `event_rescheduled` | Evento reprogramado | Cuando cambia la fecha o la hora de un evento publicado. | **inactivo** hasta HU-23 | `{ "event_id": "<id_interno>" }` |
 
-- **Orden del catálogo** (el de la pantalla de preferencias): `event_published`, `wave_opened`, `ranking_completed` (y `event_rescheduled` cuando se active, después del primero).
-- Un tipo **inactivo** no aparece en ningún lado: ni en las preferencias, ni en la bandeja, ni en el contador (notificaciones §2). Hoy eso solo importa para los datos sembrados, porque un tipo inactivo nunca se genera.
+- **Orden del catálogo** (el de la pantalla de preferencias): `event_published`, `event_rescheduled`, `event_withdrawn`, `event_restored`, `wave_opened`, `ranking_completed`.
+- `event_withdrawn` y `event_restored` llegan con HU-23 (decisión 61, notificaciones §2). Se generan al retirar un evento publicado y al restaurarlo (no al descartar o restaurar un evento pendiente de HU-21). El texto del retiro incluye el motivo que escribe el Admin.
+- Un tipo **inactivo** no aparece en ningún lado: ni en las preferencias, ni en la bandeja, ni en el contador (notificaciones §2). Hoy no hay ninguno: el mecanismo queda para el próximo tipo que se defina antes de generarse.
 - `event_id` es siempre el **`id_interno`** del evento (string), el mismo de `/events/upcoming` y del `slot_url` de HU-17. Nunca el `id_externo`.
 - El front tiene que tolerar un `type` que no conoce (un tipo nuevo en una versión futura del backend): lo muestra en la bandeja y, al abrirlo, solo lo marca como leído, sin navegar.
 
@@ -183,7 +186,7 @@ Cuerpo, igual en los dos:
 
 | HTTP | `detail.code` | `detail.message` | Cuándo |
 |---|---|---|---|
-| `404` | `NOTIFICATION_TYPE_NOT_FOUND` | "Ese tipo de notificación no existe." | `{type}` no está en el catálogo o es inactivo (por ejemplo `event_rescheduled` antes de HU-23) |
+| `404` | `NOTIFICATION_TYPE_NOT_FOUND` | "Ese tipo de notificación no existe." | `{type}` no está en el catálogo o es inactivo |
 | `422` | `INVALID_PREFERENCE` | "El valor tiene que ser verdadero o falso." | `enabled` falta o no es booleano. Con el formato de dominio (`detail` = `{code, message}`), **no** con la lista de errores por defecto de FastAPI |
 
 ## 6. Pantalla de preferencias (front, HU-19)
@@ -207,7 +210,7 @@ La notificación guarda tipo y referencia, nunca una URL (notificaciones §3). E
 
 | `type` | Ruta del front | Si el destino no está disponible |
 |---|---|---|
-| `event_published`, `event_rescheduled` | `/events?highlight=<event_id>` | El evento no está en `GET /events/upcoming` (empezó, se descartó, no está publicado o no es del club): se muestra **"Este evento ya no está disponible."** y la lista sin resaltar |
+| `event_published`, `event_rescheduled`, `event_withdrawn`, `event_restored` | `/events?highlight=<event_id>` | El evento no está en `GET /events/upcoming` (empezó, se descartó, se retiró, no está publicado o no es del club): se muestra **"Este evento ya no está disponible."** y la lista sin resaltar. Para `event_withdrawn` es lo esperado mientras siga retirado |
 | `wave_opened` | `/member/events/<event_id>/slot` | `GET /member/events/{id}/slot` responde `404 EVENT_NOT_FOUND`: se muestra **"Este evento ya no está disponible."**. Los demás estados (cerrado, sin turno, etc.) los explica la pantalla de HU-39 como hoy |
 | `ranking_completed` | `/ranking` | Ninguno: HU-14 explica sus propios estados |
 | desconocido | sin navegación | Solo se marca como leída |
@@ -223,7 +226,7 @@ El backend arma el botón del correo con `FRONTEND_BASE_URL` y **las mismas ruta
 
 | `type` | Botón del correo |
 |---|---|
-| `event_published`, `event_rescheduled` | `{FRONTEND_BASE_URL}/events?highlight={event_id}` |
+| `event_published`, `event_rescheduled`, `event_withdrawn`, `event_restored` | `{FRONTEND_BASE_URL}/events?highlight={event_id}` |
 | `wave_opened` | `{FRONTEND_BASE_URL}/member/events/{event_id}/slot?from=notification` |
 | `ranking_completed` | `{FRONTEND_BASE_URL}/ranking` |
 

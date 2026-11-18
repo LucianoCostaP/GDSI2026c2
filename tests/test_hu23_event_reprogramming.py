@@ -22,8 +22,8 @@ Cubre:
   - Escenario 6: Socio abriendo link antiguo (HU-39) recibe mensaje de evento retirado.
   - Escenario 7: Admin restaura evento -> vuelve a 'publicado', cronograma permanece anulado.
   - Escenario 9: Auditoría completa de retiro y restauración.
-- Cimientos de Notificaciones:
-  - Verificación de registros en 'notificaciones_eventos' en reprogramación, retiro y restauración.
+- Notificaciones (contrato `notify` de HU-19/20):
+  - `event_rescheduled`, `event_withdrawn` y `event_restored` en la bandeja de los socios.
 - Seguridad y Autorización:
   - Acciones restringidas exclusivamente a administradores (401 y 403).
 """
@@ -37,9 +37,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.date_utils import asegurar_utc
-from app.models import AuditLog, FeeStatus, Member, Ranking, User
+from app.models import AuditLog, FeeStatus, Member, Notification, Ranking, User
 from app.models.domain import EventoVisibleDB
-from app.models.notifications import EventNotificationDB, TipoNotificacionEvento
 from app.models.segmentation import WaveSegmentation
 from app.models.wave_schedule import WaveSchedule, WaveScheduleStatus
 from tests.conftest import (
@@ -52,6 +51,23 @@ from tests.conftest import (
 )
 
 BOCA_ID = "11111111-1111-1111-1111-111111111111"
+
+
+def _notificacion(db: Session, socio: Member, id_int: str, tipo: str) -> Notification:
+    """La notificación `tipo` del evento en la bandeja del socio (HU-19/20)."""
+    notifs = list(
+        db.scalars(
+            select(Notification)
+            .join(User, User.id == Notification.user_id)
+            .where(
+                User.member_id == socio.member_id,
+                Notification.type == tipo,
+                Notification.reference["event_id"].as_string() == id_int,
+            )
+        )
+    )
+    assert len(notifs) == 1, notifs
+    return notifs[0]
 
 
 @pytest.fixture
@@ -229,16 +245,59 @@ def test_admin_approves_change_updates_immediately_and_audits(
     assert audit_entry.details["previous"]["lugar"] == "Estadio Principal"
     assert audit_entry.details["new"]["lugar"] == "Estadio Visitante Monumental"
 
-    # Verificar cimientos de notificaciones
-    notif = db.scalar(
-        select(EventNotificationDB).where(
-            EventNotificationDB.event_id == id_int,
-            EventNotificationDB.tipo_notificacion
-            == TipoNotificacionEvento.EVENTO_REPROGRAMADO,
-        )
+    # Notificación `event_rescheduled` con el título nuevo
+    notif = _notificacion(db, socio_boca, id_int, "event_rescheduled")
+    assert notif.title == "Evento reprogramado"
+    assert notif.message.startswith("Superclásico Reprogramado cambió: ahora es el ")
+    assert notif.occurrence_key == f"event:{id_int}:rescheduled:{id_cambio}"
+
+
+def test_failed_notification_never_undoes_the_approval(
+    client: TestClient,
+    db: Session,
+    outbox: Outbox,
+    admin: User,
+    socio_boca: Member,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Edge case "Notifications": si `event_rescheduled` falla, la aprobación queda igual."""
+    from dataclasses import replace
+
+    from app.notifications import notify as notify_module
+
+    by_key = dict(notify_module.BY_KEY)
+    # Un texto que no se puede armar hace fallar a `notify` por dentro.
+    by_key["event_rescheduled"] = replace(
+        by_key["event_rescheduled"], message="{inexistente}"
     )
-    assert notif is not None
-    assert "Superclásico Reprogramado" in notif.titulo or notif.mensaje
+    monkeypatch.setattr(notify_module, "BY_KEY", by_key)
+
+    token = admin_token(client, outbox, admin)
+    id_ext = f"EVT-NOTIF-FAIL-{uuid.uuid4().hex[:6]}"
+    id_int, _ = _crear_y_publicar_partido(
+        client, token, id_ext, horas_adelante=80, db=db
+    )
+    res_put = client.put(
+        f"/api/v1/eventos/{id_ext}",
+        json={"lugar": "Sede Alternativa"},
+        headers=BOCA_HEADERS,
+    )
+    id_cambio = res_put.json()["id_cambio"]
+
+    res_appr = client.post(
+        f"/admin/events/changes/{id_cambio}/approve", headers=bearer(token)
+    )
+
+    assert res_appr.status_code == 200
+    assert res_appr.json()["estado"] == "aprobado"
+    ev = db.get(EventoVisibleDB, id_int)
+    assert ev is not None
+    db.refresh(ev)
+    assert ev.lugar == "Sede Alternativa"
+    assert (
+        db.scalar(select(Notification).where(Notification.type == "event_rescheduled"))
+        is None
+    )
 
 
 def test_admin_rejects_change_event_stays_as_it_was(
@@ -689,15 +748,10 @@ def test_admin_withdraws_event_requires_reason_and_hides_from_socio(
         or audit_entry.details.get("motivo") == motivo_txt
     )
 
-    # 6. Notificación encolada
-    notif = db.scalar(
-        select(EventNotificationDB).where(
-            EventNotificationDB.event_id == id_int,
-            EventNotificationDB.tipo_notificacion
-            == TipoNotificacionEvento.EVENTO_RETIRADO,
-        )
-    )
-    assert notif is not None
+    # 6. Notificación `event_withdrawn` con el motivo
+    notif = _notificacion(db, socio_boca, id_int, "event_withdrawn")
+    assert notif.title == "Evento cancelado"
+    assert notif.message.endswith(f"fue cancelado. Motivo: {motivo_txt}")
 
     # 7. No admite asistencia (HU-24)
     from app.services.participacion_service import ParticipacionService
@@ -748,15 +802,10 @@ def test_admin_restores_event_reappears_in_hu17(
     )
     assert audit_entry is not None
 
-    # Notificación encolada
-    notif = db.scalar(
-        select(EventNotificationDB).where(
-            EventNotificationDB.event_id == id_int,
-            EventNotificationDB.tipo_notificacion
-            == TipoNotificacionEvento.EVENTO_RESTAURADO,
-        )
-    )
-    assert notif is not None
+    # Notificación `event_restored` (y la del retiro previo)
+    notif = _notificacion(db, socio_boca, id_int, "event_restored")
+    assert notif.title == "Evento restaurado"
+    _notificacion(db, socio_boca, id_int, "event_withdrawn")
 
 
 def test_security_admin_endpoints_restricted(

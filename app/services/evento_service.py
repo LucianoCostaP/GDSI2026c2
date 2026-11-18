@@ -1,13 +1,11 @@
 import json
 import logging
-import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import HTTPException, status
 from pydantic import ValidationError
 from sqlalchemy import select
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from .. import audit
@@ -59,7 +57,6 @@ from ..schemas.eventos import (
     PublicarEventoRequest,
     PublicarEventoResponse,
 )
-from . import event_notification_service
 
 # HU-17 FR-004 y decisión 24: texto exacto, los tests lo comparan por igualdad.
 MENSAJE_SIN_EVENTOS_PROXIMOS = "No hay eventos próximos publicados."
@@ -1162,26 +1159,6 @@ class EventoService:
             },
         )
 
-        # Encolar notificación para socios (cimientos de notificaciones)
-        try:
-            event_notification_service.notificar_reprogramacion(
-                db=db,
-                club_id=uuid.UUID(str(cambio["club_id"])),
-                event_id=cambio["id_interno"],
-                titulo_evento=valores_a_aplicar.get("titulo")
-                or cambio.get("titulo_actual")
-                or "",
-                cambios={
-                    "valores_previos": cambio.get("valores_previos") or {},
-                    "valores_nuevos": {
-                        k: (v.isoformat() if isinstance(v, datetime) else v)
-                        for k, v in valores_a_aplicar.items()
-                    },
-                },
-            )
-        except (SQLAlchemyError, ValueError, TypeError) as exc:
-            logger.warning("No se pudo encolar notificacion de reprogramacion: %s", exc)
-
         return EventoCambioActionResponse(
             mensaje="Cambio aprobado y aplicado exitosamente.",
             id_cambio=str(cambio_id),
@@ -1328,17 +1305,6 @@ class EventoService:
                 new={"estado": "withdrawn"},
             )
 
-            try:
-                event_notification_service.notificar_retiro(
-                    db=db,
-                    club_id=uuid.UUID(str(evento_vis["club_id"])),
-                    event_id=evento_vis["id_interno"],
-                    titulo_evento=evento_vis["titulo"],
-                    motivo=motivo.strip(),
-                )
-            except (SQLAlchemyError, ValueError, TypeError) as exc:
-                logger.warning("No se pudo encolar notificacion de retiro: %s", exc)
-
             return EventoRetiroResponse(
                 mensaje="Evento retirado exitosamente.",
                 id_interno=evento_vis["id_interno"],
@@ -1446,18 +1412,6 @@ class EventoService:
                 previous={"estado": "withdrawn"},
                 new={"estado": "publicado"},
             )
-
-            try:
-                event_notification_service.notificar_restauracion(
-                    db=db,
-                    club_id=uuid.UUID(str(evento_vis["club_id"])),
-                    event_id=evento_vis["id_interno"],
-                    titulo_evento=evento_vis["titulo"],
-                )
-            except (SQLAlchemyError, ValueError, TypeError) as exc:
-                logger.warning(
-                    "No se pudo encolar notificacion de restauracion: %s", exc
-                )
 
             return EventoRestaurarResponse(
                 mensaje="Evento restaurado exitosamente.",

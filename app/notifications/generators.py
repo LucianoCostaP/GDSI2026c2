@@ -63,33 +63,85 @@ def _club_members(db: Session, club_id: uuid.UUID) -> list[int]:
     )
 
 
+def _event_to_club(
+    db: Session,
+    type: str,
+    event_id: str,
+    occurrence: str,
+    *,
+    params: dict[str, str] | None = None,
+    now: datetime | None = None,
+) -> int:
+    """`type` sobre el evento `event_id` para todos los socios activados de su club, con la
+    clave `event:{event_id}:{occurrence}`. Lee el evento ya confirmado, así que el texto lleva
+    su título, fecha y hora vigentes."""
+    try:
+        event = db.get(EventoVisibleDB, event_id)
+        if event is None:
+            logger.warning("%s: no existe el evento publicado %s", type, event_id)
+            return 0
+        recipients = _club_members(db, event.club_id)
+        club_id, titulo, when = event.club_id, event.titulo, _when(event.fecha_hora)
+    except Exception:
+        db.rollback()
+        logger.exception("%s: no se pudieron leer los destinatarios", type)
+        return 0
+    return notify(
+        db,
+        type,
+        f"event:{event_id}:{occurrence}",
+        recipients,
+        club_id=club_id,
+        reference={"event_id": event_id},
+        params={"titulo": titulo, **when, **(params or {})},
+        now=now,
+    )
+
+
 def event_published(db: Session, event_id: str, *, now: datetime | None = None) -> int:
     """`event_published` para todos los socios activados del club del evento (escenario 1).
 
     Se llama al final de la publicación de HU-22, manual o automática, después del commit.
     Devuelve cuántas notificaciones creó.
     """
-    try:
-        event = db.get(EventoVisibleDB, event_id)
-        if event is None:
-            logger.warning(
-                "event_published: no existe el evento publicado %s", event_id
-            )
-            return 0
-        recipients = _club_members(db, event.club_id)
-    except Exception:
-        db.rollback()
-        logger.exception("event_published: no se pudieron leer los destinatarios")
-        return 0
-    return notify(
+    return _event_to_club(db, "event_published", event_id, "published", now=now)
+
+
+def event_rescheduled(
+    db: Session, event_id: str, change_id: str, *, now: datetime | None = None
+) -> int:
+    """`event_rescheduled` cuando el Admin aprueba un cambio del club (HU-23, notificaciones
+    §4: clave `event:{event_id}:rescheduled:{change_id}`). El texto lleva la fecha y la hora
+    nuevas. Se llama después del commit de la aprobación, que nunca se deshace por esto."""
+    return _event_to_club(
+        db, "event_rescheduled", event_id, f"rescheduled:{change_id}", now=now
+    )
+
+
+def event_withdrawn(
+    db: Session, event_id: str, motivo: str, withdrawn_at: datetime
+) -> int:
+    """`event_withdrawn` cuando el Admin retira un evento publicado (HU-23). Un evento se puede
+    retirar y restaurar más de una vez: cada retiro es una ocurrencia, por su momento."""
+    return _event_to_club(
         db,
-        "event_published",
-        f"event:{event.id_interno}:published",
-        recipients,
-        club_id=event.club_id,
-        reference={"event_id": event.id_interno},
-        params={"titulo": event.titulo, **_when(event.fecha_hora)},
-        now=now,
+        "event_withdrawn",
+        event_id,
+        f"withdrawn:{asegurar_utc(withdrawn_at).isoformat()}",
+        params={"motivo": motivo},
+        now=withdrawn_at,
+    )
+
+
+def event_restored(db: Session, event_id: str, restored_at: datetime) -> int:
+    """`event_restored` cuando el Admin restaura un evento retirado (HU-23), una ocurrencia
+    por restauración."""
+    return _event_to_club(
+        db,
+        "event_restored",
+        event_id,
+        f"restored:{asegurar_utc(restored_at).isoformat()}",
+        now=restored_at,
     )
 
 

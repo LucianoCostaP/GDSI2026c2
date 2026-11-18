@@ -48,8 +48,7 @@ from .enums import (
     TipoEvento,
     TipoParticipacion,
 )
-from .notification import Notification, NotificationState 
-from .notifications import EventNotificationDB, TipoNotificacionEvento
+from .notification import Notification, NotificationState
 from .ranking import Ranking, RankingEntry, RankingState
 from .rules import FormulaLock, FormulaLockState, RulesVersion, RulesVersionState
 from .segmentation import WaveSegmentation
@@ -74,7 +73,6 @@ __all__ = [
     "EstadoCargaParticipacion",
     "EstadoCicloEvento",
     "EstadoCuota",
-    "EventNotificationDB",
     "EventoBase",
     "EventoCambioPendiente",
     "EventoCambioPendienteDB",
@@ -105,7 +103,6 @@ __all__ = [
     "TipoActividadRecurrente",
     "TipoCarga",
     "TipoEvento",
-    "TipoNotificacionEvento",
     "TipoParticipacion",
     "User",
     "UserSession",

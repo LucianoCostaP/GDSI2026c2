@@ -22,7 +22,7 @@ As a Socio of the club, I want to turn on or off the email for each type of noti
 **Acceptance Scenarios**:
 
 1. **Given** a logged-in Socio, **When** they open "Mi Perfil" (HU-10), **Then** they see the access "Notificaciones por correo", and following it opens the settings screen.
-2. **Given** the settings screen, **When** it loads, **Then** it shows a general switch "Recibir notificaciones por correo" and, below it, one switch per **active** type of the catalog, each with its name and a one-line description. Inactive types (for example `event_rescheduled` before HU-23) are not shown.
+2. **Given** the settings screen, **When** it loads, **Then** it shows a general switch "Recibir notificaciones por correo" and, below it, one switch per **active** type of the catalog, each with its name and a one-line description. Inactive types are not shown (today there are none; see notifications section 2).
 3. **Given** a Socio who never changed anything (including a newly activated account and a Socio who existed before this feature), **When** they open the screen, **Then** the general switch and every type are on.
 4. **Given** the screen, **When** the Socio turns one type off or on, **Then** the change is saved at that moment, with no "Guardar" button, the other switches do not change and the Socio sees "Guardamos tu cambio.".
 5. **Given** the Socio saved a change, **When** they reload the screen or log in again, **Then** the switches show the saved values.
@@ -76,7 +76,7 @@ As a Socio of the club, I want to be notified when something I care about happen
 5. **Given** a ranking that finishes `completed` (HU-25), **When** it is stored, **Then** the Socios with an entry in it and an `activated` account get `ranking_completed`. The ranking is `completed` and in force whether or not the notifications or emails succeed.
 6. **Given** a ranking that finishes `failed`, **When** it is marked, **Then** no notification is generated.
 7. **Given** an institutional/amateur event, **When** it is published, **Then** `event_published` is generated like for a Partido; no `wave_opened` exists for it.
-8. **Given** the type `event_rescheduled` before HU-23 exists, **When** the system runs, **Then** it generates nothing and the type is not offered to the Socio.
+8. **Given** the types of HU-23 (`event_rescheduled`, `event_withdrawn`, `event_restored`), **When** a publication, a wave opening or a ranking runs, **Then** none of them is generated: only the approval, withdrawal and restoration of HU-23 generate them (decision 61). An inactive type is never generated nor offered to the Socio.
 9. **Given** a Socio without an `activated` account or dado de baja when the notification is generated, **When** it is generated, **Then** they get nothing.
 
 ---
@@ -109,7 +109,7 @@ As a Socio of the club, I want to be notified when something I care about happen
 - **FR-009**: System MUST NOT block, delay or undo the triggering process (publication, ranking, schedule) because of the notification or its email.
 - **FR-010**: System MUST attempt every recipient, record each failure and not retry.
 - **FR-011**: System MUST dispatch emails asynchronously and in batches.
-- **FR-012**: System MUST NOT generate `event_rescheduled` until HU-23 calls the contract, and MUST NOT show inactive types.
+- **FR-012**: System MUST generate `event_rescheduled`, `event_withdrawn` and `event_restored` only from HU-23, and MUST NOT generate or show inactive types.
 - **FR-013**: System MUST NOT apply preferences to access codes, activation codes or invitations.
 - **FR-014**: System MUST audit every change of a preference with who, when, previous and new value, and skip changes that keep the value.
 - **FR-015**: System MUST allow only a Socio with a valid session to read and change their own preferences, enforced on the server; the club comes from the account.
@@ -169,3 +169,4 @@ Audit: `notification_preference.changed`, `entity = "notification_preference"`, 
 
 - v1.1: built after HU-20; adds the email fields to the table that HU-20 creates (notifications section 10, decision 60).
 - Created with HU-20. Decisions 50 to 60 of the specs README.
+- v1.2: the catalog grows to six types with HU-23 (`event_withdrawn`, `event_restored`) and `event_rescheduled` becomes active; scenario 2, scenario 8 and FR-012 updated (decision 61).

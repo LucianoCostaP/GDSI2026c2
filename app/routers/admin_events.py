@@ -327,6 +327,8 @@ def aprobar_cambio_evento(
         now=sim_now,
     )
     db.commit()
+    # Después del commit, y sin poder deshacer la aprobación (HU-23, notificaciones §4).
+    generators.event_rescheduled(db, res.id_interno, res.id_cambio, now=sim_now)
     return res
 
 
@@ -412,6 +414,9 @@ def retirar_evento(
         now=sim_now,
     )
     db.commit()
+    # Solo el retiro de un publicado avisa; descartar un pendiente (HU-21) no.
+    if res.estado == "withdrawn":
+        generators.event_withdrawn(db, res.id_interno, res.motivo, res.retirado_en)
     return res
 
 
@@ -453,6 +458,9 @@ def restaurar_evento(
         now=sim_now,
     )
     db.commit()
+    # Solo vuelve a avisar un evento que vuelve a `publicado`, no un pendiente restaurado.
+    if res.estado == "publicado":
+        generators.event_restored(db, res.id_interno, res.restaurado_en)
     return res
 
 
