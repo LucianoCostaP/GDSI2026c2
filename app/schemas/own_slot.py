@@ -13,6 +13,7 @@ class OwnSlotStatus(enum.StrEnum):
     PENDING = "pending"
     OPEN = "open"
     CLOSED = "closed"
+    WITHDRAWN = "withdrawn"
 
 
 class OwnSlotEventOut(BaseModel):

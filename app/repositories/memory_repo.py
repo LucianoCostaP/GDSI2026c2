@@ -204,13 +204,47 @@ class MemoryEventoRepository(EventoRepository):
         club_id: str | None,
         id_externo_o_interno: str,
     ) -> dict[str, Any] | None:
+        target = id_externo_o_interno.strip()
         for p in self.tabla_eventos_pendientes:
-            if (not club_id or str(p["club_id"]) == str(club_id)) and (
-                p["id_externo"] == id_externo_o_interno
-                or p["id_interno"] == id_externo_o_interno
+            if (not club_id or str(p.get("club_id")) == str(club_id)) and (
+                p.get("id_externo") == target
+                or p.get("id_interno") == target
+                or (p.get("titulo") and p["titulo"].strip().lower() == target.lower())
             ):
                 return dict(p)
         return None
+
+    def descartar_evento_pendiente(
+        self,
+        id_interno: str,
+    ) -> None:
+        for p in self.tabla_eventos_pendientes:
+            if p.get("id_interno") == id_interno:
+                p["estado"] = "descartado"
+                break
+
+    def restaurar_evento_pendiente(
+        self,
+        id_interno: str,
+    ) -> None:
+        for p in self.tabla_eventos_pendientes:
+            if p.get("id_interno") == id_interno:
+                p["estado"] = "pendiente_definicion_importancia"
+                break
+
+    def ajustar_clase_o_puntos_pendiente(
+        self,
+        id_interno: str,
+        clase: str | None = None,
+        puntos: int | None = None,
+    ) -> None:
+        for p in self.tabla_eventos_pendientes:
+            if p.get("id_interno") == id_interno:
+                if clase is not None:
+                    p["clase"] = clase
+                if puntos is not None:
+                    p["puntos"] = puntos
+                break
 
     def is_already_published(
         self,
@@ -300,15 +334,16 @@ class MemoryEventoRepository(EventoRepository):
                 continue
 
             estado = e.get("estado") or e.get("estado_ciclo") or "visible"
-            if estado not in ("visible", "published"):
-                continue
             if estado in (
                 "pendiente_definicion_importancia",
                 "Historico",
                 "historico",
                 "discarded",
                 "withdrawn",
+                "retirado",
             ):
+                continue
+            if estado not in ("visible", "published", "publicado"):
                 continue
 
             fh = e["fecha_hora"]
@@ -330,3 +365,230 @@ class MemoryEventoRepository(EventoRepository):
 
         resultado.sort(key=_get_sort_key)
         return resultado
+
+    def find_eventos_visibles_admin(
+        self,
+        club_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Lista todos los eventos visibles (publicados y retirados) para el panel de administración."""
+        resultado = []
+        for v in self.tabla_eventos_visibles:
+            if not club_id or str(v.get("club_id")) == str(club_id):
+                resultado.append(dict(v))
+        return resultado
+
+    def get_evento_visible(
+        self,
+        id_externo_o_interno: str,
+        club_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Obtiene un evento publicado/visible por su id_externo, id_interno o titulo (nombre)."""
+        target = id_externo_o_interno.strip()
+        for v in self.tabla_eventos_visibles:
+            if (not club_id or str(v.get("club_id")) == str(club_id)) and (
+                v.get("id_externo") == target
+                or v.get("id_interno") == target
+                or (v.get("titulo") and v["titulo"].strip().lower() == target.lower())
+            ):
+                return dict(v)
+        return None
+
+    def insert_o_reemplazar_cambio_pendiente(
+        self,
+        club_id: str,
+        id_interno: str,
+        valores_nuevos: dict[str, Any],
+        valores_previos: dict[str, Any],
+    ) -> str:
+        """
+        Registra un cambio enviado por el club sobre un evento publicado (HU-23).
+        Si ya existía un cambio en 'pendiente_revision' para este evento, lo marca como 'reemplazado'.
+        """
+        for c in self.tabla_eventos_cambios_pendientes:
+            if (
+                c["id_interno"] == id_interno
+                and str(c["club_id"]) == str(club_id)
+                and c["estado_revision"] == "pendiente_revision"
+            ):
+                c["estado_revision"] = "reemplazado"
+
+        id_cambio = str(uuid.uuid4())
+        nuevo_cambio = {
+            "id_cambio": id_cambio,
+            "id_interno": id_interno,
+            "club_id": str(club_id),
+            "titulo": valores_nuevos.get("titulo"),
+            "fecha_hora": valores_nuevos.get("fecha_hora"),
+            "lugar": valores_nuevos.get("lugar"),
+            "tipo": valores_nuevos.get("tipo"),
+            "descripcion": valores_nuevos.get("descripcion"),
+            "estado_revision": "pendiente_revision",
+            "valores_previos": dict(valores_previos),
+            "revisado_por_id": None,
+            "revisado_en": None,
+            "solicitado_en": datetime.now(UTC),
+        }
+        self.tabla_eventos_cambios_pendientes.append(nuevo_cambio)
+        return id_cambio
+
+    def find_cambios_pendientes(
+        self,
+        club_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Lista las solicitudes de cambio en estado 'pendiente_revision' (HU-23)."""
+        resultado = []
+        for c in self.tabla_eventos_cambios_pendientes:
+            if club_id and str(c.get("club_id")) != str(club_id):
+                continue
+            if c.get("estado_revision") == "pendiente_revision":
+                item = dict(c)
+                v = self.get_evento_visible(c["id_interno"])
+                if v:
+                    item.update(
+                        {
+                            "id_externo": v.get("id_externo"),
+                            "titulo_actual": v.get("titulo"),
+                            "fecha_hora_actual": v.get("fecha_hora"),
+                            "lugar_actual": v.get("lugar"),
+                            "descripcion_actual": v.get("descripcion"),
+                            "tipo_actual": v.get("tipo"),
+                            "clase": v.get("clase"),
+                            "puntos": v.get("puntos"),
+                        }
+                    )
+                resultado.append(item)
+        return resultado
+
+    def get_cambio_pendiente(
+        self,
+        id_cambio: str,
+    ) -> dict[str, Any] | None:
+        """Obtiene un cambio pendiente por su id_cambio."""
+        for c in self.tabla_eventos_cambios_pendientes:
+            if str(c.get("id_cambio")) == str(id_cambio):
+                item = dict(c)
+                v = self.get_evento_visible(c["id_interno"])
+                if v:
+                    item.update(
+                        {
+                            "id_externo": v.get("id_externo"),
+                            "titulo_actual": v.get("titulo"),
+                            "fecha_hora_actual": v.get("fecha_hora"),
+                            "lugar_actual": v.get("lugar"),
+                            "descripcion_actual": v.get("descripcion"),
+                            "tipo_actual": v.get("tipo"),
+                            "clase": v.get("clase"),
+                            "puntos": v.get("puntos"),
+                        }
+                    )
+                return item
+        return None
+
+    def update_cambio_estado(
+        self,
+        id_cambio: str,
+        estado_revision: str,
+        revisado_por_id: int | None = None,
+    ) -> None:
+        """Actualiza el estado de una solicitud de cambio ('aprobado', 'rechazado', 'reemplazado')."""
+        for c in self.tabla_eventos_cambios_pendientes:
+            if str(c.get("id_cambio")) == str(id_cambio):
+                c["estado_revision"] = estado_revision
+                c["revisado_por_id"] = revisado_por_id
+                c["revisado_en"] = datetime.now(UTC)
+                break
+
+    def aplicar_cambio_evento(
+        self,
+        id_interno: str,
+        valores: dict[str, Any],
+        fin_ajuste_clase_puntos: datetime,
+    ) -> None:
+        """Aplica la reprogramación aprobada en eventos_visibles fijando la ventana de 24h."""
+        for v in self.tabla_eventos_visibles:
+            if v["id_interno"] == id_interno:
+                if "fecha_hora" in valores and valores["fecha_hora"] is not None:
+                    v["fecha_hora"] = valores["fecha_hora"]
+                if "lugar" in valores and valores["lugar"] is not None:
+                    v["lugar"] = valores["lugar"]
+                if "descripcion" in valores:
+                    v["descripcion"] = valores["descripcion"]
+                if "titulo" in valores and valores["titulo"] is not None:
+                    v["titulo"] = valores["titulo"]
+                v["fin_ajuste_clase_puntos"] = fin_ajuste_clase_puntos
+                v["actualizado_en"] = datetime.now(UTC)
+                break
+
+    def marcar_cancelado_club(
+        self,
+        club_id: str,
+        id_externo_o_interno: str,
+    ) -> dict[str, Any] | None:
+        """Marca un evento (pendiente o visible) como cancelado por el club."""
+        for v in self.tabla_eventos_visibles:
+            if (not club_id or str(v["club_id"]) == str(club_id)) and (
+                v["id_externo"] == id_externo_o_interno
+                or v["id_interno"] == id_externo_o_interno
+            ):
+                v["cancelado_por_el_club"] = True
+                v["actualizado_en"] = datetime.now(UTC)
+                return dict(v)
+
+        for p in self.tabla_eventos_pendientes:
+            if (not club_id or str(p["club_id"]) == str(club_id)) and (
+                p["id_externo"] == id_externo_o_interno
+                or p["id_interno"] == id_externo_o_interno
+            ):
+                p["cancelado_por_el_club"] = True
+                p["actualizado_en"] = datetime.now(UTC)
+                return dict(p)
+
+        return None
+
+    def retirar_evento(
+        self,
+        id_interno: str,
+        admin_id: int,
+        motivo: str,
+    ) -> None:
+        """Pasa el evento publicado al estado 'retirado' con motivo y autor (HU-23)."""
+        for v in self.tabla_eventos_visibles:
+            if v["id_interno"] == id_interno:
+                v["estado"] = "retirado"
+                v["estado_ciclo"] = "retirado"
+                v["retirado_en"] = datetime.now(UTC)
+                v["retirado_por_id"] = admin_id
+                v["motivo_retiro"] = motivo
+                v["actualizado_en"] = datetime.now(UTC)
+                break
+
+    def restaurar_evento(
+        self,
+        id_interno: str,
+        admin_id: int,
+    ) -> None:
+        """Restaura un evento retirado volviéndolo al estado 'publicado' (HU-23)."""
+        for v in self.tabla_eventos_visibles:
+            if v["id_interno"] == id_interno:
+                v["estado"] = "publicado"
+                v["estado_ciclo"] = "visible"
+                v["restaurado_en"] = datetime.now(UTC)
+                v["restaurado_por_id"] = admin_id
+                v["actualizado_en"] = datetime.now(UTC)
+                break
+
+    def ajustar_clase_o_puntos(
+        self,
+        id_interno: str,
+        clase: str | None = None,
+        puntos: int | None = None,
+    ) -> None:
+        """Ajusta la clase o puntos dentro de la ventana de 24h tras reprogramación."""
+        for v in self.tabla_eventos_visibles:
+            if v["id_interno"] == id_interno:
+                if clase is not None:
+                    v["clase"] = clase
+                if puntos is not None:
+                    v["puntos"] = puntos
+                v["actualizado_en"] = datetime.now(UTC)
+                break

@@ -65,6 +65,17 @@ class ParticipacionService:
             .first()
         )
         if evento_vis:
+            if evento_vis.estado in ("withdrawn", "retirado"):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail={
+                        "error": {
+                            "code": "EVENT_WITHDRAWN",
+                            "message": "El evento fue retirado y no admite carga de asistencia.",
+                            "field": "id_externo",
+                        }
+                    },
+                )
             fh = (
                 evento_vis.fecha_hora
                 if evento_vis.fecha_hora.tzinfo
@@ -860,7 +871,12 @@ class ParticipacionService:
     ) -> list[EventoElegibleAsistenciaResponse]:
         ahora = datetime.now(UTC)
         eventos_visibles = (
-            db.query(EventoVisibleDB).filter(EventoVisibleDB.club_id == club_id).all()
+            db.query(EventoVisibleDB)
+            .filter(
+                EventoVisibleDB.club_id == club_id,
+                EventoVisibleDB.estado.notin_(["withdrawn", "retirado"]),
+            )
+            .all()
         )
         eventos_historicos = (
             db.query(EventoPendienteDB)

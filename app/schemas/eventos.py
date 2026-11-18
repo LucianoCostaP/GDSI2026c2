@@ -235,3 +235,97 @@ class AutoPublishResponse(BaseModel):
     omitidos: int
     eventos_publicados: list[str]
     detalle: list[PublicarEventoResponse] = []
+
+
+# ==============================================================================
+# ESQUEMAS PARA HU-23: REPROGRAMACIÓN, RETIRO Y RESTAURACIÓN DE EVENTOS
+# ==============================================================================
+
+
+class ClubEventoUpdateRequest(BaseModel):
+    titulo: str | None = Field(None, max_length=255)
+    fecha_hora: datetime | None = None
+    lugar: str | None = Field(None, max_length=255)
+    tipo: str | None = None
+    descripcion: str | None = None
+
+
+class ClubCancelacionRequest(BaseModel):
+    motivo: str | None = Field(None, max_length=500)
+
+
+class ComparacionValores(BaseModel):
+    fecha_hora_actual: datetime
+    fecha_hora_nueva: datetime | None = None
+    lugar_actual: str
+    lugar_nuevo: str | None = None
+    titulo_actual: str
+    titulo_nuevo: str | None = None
+    descripcion_actual: str | None = None
+    descripcion_nueva: str | None = None
+
+
+class EventoCambioReviewResponse(BaseModel):
+    id_cambio: str
+    id_interno: str
+    id_externo: str
+    club_id: str
+    titulo: str
+    tipo: str
+    estado: str
+    solicitado_en: datetime
+    valores_previos: dict[str, Any]
+    valores_nuevos: dict[str, Any]
+    comparacion: ComparacionValores
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class EventoCambioActionResponse(BaseModel):
+    mensaje: str
+    id_cambio: str
+    id_interno: str
+    estado: str
+    fin_ajuste_clase_puntos: datetime | None = None
+    advertencia_cronograma: str | None = None
+
+
+class EventoRetiroRequest(BaseModel):
+    motivo: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Motivo obligatorio del retiro del evento",
+    )
+
+
+class EventoRetiroResponse(BaseModel):
+    mensaje: str = "Evento retirado exitosamente."
+    id_interno: str
+    estado: str = "withdrawn"
+    retirado_en: datetime
+    motivo: str
+
+
+class EventoRestaurarResponse(BaseModel):
+    mensaje: str = "Evento restaurado exitosamente."
+    id_interno: str
+    estado: str = "publicado"
+    restaurado_en: datetime
+
+
+class EventoAjustarClaseRequest(BaseModel):
+    clase: ClasePartido | None = Field(
+        None, description="Nueva clase (A, B o C) para Partido"
+    )
+    puntos: int | None = Field(
+        None, ge=1, le=100, description="Nuevos puntos para Institucional"
+    )
+
+
+class EventoAjustarClaseResponse(BaseModel):
+    mensaje: str = "Clase/puntos ajustados exitosamente."
+    id_interno: str
+    clase: str | None = None
+    puntos: int | None = None
+    actualizado_en: datetime

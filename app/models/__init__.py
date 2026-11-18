@@ -24,6 +24,7 @@ from .domain import (
     ClubDomain,
     EventoBase,
     EventoCambioPendiente,
+    EventoCambioPendienteDB,
     EventoPendiente,
     EventoPendienteDB,
     EventoVisible,
@@ -47,7 +48,8 @@ from .enums import (
     TipoEvento,
     TipoParticipacion,
 )
-from .notification import Notification, NotificationState
+from .notification import Notification, NotificationState 
+from .notifications import EventNotificationDB, TipoNotificacionEvento
 from .ranking import Ranking, RankingEntry, RankingState
 from .rules import FormulaLock, FormulaLockState, RulesVersion, RulesVersionState
 from .segmentation import WaveSegmentation
@@ -72,8 +74,10 @@ __all__ = [
     "EstadoCargaParticipacion",
     "EstadoCicloEvento",
     "EstadoCuota",
+    "EventNotificationDB",
     "EventoBase",
     "EventoCambioPendiente",
+    "EventoCambioPendienteDB",
     "EventoPendiente",
     "EventoPendienteDB",
     "EventoVisible",
@@ -101,6 +105,7 @@ __all__ = [
     "TipoActividadRecurrente",
     "TipoCarga",
     "TipoEvento",
+    "TipoNotificacionEvento",
     "TipoParticipacion",
     "User",
     "UserSession",
