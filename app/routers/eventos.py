@@ -172,14 +172,18 @@ def crear_eventos_historicos_batch(
 
 
 # ==============================================================================
-# ENDPOINT E: Actualización de evento por el club (HU-23 - User Story 1)
+# ENDPOINT E: Actualización de evento por el club (HU-21; omitida si está publicado, HU-23B)
 # PUT /api/v1/eventos/{id_externo_o_interno}
 # ==============================================================================
 @router.put(
     "/{id_externo_o_interno}",
     status_code=status.HTTP_200_OK,
     summary="Actualización de evento enviada por el club",
-    description="Permite al club enviar modificaciones de fecha, hora o lugar de un evento publicado. Queda en 'pendiente_revision' para evaluación del administrador.",
+    description=(
+        "Un evento pendiente se valida con los datos del club. Un evento publicado no "
+        "cambia: el cambio se omite (`omitido: true`) y la fecha y hora las reprograma el "
+        "Admin. Un evento retirado responde `EVENT_WITHDRAWN`."
+    ),
 )
 def actualizar_evento_club(
     id_externo_o_interno: str,
@@ -203,7 +207,7 @@ def actualizar_evento_club(
 
 
 # ==============================================================================
-# ENDPOINT F: Notificación de cancelación de evento por el club (HU-23 - User Story 2)
+# ENDPOINT F: Notificación de cancelación de evento por el club (HU-23B US1)
 # POST /api/v1/eventos/{id_externo_o_interno}/cancelacion
 # ==============================================================================
 @router.post(

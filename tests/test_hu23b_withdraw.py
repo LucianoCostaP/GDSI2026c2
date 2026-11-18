@@ -420,7 +420,7 @@ def test_event_restored_queda_inactivo(boca_club: Club) -> None:
         f"/admin/events/{boca_club.event.id_interno}/restore",
         headers=boca_club.headers,
     )
-    # La restauración es solo de un pendiente descartado (HU-21): un retirado no vuelve.
+    # HU-23B no tiene restauración: el endpoint ya no existe.
     assert restaurar.status_code == 404
 
 

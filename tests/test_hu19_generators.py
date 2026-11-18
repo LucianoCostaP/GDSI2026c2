@@ -6,8 +6,9 @@ Escenario 2: `wave_opened` cuando llega la hora de inicio de una ola de un crono
 Escenarios 3 y 4: cronogramas que no avisan y ventana de recuperación.
 Escenarios 5 y 6: `ranking_completed` al completar el ranking (HU-25), nada si falla.
 Escenario 7: un evento institucional se avisa como un Partido y no tiene `wave_opened`.
-Escenario 8: `event_rescheduled` solo lo genera la aprobación de un cambio de HU-23
-(se prueba en `tests/test_hu23_event_reprogramming.py`); ningún otro disparador.
+Escenario 8: `event_rescheduled` solo lo genera la reprogramación de HU-23B (se prueba en
+`tests/test_hu23b_reschedule.py` y `tests/test_hu23b_wave_notifications.py`); ningún otro
+disparador.
 Escenario 9: sin cuenta activada o dado de baja al generar, el Socio no recibe nada.
 
 Las notificaciones se ven por la bandeja de HU-20, que es lo que recibe el Socio.

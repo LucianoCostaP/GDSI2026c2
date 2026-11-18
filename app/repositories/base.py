@@ -70,22 +70,6 @@ class EventoRepository(ABC):
         """Marca un evento pendiente como descartado."""
 
     @abstractmethod
-    def restaurar_evento_pendiente(
-        self,
-        id_interno: str,
-    ) -> None:
-        """Restaura un evento pendiente descartado a pendiente de definición de importancia."""
-
-    @abstractmethod
-    def ajustar_clase_o_puntos_pendiente(
-        self,
-        id_interno: str,
-        clase: str | None = None,
-        puntos: int | None = None,
-    ) -> None:
-        """Ajusta clase o puntos en un evento pendiente."""
-
-    @abstractmethod
     def is_already_published(
         self,
         club_id: str | None,
@@ -122,13 +106,6 @@ class EventoRepository(ABC):
         """
 
     @abstractmethod
-    def find_eventos_visibles_admin(
-        self,
-        club_id: str | None = None,
-    ) -> list[dict[str, Any]]:
-        """Lista todos los eventos visibles (publicados y retirados) para el panel de administración."""
-
-    @abstractmethod
     def get_evento_visible(
         self,
         id_externo_o_interno: str,
@@ -137,81 +114,9 @@ class EventoRepository(ABC):
         """Obtiene un evento publicado/visible por su id_externo o id_interno."""
 
     @abstractmethod
-    def insert_o_reemplazar_cambio_pendiente(
-        self,
-        club_id: str,
-        id_interno: str,
-        valores_nuevos: dict[str, Any],
-        valores_previos: dict[str, Any],
-    ) -> str:
-        """
-        Registra un cambio enviado por el club sobre un evento publicado (HU-23).
-        Si ya existía un cambio en 'pendiente_revision', lo marca como 'reemplazado'.
-        Retorna el id_cambio generado.
-        """
-
-    @abstractmethod
-    def find_cambios_pendientes(
-        self,
-        club_id: str | None = None,
-    ) -> list[dict[str, Any]]:
-        """Lista las solicitudes de cambio en estado 'pendiente_revision' (HU-23)."""
-
-    @abstractmethod
-    def get_cambio_pendiente(
-        self,
-        id_cambio: str,
-    ) -> dict[str, Any] | None:
-        """Obtiene un cambio pendiente por su id_cambio."""
-
-    @abstractmethod
-    def update_cambio_estado(
-        self,
-        id_cambio: str,
-        estado_revision: str,
-        revisado_por_id: int | None = None,
-    ) -> None:
-        """Actualiza el estado de una solicitud de cambio ('aprobado', 'rechazado', 'reemplazado')."""
-
-    @abstractmethod
-    def aplicar_cambio_evento(
-        self,
-        id_interno: str,
-        valores: dict[str, Any],
-        fin_ajuste_clase_puntos: datetime,
-    ) -> None:
-        """Aplica la reprogramación aprobada en eventos_visibles fijando la ventana de 24h."""
-
-    @abstractmethod
     def marcar_cancelado_club(
         self,
         club_id: str,
         id_externo_o_interno: str,
     ) -> dict[str, Any] | None:
         """Marca un evento (pendiente o visible) como cancelado por el club."""
-
-    @abstractmethod
-    def retirar_evento(
-        self,
-        id_interno: str,
-        admin_id: int,
-        motivo: str,
-    ) -> None:
-        """Pasa el evento publicado al estado 'retirado' con motivo y autor (HU-23)."""
-
-    @abstractmethod
-    def restaurar_evento(
-        self,
-        id_interno: str,
-        admin_id: int,
-    ) -> None:
-        """Restaura un evento retirado volviéndolo al estado 'publicado' (HU-23)."""
-
-    @abstractmethod
-    def ajustar_clase_o_puntos(
-        self,
-        id_interno: str,
-        clase: str | None = None,
-        puntos: int | None = None,
-    ) -> None:
-        """Ajusta la clase o puntos dentro de la ventana de 24h tras reprogramación."""

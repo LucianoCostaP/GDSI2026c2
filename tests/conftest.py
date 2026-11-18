@@ -199,7 +199,6 @@ def clean_club_data() -> None:
     """
     memory_repository.tabla_eventos_pendientes.clear()
     memory_repository.tabla_eventos_visibles.clear()
-    memory_repository.tabla_eventos_cambios_pendientes.clear()
     if _is_postgres_available():
         try:
             with engine.begin() as conn:

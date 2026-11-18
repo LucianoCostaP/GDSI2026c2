@@ -124,8 +124,7 @@ def event_rescheduled(
     """`event_rescheduled` para todos los socios activados del club cuando el Admin reprograma
     un evento publicado (HU-23B US2 escenario 10, US4 escenario 1; clave
     `event:{event_id}:rescheduled:{reprogramming_id}`). El texto lleva la fecha y la hora
-    nuevas. Se llama después del commit, que nunca se deshace por esto. El código viejo de
-    HU-23 lo llama con el id del cambio aprobado."""
+    nuevas. Se llama después del commit, que nunca se deshace por esto."""
     return _event_to_club(
         db, "event_rescheduled", event_id, f"rescheduled:{reprogramming_id}", now=now
     )

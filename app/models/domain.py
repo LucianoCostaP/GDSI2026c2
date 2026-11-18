@@ -2,7 +2,6 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -18,7 +17,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import ENUM, JSONB, UUID
+from sqlalchemy.dialects.postgresql import ENUM, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
@@ -343,27 +342,17 @@ class EventoVisibleDB(Base):
     descripcion: Mapped[str | None] = mapped_column(Text, nullable=True)
     clase: Mapped[str | None] = mapped_column(String(1), nullable=True)
     puntos: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # HU-23: Estado del evento publicado ('publicado', 'retirado')
+    # Estado del evento: 'publicado' o 'withdrawn' (retiro definitivo de HU-23B US5).
     estado: Mapped[str] = mapped_column(
         String(20), default="publicado", server_default="publicado", nullable=False
     )
     cancelado_por_el_club: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", nullable=False
     )
-    fin_ajuste_clase_puntos: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
     retirado_en: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     retirado_por_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id"), nullable=True
-    )
-    motivo_retiro: Mapped[str | None] = mapped_column(Text, nullable=True)
-    restaurado_en: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    restaurado_por_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id"), nullable=True
     )
     # HU-22 FR-007: 'admin' o 'system', y si la clase o los puntos fueron por defecto.
@@ -389,7 +378,8 @@ class EventoVisibleDB(Base):
 
 
 class EventoCambioPendienteDB(Base):
-    """Cambios de eventos publicados enviados por el club (HU-23)."""
+    """Cambios de eventos publicados enviados por el club. Sin uso desde HU-23B: un cambio del
+    club sobre un publicado se omite (HU-21 escenario 5) y el Admin reprograma."""
 
     __tablename__ = "eventos_cambios_pendientes"
     __table_args__ = (Index("idx_cambios_evento", "id_interno", "club_id"),)
@@ -409,20 +399,12 @@ class EventoCambioPendienteDB(Base):
         DateTime(timezone=True), nullable=True
     )
     lugar: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    tipo: Mapped[str | None] = mapped_column(String(50), nullable=True)
     descripcion: Mapped[str | None] = mapped_column(Text, nullable=True)
     estado_revision: Mapped[str] = mapped_column(
         String(50),
         default="pendiente_revision",
         server_default="pendiente_revision",
         nullable=False,
-    )
-    valores_previos: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    revisado_por_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id"), nullable=True
-    )
-    revisado_en: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
     )
     solicitado_en: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -652,12 +634,8 @@ class EventoVisible(EventoBase):
     puntos: int | None = None
     estado: str = "publicado"
     cancelado_por_el_club: bool = False
-    fin_ajuste_clase_puntos: datetime | None = None
     retirado_en: datetime | None = None
     retirado_por_id: int | None = None
-    motivo_retiro: str | None = None
-    restaurado_en: datetime | None = None
-    restaurado_por_id: int | None = None
     publicado_en: datetime | None = None
     actualizado_en: datetime | None = None
 
@@ -673,7 +651,4 @@ class EventoCambioPendiente:
     tipo: str | None = None
     descripcion: str | None = None
     estado_revision: str = "pendiente_revision"
-    valores_previos: dict[str, Any] | None = None
-    revisado_por_id: int | None = None
-    revisado_en: datetime | None = None
     solicitado_en: datetime | None = None

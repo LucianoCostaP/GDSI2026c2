@@ -15,15 +15,9 @@ from ..repositories.factory import get_evento_repository
 from ..schemas.eventos import (
     AutoPublishResponse,
     ClaseInfoResponse,
-    ClubCancelacionRequest,
-    EventoAjustarClaseRequest,
-    EventoAjustarClaseResponse,
-    EventoCambioActionResponse,
-    EventoCambioReviewResponse,
+    EventoDescarteRequest,
+    EventoDescarteResponse,
     EventoPendientePublicacionResponse,
-    EventoRestaurarResponse,
-    EventoRetiroRequest,
-    EventoRetiroResponse,
     MovedWaveOut,
     PublicarEventoRequest,
     PublicarEventoResponse,
@@ -248,7 +242,7 @@ def ejecutar_publicacion_automatica(
 
 
 # ==============================================================================
-# HU-23: REPROGRAMACIÓN, RETIRO Y RESTAURACIÓN DE EVENTOS (ADMIN)
+# HU-23B: REPROGRAMACIÓN Y RETIRO DE EVENTOS PUBLICADOS; DESCARTE DE PENDIENTES (HU-21)
 # ==============================================================================
 
 
@@ -421,116 +415,6 @@ def reprogramar_evento(
     return out
 
 
-@router.get(
-    "/admin/events/changes",
-    response_model=list[EventoCambioReviewResponse],
-    summary="Listado de solicitudes de cambios de eventos enviadas por clubes",
-    description="Lista los cambios pendientes de revisión con comparativa antes/después (HU-23).",
-)
-@router.get(
-    "/api/admin/events/changes",
-    response_model=list[EventoCambioReviewResponse],
-    include_in_schema=False,
-)
-@router.get(
-    "/api/v1/admin/events/changes",
-    response_model=list[EventoCambioReviewResponse],
-    include_in_schema=False,
-)
-def listar_cambios_pendientes_admin(
-    admin: CurrentAdmin,
-    response: Response,
-    club_id: str | None = Query(None, description="Filtrar por club específico"),
-    service: EventoService = Depends(get_evento_service),
-) -> list[EventoCambioReviewResponse]:
-    cambios = service.listar_cambios_pendientes(club_id=club_id)
-    response.headers["X-Total-Count"] = str(len(cambios))
-    return cambios
-
-
-@router.post(
-    "/admin/events/changes/{id_cambio}/approve",
-    response_model=EventoCambioActionResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Aprobar reprogramación de evento enviada por el club",
-    description="Aplica los cambios al evento publicado y activa la ventana de 24h para ajuste de clase/puntos (HU-23).",
-)
-@router.post(
-    "/api/admin/events/changes/{id_cambio}/approve",
-    response_model=EventoCambioActionResponse,
-    status_code=status.HTTP_200_OK,
-    include_in_schema=False,
-)
-@router.post(
-    "/api/v1/admin/events/changes/{id_cambio}/approve",
-    response_model=EventoCambioActionResponse,
-    status_code=status.HTTP_200_OK,
-    include_in_schema=False,
-)
-def aprobar_cambio_evento(
-    id_cambio: str,
-    admin: CurrentAdmin,
-    db: Annotated[Session, Depends(get_db)],
-    reloj_simulado: str | None = Query(
-        None, description="Reloj simulado para pruebas (formato ISO)"
-    ),
-    service: EventoService = Depends(get_evento_service),
-) -> EventoCambioActionResponse:
-    sim_now = _parse_clock(reloj_simulado)
-    res = service.aprobar_cambio_evento(
-        db=db,
-        cambio_id=id_cambio,
-        admin_id=admin.id,
-        now=sim_now,
-    )
-    db.commit()
-    # Después del commit, y sin poder deshacer la aprobación (HU-23, notificaciones §4).
-    generators.event_rescheduled(db, res.id_interno, res.id_cambio, now=sim_now)
-    return res
-
-
-@router.post(
-    "/admin/events/changes/{id_cambio}/reject",
-    response_model=EventoCambioActionResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Rechazar reprogramación de evento enviada por el club",
-    description="Rechaza la solicitud de reprogramación dejando el evento sin alteraciones (HU-23).",
-)
-@router.post(
-    "/api/admin/events/changes/{id_cambio}/reject",
-    response_model=EventoCambioActionResponse,
-    status_code=status.HTTP_200_OK,
-    include_in_schema=False,
-)
-@router.post(
-    "/api/v1/admin/events/changes/{id_cambio}/reject",
-    response_model=EventoCambioActionResponse,
-    status_code=status.HTTP_200_OK,
-    include_in_schema=False,
-)
-def rechazar_cambio_evento(
-    id_cambio: str,
-    admin: CurrentAdmin,
-    db: Annotated[Session, Depends(get_db)],
-    payload: ClubCancelacionRequest | None = None,
-    reloj_simulado: str | None = Query(
-        None, description="Reloj simulado para pruebas (formato ISO)"
-    ),
-    service: EventoService = Depends(get_evento_service),
-) -> EventoCambioActionResponse:
-    sim_now = _parse_clock(reloj_simulado)
-    motivo = payload.motivo if payload else None
-    res = service.rechazar_cambio_evento(
-        db=db,
-        cambio_id=id_cambio,
-        admin_id=admin.id,
-        motivo=motivo,
-        now=sim_now,
-    )
-    db.commit()
-    return res
-
-
 @router.post(
     "/admin/events/{event_id}/withdraw",
     response_model=WithdrawOut,
@@ -579,96 +463,28 @@ def retirar_evento(
 
 @router.post(
     "/admin/events/{id_externo_o_interno}/discard",
-    response_model=EventoRetiroResponse,
+    response_model=EventoDescarteResponse,
     status_code=status.HTTP_200_OK,
     summary="Descartar un evento pendiente (HU-21)",
-    description="Pasa un evento pendiente a 'descartado'. Un publicado se retira con /withdraw.",
+    description=(
+        "Pasa un evento pendiente a 'descartado': nunca se publica ni lo ven los socios. "
+        "El motivo es opcional. Un publicado se retira con /withdraw (HU-23B)."
+    ),
 )
 def descartar_evento(
     id_externo_o_interno: str,
-    payload: EventoRetiroRequest,
     admin: CurrentAdmin,
     club_id: CurrentAdminClub,
     db: Annotated[Session, Depends(get_db)],
     service: EventoService = Depends(get_evento_service),
-) -> EventoRetiroResponse:
+    payload: EventoDescarteRequest | None = None,
+) -> EventoDescarteResponse:
     res = service.descartar_evento_pendiente(
         db=db,
         club_id=str(club_id),
         id_externo_o_interno=id_externo_o_interno,
         admin_id=admin.id,
-        motivo=payload.motivo,
-    )
-    db.commit()
-    return res
-
-
-@router.post(
-    "/admin/events/{id_externo_o_interno}/restore",
-    response_model=EventoRestaurarResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Restaurar un evento pendiente descartado",
-    description=(
-        "Devuelve un evento pendiente descartado a 'pendiente_definicion_importancia'. Un "
-        "evento retirado no se restaura: el retiro es definitivo (HU-23B)."
-    ),
-)
-def restaurar_evento(
-    id_externo_o_interno: str,
-    admin: CurrentAdmin,
-    club_id: CurrentAdminClub,
-    db: Annotated[Session, Depends(get_db)],
-    service: EventoService = Depends(get_evento_service),
-) -> EventoRestaurarResponse:
-    res = service.restaurar_evento_descartado(
-        db=db,
-        club_id=str(club_id),
-        id_externo_o_interno=id_externo_o_interno,
-        admin_id=admin.id,
-    )
-    db.commit()
-    return res
-
-
-@router.post(
-    "/admin/events/{id_externo_o_interno}/adjust-class",
-    response_model=EventoAjustarClaseResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Ajustar clase o puntos de un evento reprogramado",
-    description="Permite modificar la clase (Partido) o puntos (Institucional) dentro de las 24 horas de aprobada la reprogramación (HU-23).",
-)
-@router.post(
-    "/api/admin/events/{id_externo_o_interno}/adjust-class",
-    response_model=EventoAjustarClaseResponse,
-    status_code=status.HTTP_200_OK,
-    include_in_schema=False,
-)
-@router.post(
-    "/api/v1/admin/events/{id_externo_o_interno}/adjust-class",
-    response_model=EventoAjustarClaseResponse,
-    status_code=status.HTTP_200_OK,
-    include_in_schema=False,
-)
-def ajustar_clase_o_puntos(
-    id_externo_o_interno: str,
-    payload: EventoAjustarClaseRequest,
-    admin: CurrentAdmin,
-    db: Annotated[Session, Depends(get_db)],
-    x_club_id: str | None = Header(None, alias="X-Club-ID"),
-    reloj_simulado: str | None = Query(
-        None, description="Reloj simulado para pruebas (formato ISO)"
-    ),
-    service: EventoService = Depends(get_evento_service),
-) -> EventoAjustarClaseResponse:
-    sim_now = _parse_clock(reloj_simulado)
-    res = service.ajustar_clase_o_puntos_reprogramacion(
-        db=db,
-        club_id=x_club_id,
-        id_externo_o_interno=id_externo_o_interno,
-        clase=str(payload.clase.value) if payload.clase else None,
-        puntos=payload.puntos,
-        admin_id=admin.id,
-        now=sim_now,
+        motivo=payload.motivo if payload else None,
     )
     db.commit()
     return res
