@@ -20,7 +20,7 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 | Create / activate Admin accounts (HU-07 / HU-08) | No | Create: Yes. Activate: invitee |
 | Review events received from the club, discard, confirm historical events, publish (HU-21, 22) | No | Yes |
 | Approve attendance replacements, upload CSV files, see load results (HU-24) | No | Yes |
-| Review club updates, withdraw and restore events (HU-23, outside the MVP) | No | Yes |
+| Reprogram and withdraw published events (HU-23B, outside the MVP) | No | Yes |
 | See the roster receptions from the club and their rejections (HU-43) | No | Yes |
 | Publish a formula of the catalog as the base formula, lock and unlock it (HU-27) | No | Yes |
 | Run ranking calculation (HU-25) | No | Yes |
@@ -36,7 +36,7 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 
 - Every protected action is authorized on the server by role. Hiding a button is not enough.
 - Each Admin and each Socio belongs to **one club** (section 9).
-- **The club** is not a user role: it is an integration client. With its Bearer token it can only send and query its own data through the integration API (data-contract section 5: HU-43, HU-21, HU-23, HU-24). It has no session and no screen.
+- **The club** is not a user role: it is an integration client. With its Bearer token it can only send and query its own data through the integration API (data-contract section 5: HU-43, HU-21, HU-24). It has no session and no screen.
 - A person who is both Socio and Admin has **separate accounts** per door. "Socio access" never grants management access and "Admin access" never accepts DNI or member number.
 
 ## 3. Authentication parameters (defaults)
@@ -64,7 +64,7 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 
 | Entity | States |
 |---|---|
-| Event | `pending importance definition` → `published`; `historical` (past event sent for scoring history, never published; accepts attendance once its class or points are confirmed); `discarded` (pending event the Admin discards, for example because the club cancelled it). HU-23 (outside the MVP) adds `withdrawn` (published event that will not take place, restorable while its start has not passed); no MVP story uses it |
+| Event | `pending importance definition` → `published`; `historical` (past event sent for scoring history, never published; accepts attendance once its class or points are confirmed); `discarded` (pending event the Admin discards, for example because the club cancelled it). HU-23B (outside the MVP, replaces HU-23) adds `withdrawn` (published event that will not take place; final, not restorable, and hidden from Socios and Admins); no MVP story uses it |
 | Socio account | `not activated`, `activated` |
 | Notification (HU-20) | `unread` → `read` |
 | Email of a notification (HU-19) | `pending` → `sent`, `failed` or `not_sent` |
@@ -74,7 +74,6 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 | Rules version (HU-27, HU-28) | `in force`, `superseded` |
 | Formula lock (HU-27) | `unlocked`, `locked` |
 | Load received from the club (HU-43, HU-24) | `receiving` → `processing` → `successful` or `failed`; attendance loads for an event that already has attendance: `pending approval` → `successful` (the previous one becomes `replaced`) or `rejected` |
-| Event change sent by the club (HU-23) | `pending review` → `approved`, `rejected` or `replaced` |
 
 ## 5. Scoring consistency rules
 
@@ -117,7 +116,6 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 | Season start date | none (must be configured) | HU-28 |
 | Wave percentile step | 20 (waves at 20%, 40%, 60%, 80%, 100%); must divide 100 | HU-36 |
 | Minimum publication lead | 48 hours before the event start | HU-21, HU-22 |
-| Window to adjust class or points after a reprogramming | 24 hours | HU-23 (outside the MVP) |
 | Minimum minutes between wave openings | 5 | HU-37 |
 | Row error tolerance in CSV files uploaded by the Admin (records sent by the club have no tolerance: they are rejected one by one) | 5% | HU-24 |
 | Data staleness limit (age of the latest successful roster load) | 24 hours | HU-43, HU-25, HU-36 |

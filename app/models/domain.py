@@ -379,6 +379,11 @@ class EventoVisibleDB(Base):
     actualizado_en: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # HU-23B FR-011: sube con cada reprogramación o retiro; el Admin manda la que vio y
+    # la acción falla si el evento cambió mientras tanto.
+    version: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1", nullable=False
+    )
 
     club: Mapped["Club"] = relationship("Club", back_populates="eventos_visibles")
 

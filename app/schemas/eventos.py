@@ -329,3 +329,34 @@ class EventoAjustarClaseResponse(BaseModel):
     clase: str | None = None
     puntos: int | None = None
     actualizado_en: datetime
+
+
+# ==============================================================================
+# HU-23B: eventos publicados para reprogramar o retirar
+# ==============================================================================
+
+
+class PublishedScheduleOut(BaseModel):
+    """Resumen del cronograma de olas (HU-37) de un Partido publicado."""
+
+    status: str
+    opening_at: datetime
+    closing_at: datetime
+
+
+class PublishedEventOut(BaseModel):
+    """Un evento publicado que todavía no empezó (HU-23B US1)."""
+
+    id_interno: str
+    id_externo: str
+    titulo: str
+    tipo: TipoEvento
+    fecha_hora: datetime
+    lugar: str
+    # Clase (Partido) o puntos (institucional/amateur): el otro va en null.
+    clase: str | None
+    puntos: int | None
+    cancelado_por_el_club: bool
+    # La que el Admin manda al reprogramar o retirar (FR-011).
+    version: int
+    schedule: PublishedScheduleOut | None

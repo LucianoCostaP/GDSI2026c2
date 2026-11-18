@@ -1,6 +1,6 @@
 # Data Contract (inputs from the club)
 
-The system never edits Socio personal data (it is outside the product scope). The club **sends** the data below to an integration API that the system exposes (section 5): the Socio roster (HU-43), events (HU-21, HU-23), attendance and recurring activities (HU-24). The system never calls an API of the club. The only data the Admin enters is the class or the points of an event, and the CSV file used as fallback for HU-24.
+The system never edits Socio personal data (it is outside the product scope). The club **sends** the data below to an integration API that the system exposes (section 5): the Socio roster (HU-43), events (HU-21), attendance and recurring activities (HU-24). The system never calls an API of the club. The only data the Admin enters is the class or the points of an event, and the CSV file used as fallback for HU-24.
 
 Field names are the wire names of the integration API, as implemented in the prototypes `gdsi-api-carga-socios` (roster) and `API-Eventos-Pasion-de-10` (events).
 
@@ -74,7 +74,7 @@ The club sends the records changed since its last successful send (the first sen
 | One upcoming event | HU-21 | `POST /api/v1/eventos` | `201`; `409` if `id_externo` exists |
 | Upcoming events | HU-21 | `POST /api/v1/eventos/batch` | `207` with created, omitted and failed |
 | Historical events | HU-21 | `POST /api/v1/eventos/historicos/batch` | `207`; no 48-hour rule |
-| Event update and cancellation | HU-21, HU-23 | to be added, keyed by `id_externo` | pending event: applied (HU-21); published event: omitted in the MVP, `pending review` with HU-23 |
+| Event update and cancellation | HU-21 | to be added, keyed by `id_externo` | pending event: applied (HU-21); published event: omitted (the Admin reprograms or withdraws it with HU-23B; a cancellation only flags it); withdrawn event: `422 EVENT_WITHDRAWN` |
 | Club's events | HU-21 | `GET /api/v1/eventos` | filters by `id_externo`, `titulo` |
 | Attendance of an event | HU-24 | to be added, paged like the roster full load | per-record rejection; replacement waits for the Admin's approval |
 | Recurring activities | HU-24 | to be added, batched like the roster changes | per-record rejection; valid records applied |

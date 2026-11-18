@@ -1,13 +1,14 @@
 from datetime import UTC, datetime
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Response, status
 from sqlalchemy.orm import Session
 
 from ..audit import record
-from ..auth import CurrentAdmin
+from ..auth import CurrentAdmin, CurrentAdminClub
 from ..config import settings
 from ..db import get_db
+from ..models.enums import TipoEvento
 from ..notifications import generators
 from ..repositories.base import EventoRepository
 from ..repositories.factory import get_evento_repository
@@ -25,7 +26,10 @@ from ..schemas.eventos import (
     EventoRetiroResponse,
     PublicarEventoRequest,
     PublicarEventoResponse,
+    PublishedEventOut,
+    PublishedScheduleOut,
 )
+from ..services import published_events_service
 from ..services.evento_service import EventoService
 
 router = APIRouter(tags=["Gestión y Publicación de Eventos (Admin - HU-22)"])
@@ -242,26 +246,52 @@ def ejecutar_publicacion_automatica(
 
 @router.get(
     "/admin/events/published",
-    response_model=list[dict[str, Any]],
-    summary="Listado de eventos publicados para gestión de administración",
+    response_model=list[PublishedEventOut],
+    summary="Eventos publicados que todavía no empezaron (HU-23B)",
+    description=(
+        "Eventos publicados del club del Admin cuyo inicio no pasó, el más cercano "
+        "primero, con su cronograma de olas si lo tienen. El club sale de la cuenta del "
+        "Admin (decisión 34): no se acepta `club_id`."
+    ),
 )
 @router.get(
     "/api/admin/events/published",
-    response_model=list[dict[str, Any]],
+    response_model=list[PublishedEventOut],
     include_in_schema=False,
 )
 @router.get(
     "/api/v1/admin/events/published",
-    response_model=list[dict[str, Any]],
+    response_model=list[PublishedEventOut],
     include_in_schema=False,
 )
 def listar_eventos_publicados_admin(
-    admin: CurrentAdmin,
-    club_id: str | None = Query(None, description="Filtrar por club específico"),
-    service: EventoService = Depends(get_evento_service),
-) -> list[dict[str, Any]]:
-    cid = club_id or (str(admin.club_id) if admin.club_id else None)
-    return service.repo.find_eventos_visibles_admin(club_id=cid)
+    club_id: CurrentAdminClub,
+    db: Session = Depends(get_db),
+) -> list[PublishedEventOut]:
+    return [
+        PublishedEventOut(
+            id_interno=item.event.id_interno,
+            id_externo=item.event.id_externo,
+            titulo=item.event.titulo,
+            tipo=TipoEvento(item.event.tipo),
+            fecha_hora=item.event.fecha_hora,
+            lugar=item.event.lugar,
+            clase=item.event.clase,
+            puntos=item.event.puntos,
+            cancelado_por_el_club=item.event.cancelado_por_el_club,
+            version=item.event.version,
+            schedule=(
+                PublishedScheduleOut(
+                    status=item.schedule.status.value,
+                    opening_at=item.schedule.opening_at,
+                    closing_at=item.schedule.closing_at,
+                )
+                if item.schedule is not None
+                else None
+            ),
+        )
+        for item in published_events_service.list_upcoming(db, club_id)
+    ]
 
 
 @router.get(

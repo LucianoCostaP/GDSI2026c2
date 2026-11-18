@@ -2,7 +2,7 @@
 
 **Feature Branch**: `hu-23-event-reprogramming`
 **Created**: 2026-10-13 | **Revised**: 2026-10-25 (v3)
-**Status**: Draft
+**Status**: Superseded by [HU-23B](../hu-23b-event-reprogramming-and-withdrawal/spec.md) (decision 62). Kept as reference only; do not implement.
 **Backlog Reference**: HU-23 (Estimate: 5, Priority: Media, MVP: No)
 **Shared rules**: [cross-cutting](../_shared/cross-cutting.md), [data contract](../_shared/data-contract.md)
 **Input**: "As an Admin, I want to update an event from the club or withdraw/restore a published event that will not take place, so that I keep the information correct and prevent cancelled events from affecting the Socios or the scoring."
@@ -120,3 +120,4 @@ Not implemented: the prototype removed its `PUT` endpoint because this story is 
 - v2: added the withdrawal and the restoration, the flag for events the club no longer lists, and the state `withdrawn`.
 - v3: aligned with the backlog (outside the MVP, priority Media). The club sends the updates and cancellations (push); an update of a published event waits for the Admin's approval instead of being fetched on demand.
 - v4: a withdrawal and a restoration also notify the Socios (`event_withdrawn`, `event_restored`), through the same contract as `event_rescheduled`; the separate notification queue of the first implementation is removed (decision 61).
+- v5: superseded by HU-23B (decision 62). HU-23B drops the review of club changes, the 24-hour window, the restoration and the withdrawal reason, and replaces the schedule rules with the merge of waves.
