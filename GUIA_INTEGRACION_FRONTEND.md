@@ -1,4 +1,4 @@
-# Guía de Integración Frontend con Backend: HU-17, HU-22, HU-14, HU-37 y HU-39
+# Guía de Integración Frontend con Backend: HU-17, HU-22, HU-14, HU-37, HU-39 y HU-15
 
 Esta guía documenta la integración del frontend (`tp_gestion_reactjs`) con el backend FastAPI para las historias de usuario:
 - **HU-17 (Consulta de Próximos Eventos)**: Vista para socios autenticados.
@@ -6,6 +6,7 @@ Esta guía documenta la integración del frontend (`tp_gestion_reactjs`) con el 
 - **HU-14 (Puntaje Actual y Posición en el Ranking)**: Vista de solo lectura para socios autenticados (sección 3.C).
 - **HU-37 (Cronograma de Habilitación de Oleadas)**: Vista de gestión para administradores (sección 3.D).
 - **HU-39 (Consulta de Turno Propio Asignado)**: Vista de solo lectura para socios autenticados (sección 3.E).
+- **HU-15 (Historial de Eventos y Reglas Aplicadas)**: Vista de solo lectura para socios autenticados (sección 3.F).
 
 ---
 
@@ -34,7 +35,7 @@ El backend aplica separación estricta por roles en [`app/auth.py`](file:///c:/U
 | Rol Requerido | Flujo de Login | Endpoints Habilitados |
 | :--- | :--- | :--- |
 | **Admin** (`user.role === 'admin'`) | `POST /auth/admin/login/request`<br>`POST /auth/admin/login/verify` | • `GET /admin/events/classes` (HU-22)<br>• `GET /admin/events/pending` (HU-22)<br>• `POST /admin/events/{id}/publish` (HU-22)<br>• `POST /admin/events/auto-publish` (HU-22)<br>• `GET`/`POST /admin/events/{id}/schedule` (HU-37)<br>• `POST /admin/events/{id}/schedule/confirm` (HU-37) |
-| **Socio** (`user.role === 'member'`) | `POST /auth/member/login/request`<br>`POST /auth/member/login/verify` | • `GET /events/upcoming` (HU-17)<br>• `GET /member/events` (HU-17)<br>• `GET /member/scoring/current` (HU-14)<br>• `GET /member/events/{id}/slot` (HU-39) |
+| **Socio** (`user.role === 'member'`) | `POST /auth/member/login/request`<br>`POST /auth/member/login/verify` | • `GET /events/upcoming` (HU-17)<br>• `GET /member/events` (HU-17)<br>• `GET /member/scoring/current` (HU-14)<br>• `GET /member/events/{id}/slot` (HU-39)<br>• `GET /member/events/history` (HU-15)<br>• `GET /member/scoring/rules/{number}` (HU-15) |
 
 > [!WARNING]
 > Si un usuario con rol `admin` intenta consumir `/events/upcoming`, el backend responderá **HTTP 403 Forbidden**. De igual modo, si un `member` intenta consumir `/admin/events/*`, recibirá **HTTP 403 Forbidden**.
@@ -305,6 +306,64 @@ La posición provisional ("el final del ranking") es solo de pantalla y puede re
 }
 ```
   `message` trae el texto para `no_turns`, `no_schedule`, `no_wave` y `closed`, y es `null` en `pending` y `open`, donde la pantalla arma el texto con las fechas. `seconds_until_start` viene solo en `pending`; `seconds_until_closing`, en `pending` y `open`.
+
+---
+
+### F. Endpoints de Socios: Historial de Eventos y Reglas Aplicadas (HU-15)
+
+- **Rutas** (una sola cada una, sin alias `/api/...`):
+  - `GET /member/events/history`: eventos pasados del club a los que el socio asistió, con la versión de reglas vigente en cada uno.
+  - `GET /member/scoring/rules/{number}`: una versión de reglas del club del socio, vigente o reemplazada. Es la que enlaza cada evento del historial.
+- **Autenticación**: Bearer Token (Socio). Un Admin recibe `403 FORBIDDEN`; sin sesión, `401 NOT_AUTHENTICATED`; una cuenta sin club, `403 MEMBER_WITHOUT_CLUB`.
+- **Club**: sale de la cuenta del socio. No se manda `club_id` ni `X-Club-ID` (si llegan, se ignoran).
+- **Reglas de Negocio**:
+  - Solo lectura: no hay otros métodos (`405`). Las dos respuestas van con `Cache-Control: no-store`.
+  - Un evento entra al historial si el club cargó una asistencia definitiva del documento del socio (HU-24). Valen los eventos publicados ya ocurridos y los históricos; una carga pendiente de aprobación o rechazada no cuenta.
+  - Orden: del más reciente al más antiguo; dos eventos a la misma hora, por `id_interno`.
+  - La cuota en mora no oculta el historial. Una cuenta sin socio en el padrón del club ve el historial vacío, no un error.
+  - **Reglas vigentes en un evento**: la versión del club con la `published_at` más reciente que no sea posterior al inicio del evento. Si no había ninguna publicada, `rules_version` es `null` y `rules_message` trae el texto para el socio.
+  - La clase de los partidos no se expone (como en HU-17). `tipo` viene listo para mostrar: `Partido` o `Evento institucional/amateur`.
+- **Respuesta de `GET /member/events/history` (200 OK)**:
+```json
+{
+  "status": "ok",
+  "message": null,
+  "total": 2,
+  "events": [
+    {
+      "id_interno": "INT-EVT-BOCA-PAS-01",
+      "titulo": "Boca Juniors vs. River Plate - Superclásico",
+      "fecha_hora": "2026-11-12T20:00:00Z",
+      "tipo": "Partido",
+      "rules_version": { "number": 2, "published_at": "2026-11-05T12:00:00Z", "url": "/member/scoring/rules/2" },
+      "rules_message": null
+    },
+    {
+      "id_interno": "INT-EVT-BOCA-HIST-01",
+      "titulo": "Boca Juniors vs. Real Madrid - Copa Intercontinental 2000",
+      "fecha_hora": "2025-11-15T20:00:00Z",
+      "tipo": "Partido",
+      "rules_version": null,
+      "rules_message": "No había reglas de puntaje publicadas en ese momento."
+    }
+  ]
+}
+```
+  Sin eventos: `{ "status": "empty", "message": "Todavía no tenés eventos en tu historial. Cuando el club registre tu asistencia a un evento, lo vas a ver acá.", "total": 0, "events": [] }`. La pantalla muestra `message` en vez de una lista vacía.
+- **Respuesta de `GET /member/scoring/rules/{number}` (200 OK)**:
+```json
+{
+  "rules_version": 1,
+  "published_at": "2026-10-16T12:00:00Z",
+  "in_force": false,
+  "formula": { "id": "scoring-model", "version": 1, "name": "…" },
+  "explanation": { "title": "¿Cómo se calcula mi puntaje?", "blocks": [ { "id": "formula", "sections": [ { "heading": "…", "paragraphs": ["…"] } ] } ] }
+}
+```
+  `explanation` es el mismo objeto que devuelve HU-13 (`GET /member/scoring/explanation`) y se muestra con el mismo componente. Nunca incluye quién publicó las reglas. Una versión de otro club o inexistente responde `404` con `detail: { "code": "RULES_VERSION_NOT_FOUND", "message": "No encontramos esa versión de reglas." }`.
+- **`url` del back y ruta del front**: `rules_version.url` es la ruta de la API. La pantalla del front que la muestra es `/ranking/rules/{number}`.
+
+**Implementado en el front**: servicio `src/services/eventHistory.js` (`getEventHistory`, `getRulesVersion`, `rulesLinkLabel`, `rulesPagePath`, `historyErrorMessage`, `rulesErrorMessage`); pantallas `src/pages/EventHistory.jsx` en la ruta `/ranking/history` y `src/pages/MemberRules.jsx` en `/ranking/rules/:number` (solo socios), con acceso desde la barra lateral ("Mi historial"). Los textos están en `specs/hu-15-event-history/spec.md` (sección "Messages and codes").
 
 ---
 

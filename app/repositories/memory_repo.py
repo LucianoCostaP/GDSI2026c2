@@ -46,7 +46,6 @@ class MemoryEventoRepository(EventoRepository):
         # 2. Almacenamiento de tablas físicas
         self.tabla_eventos_pendientes: list[dict[str, Any]] = []
         self.tabla_eventos_visibles: list[dict[str, Any]] = []
-        self.tabla_eventos_cambios_pendientes: list[dict[str, Any]] = []
 
     def get_club_by_token(self, api_token: str) -> ClubDomain | None:
         """Busca el club por su token alfanumérico."""
@@ -204,13 +203,24 @@ class MemoryEventoRepository(EventoRepository):
         club_id: str | None,
         id_externo_o_interno: str,
     ) -> dict[str, Any] | None:
+        target = id_externo_o_interno.strip()
         for p in self.tabla_eventos_pendientes:
-            if (not club_id or str(p["club_id"]) == str(club_id)) and (
-                p["id_externo"] == id_externo_o_interno
-                or p["id_interno"] == id_externo_o_interno
+            if (not club_id or str(p.get("club_id")) == str(club_id)) and (
+                p.get("id_externo") == target
+                or p.get("id_interno") == target
+                or (p.get("titulo") and p["titulo"].strip().lower() == target.lower())
             ):
                 return dict(p)
         return None
+
+    def descartar_evento_pendiente(
+        self,
+        id_interno: str,
+    ) -> None:
+        for p in self.tabla_eventos_pendientes:
+            if p.get("id_interno") == id_interno:
+                p["estado"] = "descartado"
+                break
 
     def is_already_published(
         self,
@@ -300,15 +310,16 @@ class MemoryEventoRepository(EventoRepository):
                 continue
 
             estado = e.get("estado") or e.get("estado_ciclo") or "visible"
-            if estado not in ("visible", "published"):
-                continue
             if estado in (
                 "pendiente_definicion_importancia",
                 "Historico",
                 "historico",
                 "discarded",
                 "withdrawn",
+                "retirado",
             ):
+                continue
+            if estado not in ("visible", "published", "publicado"):
                 continue
 
             fh = e["fecha_hora"]
@@ -330,3 +341,45 @@ class MemoryEventoRepository(EventoRepository):
 
         resultado.sort(key=_get_sort_key)
         return resultado
+
+    def get_evento_visible(
+        self,
+        id_externo_o_interno: str,
+        club_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Obtiene un evento publicado/visible por su id_externo, id_interno o titulo (nombre)."""
+        target = id_externo_o_interno.strip()
+        for v in self.tabla_eventos_visibles:
+            if (not club_id or str(v.get("club_id")) == str(club_id)) and (
+                v.get("id_externo") == target
+                or v.get("id_interno") == target
+                or (v.get("titulo") and v["titulo"].strip().lower() == target.lower())
+            ):
+                return dict(v)
+        return None
+
+    def marcar_cancelado_club(
+        self,
+        club_id: str,
+        id_externo_o_interno: str,
+    ) -> dict[str, Any] | None:
+        """Marca un evento (pendiente o visible) como cancelado por el club."""
+        for v in self.tabla_eventos_visibles:
+            if (not club_id or str(v["club_id"]) == str(club_id)) and (
+                v["id_externo"] == id_externo_o_interno
+                or v["id_interno"] == id_externo_o_interno
+            ):
+                v["cancelado_por_el_club"] = True
+                v["actualizado_en"] = datetime.now(UTC)
+                return dict(v)
+
+        for p in self.tabla_eventos_pendientes:
+            if (not club_id or str(p["club_id"]) == str(club_id)) and (
+                p["id_externo"] == id_externo_o_interno
+                or p["id_interno"] == id_externo_o_interno
+            ):
+                p["cancelado_por_el_club"] = True
+                p["actualizado_en"] = datetime.now(UTC)
+                return dict(p)
+
+        return None

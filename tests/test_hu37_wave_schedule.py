@@ -897,6 +897,7 @@ def test_resegmenting_invalidates_the_schedule(
     assert wave_schedule_service.visible_schedule(db, event.id_interno) is None
     body = client.get(schedule_url(event), headers=boca).json()
     assert body["status"] == "invalidated"
+    assert body["invalidation_reason"] == "waves_regenerated"
     assert body["locked"] is False
     assert [w["state"] for w in body["waves"]] == [None] * len(body["waves"])
     invalidated = audits(db)[-1]

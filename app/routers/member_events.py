@@ -12,9 +12,10 @@ from ..models import Member, User
 from ..models.domain import Club, Socio
 from ..repositories.base import EventoRepository
 from ..repositories.factory import get_evento_repository
+from ..schemas.event_history import EventHistoryResponse
 from ..schemas.eventos import ProximosEventosResponse
 from ..schemas.own_slot import OwnSlotOut
-from ..services import own_slot_service
+from ..services import event_history_service, own_slot_service
 from ..services.evento_service import EventoService
 
 router = APIRouter(tags=["Próximos Eventos (Socio - HU-17)"])
@@ -175,3 +176,30 @@ def consultar_turno_propio(
         _parse_clock(reloj_simulado) or _parse_clock(x_test_clock) or datetime.now(UTC)
     )
     return own_slot_service.own_slot(db, member, club_id, event_id, now)
+
+
+# ==============================================================================
+# ENDPOINT HU-15: Historial de eventos del socio
+# ==============================================================================
+@router.get(
+    "/member/events/history",
+    response_model=EventHistoryResponse,
+    tags=["Historial de eventos (Socio - HU-15)"],
+    summary="Historial de eventos del socio (HU-15)",
+    description=(
+        "Eventos pasados del club del socio con su asistencia registrada, del más reciente "
+        "al más antiguo, con su fecha (UTC) y su tipo. No expone la clase de los partidos. "
+        "El club sale de la cuenta del socio."
+    ),
+)
+def consultar_historial_de_eventos(
+    member: CurrentMember,
+    club_id: CurrentMemberClub,
+    db: Annotated[Session, Depends(get_db)],
+    response: Response,
+) -> EventHistoryResponse:
+    # Solo lectura y siempre al día: sin copias en caché (como HU-13 y HU-14).
+    response.headers["Cache-Control"] = "no-store"
+    return EventHistoryResponse(
+        **event_history_service.member_history(db, member, club_id)
+    )

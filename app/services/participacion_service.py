@@ -11,6 +11,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..audit import record
+from ..core.exceptions import event_withdrawn_error
 from ..models.auth import User
 from ..models.domain import (
     ActividadRecurrenteDB,
@@ -65,6 +66,8 @@ class ParticipacionService:
             .first()
         )
         if evento_vis:
+            if evento_vis.estado in ("withdrawn", "retirado"):
+                raise event_withdrawn_error()
             fh = (
                 evento_vis.fecha_hora
                 if evento_vis.fecha_hora.tzinfo
@@ -860,7 +863,12 @@ class ParticipacionService:
     ) -> list[EventoElegibleAsistenciaResponse]:
         ahora = datetime.now(UTC)
         eventos_visibles = (
-            db.query(EventoVisibleDB).filter(EventoVisibleDB.club_id == club_id).all()
+            db.query(EventoVisibleDB)
+            .filter(
+                EventoVisibleDB.club_id == club_id,
+                EventoVisibleDB.estado.notin_(["withdrawn", "retirado"]),
+            )
+            .all()
         )
         eventos_historicos = (
             db.query(EventoPendienteDB)

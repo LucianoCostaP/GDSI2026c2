@@ -1,5 +1,5 @@
-"""Explicación del ranking (HU-13), puntaje y posición (HU-14), desglose (HU-16) y simulador
-(HU-18) del Socio.
+"""Explicación del ranking (HU-13), puntaje y posición (HU-14), desglose (HU-16), simulador
+(HU-18) y reglas de una versión pasada (HU-15) del Socio.
 
 El club sale siempre de la cuenta del Socio (decisión 34): estos endpoints no leen `club_id` ni
 `X-Club-ID`, aunque lleguen. Una sola ruta, sin alias.
@@ -12,9 +12,15 @@ from sqlalchemy.orm import Session
 
 from ..auth import CurrentMember, CurrentMemberClub
 from ..db import get_db
+from ..schemas.event_history import MemberRulesVersionOut
 from ..schemas.ranking import ScoreBreakdownResponse
 from ..schemas.simulator import SimulationOut, SimulatorStatusOut
-from ..services import formula_service, ranking_service, simulator_service
+from ..services import (
+    event_history_service,
+    formula_service,
+    ranking_service,
+    simulator_service,
+)
 
 router = APIRouter(prefix="/member/scoring", tags=["member scoring"])
 
@@ -68,3 +74,21 @@ def simulate_event(
     """HU-18: simulación de un evento, solo lectura (no guarda nada)."""
     response.headers["Cache-Control"] = "no-store"
     return simulator_service.simulate_event(db, member, club_id, event_id)
+
+
+@router.get("/rules/{number}", response_model=MemberRulesVersionOut)
+def rules_version(
+    number: int,
+    _: CurrentMember,
+    club_id: CurrentMemberClub,
+    db: Db,
+    response: Response,
+) -> MemberRulesVersionOut:
+    """HU-15: una versión de reglas del club del socio, vigente o reemplazada, solo lectura.
+
+    Es la que enlaza cada evento del historial. Otro club o un número inexistente: 404.
+    """
+    response.headers["Cache-Control"] = "no-store"
+    return MemberRulesVersionOut(
+        **event_history_service.member_rules_version(db, club_id, number)
+    )

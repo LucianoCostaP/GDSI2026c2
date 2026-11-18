@@ -800,3 +800,134 @@ def test_edge_case_lead_perdido_no_se_publica_automaticamente(
     assert res_auto.status_code == 200
     assert res_auto.json()["publicados"] == 0
     assert res_auto.json()["omitidos"] == 1
+
+
+def test_subida_evento_individual_60h_se_publica_automaticamente_a_las_12h(
+    db: Session, client: TestClient, outbox: Outbox, admin: User
+):
+    """
+    Consideración 3 (HU-22 Edge Case / HU-21):
+    Al subir un evento mediante la API de clubes (/api/v1/eventos) que comienza 60 horas
+    tras su recepción, su deadline es a las 12 horas (60h - 48h).
+    A las 12 horas (e incluso dentro de la tolerancia de 2 minutos del scheduler por SC-001),
+    la publicación automática se ejecuta con éxito aplicando la clase por defecto (B) y autor 'system'.
+    """
+    from tests.conftest import BOCA_HEADERS
+
+    token = admin_token(client, outbox, admin)
+    ahora = datetime.now(UTC)
+    fh = ahora + timedelta(hours=60)
+
+    # 1. Subida del evento por el club
+    res_upload = client.post(
+        "/api/v1/eventos",
+        json={
+            "id_externo": "EVT-SUBIDA-60H-OK",
+            "titulo": "Partido Subida 60h",
+            "fecha_hora": fh.isoformat(),
+            "lugar": "Estadio Boca Juniors",
+            "tipo": "Partido",
+        },
+        headers=BOCA_HEADERS,
+    )
+    assert res_upload.status_code == 201
+    id_interno = res_upload.json()["id_interno"]
+
+    # 2. Verificar listado de pendientes y deadline
+    res_pending = client.get("/admin/events/pending", headers=bearer(token))
+    assert res_pending.status_code == 200
+    ev = next(e for e in res_pending.json() if e["id_interno"] == id_interno)
+    assert 43100 <= ev["segundos_restantes_deadline"] <= 43200
+    creado_en = datetime.fromisoformat(ev["creado_en"])
+    deadline = datetime.fromisoformat(ev["deadline_publicacion"])
+    # Deadline es min(creado_en + 24h, fecha_hora - 48h) = fecha_hora - 48h = ~12h
+    diff_horas = (deadline - creado_en).total_seconds() / 3600
+    assert 11.9 <= diff_horas <= 12.1
+
+    # 3. Auto-publish ejecutado dentro de la ventana de 12 horas (+1 minuto por scheduler)
+    sim_12h_1m = (creado_en + timedelta(hours=12, minutes=1)).isoformat()
+    res_auto = client.post(
+        f"/admin/events/auto-publish?reloj_simulado={sim_12h_1m}",
+        headers=bearer(token),
+    )
+    assert res_auto.status_code == 200
+    assert res_auto.json()["publicados"] == 1
+    assert id_interno in res_auto.json()["eventos_publicados"]
+
+    # 4. Verificar que se publicó con valores por defecto (Clase B, system)
+    detalles = [d for d in res_auto.json()["detalle"] if d["id_interno"] == id_interno]
+    assert len(detalles) == 1
+    assert detalles[0]["clase"] == "B"
+    assert detalles[0]["publicado_por"] == "system"
+    assert detalles[0]["es_default"] is True
+
+
+def test_subida_evento_individual_antelacion_menor_a_48h_es_rechazado(
+    client: TestClient,
+):
+    """HU-21 Escenario 7: Evento que comienza en menos de 48h es rechazado con 422 e INSUFFICIENT_LEAD."""
+    from tests.conftest import BOCA_HEADERS
+
+    ahora = datetime.now(UTC)
+    res = client.post(
+        "/api/v1/eventos",
+        json={
+            "id_externo": "EVT-MENOS-48H",
+            "titulo": "Partido Inminente",
+            "fecha_hora": (ahora + timedelta(hours=40)).isoformat(),
+            "lugar": "Estadio",
+            "tipo": "Partido",
+        },
+        headers=BOCA_HEADERS,
+    )
+    assert res.status_code == 422
+    data = res.json()
+    assert data["detail"]["code"] == "INSUFFICIENT_LEAD"
+
+
+def test_subida_batch_evento_60h_y_evento_insuficiente(
+    db: Session, client: TestClient, outbox: Outbox, admin: User
+):
+    """
+    Subida en lote (HU-21):
+    Un evento a 60h es creado y su deadline es a las 12h.
+    Un evento a 30h es rechazado con 422 en el reporte multi-status 207.
+    """
+    from tests.conftest import BOCA_HEADERS
+
+    token = admin_token(client, outbox, admin)
+    ahora = datetime.now(UTC)
+
+    lote = [
+        {
+            "id_externo": "EVT-BATCH-60H",
+            "titulo": "Partido Batch 60h",
+            "fecha_hora": (ahora + timedelta(hours=60)).isoformat(),
+            "lugar": "Sede",
+            "tipo": "Partido",
+        },
+        {
+            "id_externo": "EVT-BATCH-30H",
+            "titulo": "Partido Batch 30h",
+            "fecha_hora": (ahora + timedelta(hours=30)).isoformat(),
+            "lugar": "Sede",
+            "tipo": "Partido",
+        },
+    ]
+
+    res_batch = client.post("/api/v1/eventos/batch", json=lote, headers=BOCA_HEADERS)
+    assert res_batch.status_code == 207
+    body = res_batch.json()
+    assert body["resumen"]["creados"] == 1
+    assert body["resumen"]["fallidos"] == 1
+
+    id_interno = body["creados"][0]["id_interno"]
+
+    # Publicar automáticamente a las 12 horas
+    sim_12h = (ahora + timedelta(hours=12)).isoformat()
+    res_auto = client.post(
+        f"/admin/events/auto-publish?reloj_simulado={sim_12h}",
+        headers=bearer(token),
+    )
+    assert res_auto.status_code == 200
+    assert id_interno in res_auto.json()["eventos_publicados"]

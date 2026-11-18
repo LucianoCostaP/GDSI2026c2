@@ -53,7 +53,10 @@ class ScheduleSummaryOut(BaseModel):
     # Cronograma de las olas (HU-37): estado y período de reserva.
     status: WaveScheduleStatus
     opening_at: datetime
+    # Cierre general vigente: el ajustado por una reprogramación (HU-23B), si la hubo.
     closing_at: datetime
+    # Última ola separada tras una fusión (HU-23B US3); `null` si no hubo.
+    merged_into_order: int | None = None
 
 
 class SegmentableEventOut(BaseModel):

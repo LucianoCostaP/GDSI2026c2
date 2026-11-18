@@ -20,8 +20,9 @@
 1. **Given** a logged-in user on any screen, **When** they look at the global navigation menu, **Then** a "Mi Perfil" button is visible.
 2. **Given** a logged-in Socio, **When** they open "Mi Perfil", **Then** they see their name, DNI, member number, registered email, fee status (al día / en mora) and account state, as received from the club (HU-43).
 3. **Given** a logged-in Admin, **When** they open "Mi Perfil", **Then** they see their name, email and role.
-4. **Given** the profile, **When** the user interacts with it, **Then** it is read-only. A Socio who finds wrong data is told to contact the club, which is the source of truth.
+4. **Given** the profile, **When** the user looks at the account data, **Then** it is read-only. A Socio who finds wrong data is told to contact the club, which is the source of truth. The only action in the profile is the access to the notification settings of scenario 6.
 5. **Given** a user without a session, **When** they try to open the profile, **Then** the button is not shown and the server rejects the request.
+6. **Given** a logged-in Socio on their profile, **When** they look at it, **Then** they see the access "Notificaciones por correo", which opens the settings of HU-19. The Admin's profile does not show it.
 
 ---
 
@@ -37,8 +38,9 @@
 
 - **FR-001**: System MUST show a "Mi Perfil" access in the global navigation menu on every screen once logged in.
 - **FR-002**: System MUST show the profile of the session's user, with the fields of scenarios 2 and 3 for each role.
-- **FR-003**: System MUST present the profile as read-only.
+- **FR-003**: System MUST present the account data of the profile as read-only.
 - **FR-004**: System MUST require a valid session, enforced on the server.
+- **FR-005**: System MUST show to the Socio, and only to the Socio, the access to the notification settings (HU-19).
 
 ### Key Entities
 
@@ -54,6 +56,10 @@
 ## Assumptions
 
 - The global navigation menu is part of the application shell (cross-cutting section 7), shared with HU-11.
+
+## Revision Notes (v2)
+
+- The profile is no longer purely read-only: it links to the notification settings of HU-19 (decision 58). The account data stays read-only.
 
 ## Implementation Status
 

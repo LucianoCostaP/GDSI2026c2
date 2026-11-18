@@ -32,6 +32,7 @@ As an Admin, I want to run the Socios ranking calculation, so that the scoring r
 
 ### Edge Cases
 
+- **Notification on completion**: when a run ends `completed`, the notification `ranking_completed` (HU-19, notifications section 2) is generated for the Socios with an entry in it, after the ranking is stored and in force. Generating or emailing it never delays, fails or undoes the ranking, and a `failed` run generates nothing.
 - **Ranking population**: all Socios in the club data with fees up to date at the calculation time, whether or not their account is activated. Overdue Socios are left out but keep their history; once they pay up they return with their accumulated record (inside the windows).
 - **Event types**: attendance at a Partido feeds the attendance pillar; attendance at an Evento institucional/amateur feeds the institutional pillar with the points defined for that event.
 - **Volume**: up to 500,000 Socios (cross-cutting section 6).
