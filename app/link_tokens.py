@@ -40,6 +40,8 @@ def load_link_token[T: LinkToken](
         raise HTTPException(status.HTTP_410_GONE, "TOKEN_USED")
     if link.revoked_at is not None:
         raise HTTPException(status.HTTP_410_GONE, "TOKEN_REPLACED")
-    if link.expires_at is not None and asegurar_utc(link.expires_at) <= datetime.now(UTC):
+    if link.expires_at is not None and asegurar_utc(link.expires_at) <= datetime.now(
+        UTC
+    ):
         raise HTTPException(status.HTTP_410_GONE, "TOKEN_EXPIRED")
     return link
