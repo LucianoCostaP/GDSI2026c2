@@ -5,6 +5,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import ColumnElement, select, update
 from sqlalchemy.orm import Session
 
+from .core.date_utils import asegurar_utc
 from .models import LinkToken
 from .security import generate_token, hash_token
 
@@ -39,6 +40,6 @@ def load_link_token[T: LinkToken](
         raise HTTPException(status.HTTP_410_GONE, "TOKEN_USED")
     if link.revoked_at is not None:
         raise HTTPException(status.HTTP_410_GONE, "TOKEN_REPLACED")
-    if link.expires_at is not None and link.expires_at <= datetime.now(UTC):
+    if link.expires_at is not None and asegurar_utc(link.expires_at) <= datetime.now(UTC):
         raise HTTPException(status.HTTP_410_GONE, "TOKEN_EXPIRED")
     return link

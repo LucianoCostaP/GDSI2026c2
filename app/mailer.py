@@ -233,9 +233,20 @@ def send_email(to: str, subject: str, body: str) -> None:
             print(f"[MAILER ERROR] Error al conectar con Resend API: {err}", flush=True)
             return
 
-    # 6. Fallback: Servidor SMTP estándar
-    if settings.app_env == "production" and is_dummy_email(to):
-        print(f"[MAILER] Omitiendo envío SMTP para correo de prueba: {to}", flush=True)
+    # 6. Fallback: Servidor SMTP (ej. Mailpit en local o SMTP configurado)
+    is_local_smtp = settings.smtp_host.strip().lower() in (
+        "localhost",
+        "127.0.0.1",
+        "::1",
+        "mailpit",
+        "backend-mailpit-1",
+    )
+    if is_dummy_email(to) and not is_local_smtp:
+        print(
+            f"[MAILER] Omitiendo envío SMTP remoto para correo de prueba: {to}",
+            flush=True,
+        )
+        return
         return
     try:
         message = EmailMessage()

@@ -25,6 +25,7 @@ from .routers import (
     admin_notifications,
     admin_participacion,
     admin_ranking,
+    admin_reports,
     admin_rules_simulation,
     admin_segmentation,
     admin_simulator,
@@ -130,6 +131,7 @@ app.include_router(admin_events.router)
 app.include_router(admin_formulas.router)
 app.include_router(admin_participacion.router)
 app.include_router(admin_ranking.router)
+app.include_router(admin_reports.router)
 app.include_router(admin_rules_simulation.router)
 app.include_router(admin_segmentation.router)
 app.include_router(admin_simulator.router)
