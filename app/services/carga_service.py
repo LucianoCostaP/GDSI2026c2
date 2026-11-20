@@ -10,6 +10,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..config import settings
+from ..core.date_utils import asegurar_utc
 from ..models import (
     Club,
     Socio,
@@ -846,7 +847,8 @@ class CargaService:
             )
 
         now = now if now is not None else datetime.now(UTC)
-        antiguedad = (now - ultima_carga.completado_en).total_seconds() / 3600.0
+        completado_en = asegurar_utc(ultima_carga.completado_en)
+        antiguedad = (now - completado_en).total_seconds() / 3600.0
         esta_desactualizado = antiguedad > limite
 
         advertencia = (
