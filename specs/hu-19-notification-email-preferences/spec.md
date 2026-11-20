@@ -69,7 +69,7 @@ As a Socio of the club, I want to be notified when something I care about happen
 
 **Acceptance Scenarios**:
 
-1. **Given** an event published by the Admin or automatically (HU-22), **When** it becomes `published`, **Then** every Socio of the club with an `activated` account gets `event_published` with the text of notifications section 2. A discarded or still pending event generates nothing.
+1. **Given** an event published by the Admin (HU-22; an event that expires without publication generates nothing), **When** it becomes `published`, **Then** every Socio of the club with an `activated` account gets `event_published` with the text of notifications section 2. A discarded or still pending event generates nothing.
 2. **Given** a `confirmed` schedule, **When** the start time of a wave arrives, **Then** the Socios of that wave get `wave_opened`, and the Socios of other waves get nothing at that moment.
 3. **Given** a `draft` or `invalidated` schedule, or a general closing already passed, **When** a wave start arrives, **Then** nothing is generated.
 4. **Given** a wave whose start passed more than the catch-up window ago when the job first sees it, **When** the job runs, **Then** it is skipped and logged.
@@ -174,3 +174,4 @@ Audit: `notification_preference.changed`, `entity = "notification_preference"`, 
 - v1.2: the catalog grows to six types with HU-23 (`event_withdrawn`, `event_restored`) and `event_rescheduled` becomes active; scenario 2, scenario 8 and FR-012 updated (decision 61).
 - v1.4: new type `wave_schedule_confirmed` when the Admin confirms a schedule (HU-37), opening the Socio's slot like `wave_opened`; scenarios 10 and 11 (decision 63).
 - v1.3: HU-23B replaces HU-23: `wave_rescheduled` added, `event_withdrawn` becomes "Evento suspendido" with a generic text, `event_restored` inactive; scenario 2, scenario 8 and FR-012 updated (decision 62).
+- v1.5: HU-22 no longer publishes automatically; `event_published` comes only from a publication by the Admin (decision 65).

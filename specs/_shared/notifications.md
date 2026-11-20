@@ -17,7 +17,7 @@ The catalog lives in the product, like the formula catalog (decision 35): adding
 
 | Key | Name (UI) | Status | Trigger | Recipients | Opens |
 |---|---|---|---|---|---|
-| `event_published` | Nuevo evento publicado | active | An event becomes `published`, manually or automatically (HU-22), for both event types | Every Socio of the club with an `activated` account | The event: upcoming events list (HU-17) with that event highlighted |
+| `event_published` | Nuevo evento publicado | active | An Admin publishes an event (HU-22), for both event types; an event that expires without publication generates nothing | Every Socio of the club with an `activated` account | The event: upcoming events list (HU-17) with that event highlighted |
 | `event_rescheduled` | Evento reprogramado | active with HU-23B | The Admin reprograms the date and time of a published event (HU-23B) | Every Socio of the club with an `activated` account | The event, as above |
 | `event_withdrawn` | Evento suspendido | active with HU-23B | The Admin withdraws a published event (HU-23B). Discarding a pending event (HU-21) generates nothing | Every Socio of the club with an `activated` account | The event, as above |
 | `event_restored` | Evento restaurado | inactive | None: HU-23B has no restoration (decision 62) | — | — |
@@ -78,7 +78,7 @@ Every generator calls the same internal operation:
 
 | Type | `occurrence_key` | Generator |
 |---|---|---|
-| `event_published` | `event:{event_id}:published` | End of the publication flow of HU-22, manual and automatic |
+| `event_published` | `event:{event_id}:published` | End of the publication flow of HU-22 (always by an Admin) |
 | `event_rescheduled` | `event:{event_id}:rescheduled:{reprogramming_id}` | Reprogramming by the Admin in HU-23B |
 | `event_withdrawn` | `event:{event_id}:withdrawn` | Withdrawal of a published event in HU-23B; one per event, since the withdrawal is final |
 | `wave_schedule_confirmed` | `event:{event_id}:schedule:{schedule_id}:confirmed:{confirmed_at}` | Confirmation of the schedule in HU-37; `confirmed_at` (UTC, ISO-8601) makes a new confirmation after a regeneration a new occurrence, while a retry of the same confirmation creates nothing |
@@ -86,7 +86,7 @@ Every generator calls the same internal operation:
 | `wave_opened` | `event:{event_id}:wave:{order}:schedule:{schedule_id}` | Periodic job, below; also a reprogramming in HU-23B that merges waves into a wave already open, with the order of that wave, so the job never repeats it |
 | `ranking_completed` | `ranking:{ranking_id}` | Completion of the run in HU-25; a `failed` ranking generates nothing |
 
-**Wave opening job.** It runs at least every minute, like the publication job of HU-22, and is idempotent. It reads `confirmed` schedules (read-only: HU-37 does not change) and, for each wave whose start has arrived and whose general closing has not passed, calls `notify` for the Socios of that wave. After a reprogramming (HU-23B) it uses the effective closing, and the Socios of the waves merged into a wave count as Socios of that wave. A withdrawn event has no schedule, so it generates nothing. A schedule that is `draft` or `invalidated` generates nothing. A wave whose start is **more than `wave_notification_catchup_minutes` in the past** when the job first sees it (default 60) is skipped and logged, so an outage or the first run after deployment does not flood Socios with old openings.
+**Wave opening job.** It runs at least every minute and is idempotent. It reads `confirmed` schedules (read-only: HU-37 does not change) and, for each wave whose start has arrived and whose general closing has not passed, calls `notify` for the Socios of that wave. After a reprogramming (HU-23B) it uses the effective closing, and the Socios of the waves merged into a wave count as Socios of that wave. A withdrawn event has no schedule, so it generates nothing. A schedule that is `draft` or `invalidated` generates nothing. A wave whose start is **more than `wave_notification_catchup_minutes` in the past** when the job first sees it (default 60) is skipped and logged, so an outage or the first run after deployment does not flood Socios with old openings.
 
 ## 5. Email delivery
 
