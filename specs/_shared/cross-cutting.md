@@ -5,7 +5,7 @@ Rules that apply to every spec. Individual specs reference this file instead of 
 ## 1. Time zone
 
 - All business rules and all displayed dates and times use **America/Argentina/Buenos_Aires**. Values are stored in UTC.
-- This applies to the 24-hour publication window (HU-22), the season cut-off (HU-28), wave schedules (HU-37) and countdowns (HU-39).
+- This applies to the publication deadline (HU-22), the season cut-off (HU-28), wave schedules (HU-37) and countdowns (HU-39).
 - Countdowns are computed from the **server** clock, never the device clock.
 
 ## 2. Roles and permissions
@@ -64,7 +64,7 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 
 | Entity | States |
 |---|---|
-| Event | `pending importance definition` → `published`; `historical` (past event sent for scoring history, never published; accepts attendance once its class or points are confirmed); `discarded` (pending event the Admin discards, for example because the club cancelled it). HU-23B (outside the MVP, replaces HU-23) adds `withdrawn` (published event that will not take place; final, not restorable, and hidden from Socios and Admins); no MVP story uses it |
+| Event | `pending importance definition` → `published`, or → `expired` when its publication deadline passes without publication (HU-22; final, never visible to Socios, never scored, not publishable; derived from the deadline, no job needed); `historical` (past event sent for scoring history, never published; accepts attendance once its class or points are confirmed); `discarded` (pending event the Admin discards, for example because the club cancelled it). HU-23B (outside the MVP, replaces HU-23) adds `withdrawn` (published event that will not take place; final, not restorable, and hidden from Socios and Admins); no MVP story uses it |
 | Socio account | `not activated`, `activated` |
 | Notification (HU-20) | `unread` → `read` |
 | Email of a notification (HU-19) | `pending` → `sent`, `failed` or `not_sent` |
@@ -102,17 +102,17 @@ There are two roles: **Socio** (a club member) and **Admin** (manages the system
 - Seed the first Admin account, assigned to the club it manages (the club is chosen at startup, by its code, and is required).
 - Issue the club's integration token (stored hashed) and hand it to the club through a secure channel.
 - Ship the formula catalog (first entry: `scoring-model.md` with its defaults and its explanation template, see its section 7), ready for the Admin of each club to publish a formula and create its rules version 1 (HU-27). Nothing is seeded as a rules version.
-- Seed settings: default event class, default institutional event points, season start date, wave percentile step, minimum wave step, minimum publication lead, roster staleness limit, and the position settings of HU-18 (section 8).
+- Seed settings: class and points proposed for historical events, season start date, wave percentile step, minimum wave step, minimum publication lead, roster staleness limit, and the position settings of HU-18 (section 8).
 - Deliver the application shell with the global navigation menu that HU-11 relies on, and the Socio and management home screens.
 - Configure `FRONTEND_BASE_URL` in each environment, so the notification emails (HU-19) carry a working button.
-- Run the dispatch worker of notification emails and the wave-opening job (HU-19) with the same scheduler as the automatic publication of HU-22.
+- Run the dispatch worker of notification emails and the wave-opening job (HU-19). HU-22 needs no job: there is no automatic publication and expiry is derived from the deadline (decision 65).
 
 ## 8. Settings registry
 
 | Setting | Default | Used by |
 |---|---|---|
-| Default class for Partido events when not defined in time | Clase B | HU-22 |
-| Default points for institutional/amateur events when not defined in time | 20 | HU-22 |
+| Class proposed when the Admin confirms a historical Partido | Clase B | HU-21 |
+| Points proposed when the Admin confirms a historical institutional/amateur event | 20 | HU-21 |
 | Season start date | none (must be configured) | HU-28 |
 | Wave percentile step | 20 (waves at 20%, 40%, 60%, 80%, 100%); must divide 100 | HU-36 |
 | Minimum publication lead | 48 hours before the event start | HU-21, HU-22 |

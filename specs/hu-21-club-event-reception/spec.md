@@ -1,7 +1,7 @@
 # Feature Specification: Receive Events Sent by the Club
 
 **Feature Branch**: `hu-21-club-event-reception`
-**Created**: 2026-10-11 | **Revised**: 2026-10-25 (v4)
+**Created**: 2026-10-11 | **Revised**: 2026-11-20 (v4.2)
 **Status**: Draft
 **Backlog Reference**: HU-21 (Estimate: 5, Priority: Alta, MVP: Yes)
 **Shared rules**: [cross-cutting](../_shared/cross-cutting.md), [data contract](../_shared/data-contract.md)
@@ -23,12 +23,12 @@ The club organizes the events and is the source of truth. It **sends** them to e
 2. **Given** a registered upcoming event, **When** the Admin opens the received events, **Then** they see it with the time left to complete its publication within the deadline of HU-22.
 3. **Given** a registered event, **When** a Socio opens the events list (HU-17), **Then** the event is not visible.
 4. **Given** an event sent by the club, **When** the Admin looks at its date, time, venue and type, **Then** they are read-only, to stay faithful to the official source. The Admin can only define the class of a Partido or the points of an institutional/amateur event (HU-22).
-5. **Given** an event already registered and published, **When** the club sends it again, **Then** it is not duplicated: the batch reports it as omitted (a single-event send answers `409 CONFLICT`).
+5. **Given** an event already registered and published (or `expired`, HU-22), **When** the club sends it again, **Then** it is not duplicated: the batch reports it as omitted (a single-event send answers `409 CONFLICT`).
 6. **Given** an event still in `pending importance definition`, **When** the club sends an update of it (same `id_externo`), **Then** its date, time and venue are updated with the club's data, and the deadline to publish it is neither restarted nor changed.
 7. **Given** an upcoming event whose start is less than 48 hours after its reception, **When** the club sends it, **Then** it is rejected, never registered: the API answers `422` with the code `INSUFFICIENT_LEAD` and the reason, and the rejection appears in the Admin's reception log. There is no "registered as non-publishable" alternative.
 8. **Given** an update of a pending event that would make it start less than 48 hours from now, **When** it is received, **Then** the change is not applied, the Admin is informed, and they can choose to discard the event.
 9. **Given** an event without valid or complete date, time, venue or type, **When** the club sends it, **Then** the API rejects it with the validation reason and no incomplete record is created; in a batch, the other events are processed normally.
-10. **Given** an event in `pending importance definition`, **When** the club sends its cancellation, **Then** the Admin is informed, the automatic publication of HU-22 is withheld, and the Admin can discard it (state `discarded`): it is never visible to Socios (HU-17) and never scored.
+10. **Given** an event in `pending importance definition`, **When** the club sends its cancellation, **Then** the Admin is informed and can discard it (state `discarded`); if nobody discards it, it becomes `expired` at its deadline (HU-22). Either way it is never visible to Socios (HU-17) and never scored.
 11. **Given** events whose start already passed, **When** the club sends them through the historical endpoint, **Then** they are registered as `historical` without the 48-hour rule, never published and never visible to Socios. The Admin defines the class of each Partido and the points of each institutional/amateur event, prefilled with the defaults (Clase B, 20 points), and confirms them; once confirmed they accept attendance (HU-24).
 12. **Given** a request without a valid token, **When** it is received, **Then** it is rejected with `401 UNAUTHORIZED` and no data changes. The token never appears in logs or error messages.
 13. **Given** any reception, update, validation rejection, discard or historical registration, **When** it happens, **Then** it is recorded in the audit log.
@@ -55,21 +55,21 @@ The club organizes the events and is the source of truth. It **sends** them to e
 - **FR-005**: System MUST keep the club's data read-only, and apply the club's updates to a pending event without restarting its deadline, unless the new start is less than 48 hours away.
 - **FR-006**: System MUST reject upcoming events (of either type) starting less than 48 hours after reception, and events with incomplete or invalid data, stating the reason.
 - **FR-007**: System MUST be idempotent by `id_externo`: a resent existing event is never duplicated.
-- **FR-008**: System MUST flag a pending event cancelled by the club, withhold its automatic publication and let the Admin discard it.
+- **FR-008**: System MUST flag a pending event cancelled by the club and let the Admin discard it.
 - **FR-009**: System MUST register historical events without the 48-hour rule, and let the Admin confirm their class or points (prefilled with the defaults) before they accept attendance.
 - **FR-010**: System MUST authenticate the club with the token shared with HU-43 and HU-24, stored hashed and never logged.
 - **FR-011**: System MUST audit every reception, update, rejection, discard and historical registration.
 
 ### Key Entities
 
-- **Event**: `id_externo` (unique per club), title, description (optional), start date and time, venue, type (`Partido` / `Evento institucional/amateur`), class (Partido only) or points (institutional/amateur only), class or points confirmed (historical events), state (`pending importance definition` / `published` / `historical` / `discarded`), received at, last updated at, cancelled by the club (flag).
+- **Event**: `id_externo` (unique per club), title, description (optional), start date and time, venue, type (`Partido` / `Evento institucional/amateur`), class (Partido only) or points (institutional/amateur only), class or points confirmed (historical events), state (`pending importance definition` / `published` / `expired` / `historical` / `discarded`), received at, last updated at, cancelled by the club (flag).
 
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes
 
 - **SC-001**: 100% of valid upcoming events received start in `pending importance definition` with the reception time recorded.
-- **SC-002**: 0 events in `pending importance definition`, `historical` or `discarded` are visible to Socios.
+- **SC-002**: 0 events in `pending importance definition`, `expired`, `historical` or `discarded` are visible to Socios.
 - **SC-003**: 0 upcoming events are registered with a start less than 48 hours after reception.
 - **SC-004**: 0 events are registered twice.
 
@@ -102,3 +102,4 @@ Gaps to close when porting it to this backend:
 - v3.4: events imported by calling the club API.
 - v4: aligned with the backlog: the club sends the events (push); the Admin no longer selects events to import; updates of pending events and cancellations come from the club; historical events arrive by their own endpoint. Contract aligned with the prototype.
 - v4.1: HU-23B replaces HU-23 (decision 62): the club's changes to published events stay omitted.
+- v4.2: no automatic publication (decision 65): a pending event not published by its deadline becomes `expired` (HU-22) and the club's resends and updates of it are omitted like those of a published event; a cancellation no longer withholds anything.

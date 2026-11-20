@@ -62,7 +62,7 @@ Accepts one event. A future event is eligible only when its start time is at lea
 
 On success, create the platform event as `pendiente de definición de importancia` and return `201 Created` with `id_interno`, `id_externo`, `estado`, and `fecha_recepcion`. It is not visible to members until publication.
 
-If `id_externo` already exists, a pending event is updated in place subject to validation and the 48-hour guard; preserve its original receipt time, publication deadline, and internal ID. If it is published, historical, or discarded, return `409 Conflict`. No implicit reactivation or replacement occurs.
+If `id_externo` already exists, a pending event is updated in place subject to validation and the 48-hour guard; preserve its original receipt time, publication deadline, and internal ID. If it is published, expired, historical, or discarded, return `409 Conflict`. No implicit reactivation or replacement occurs.
 
 #### Create a batch of future events
 
@@ -80,7 +80,7 @@ Returns `200 OK` with a JSON array of events registered for the authenticated cl
 
 `PUT /api/v1/eventos/{id_interno}`
 
-Updates a pending event only. The body may change `fecha_hora`, `lugar`, and `descripcion`; include each field being changed, and use `descripcion: null` to clear it. `titulo`, `tipo`, and `id_externo` are immutable through this operation. Return `200 OK` with the updated event. Published, historical, or discarded events return `409 Conflict`.
+Updates a pending event only. The body may change `fecha_hora`, `lugar`, and `descripcion`; include each field being changed, and use `descripcion: null` to clear it. `titulo`, `tipo`, and `id_externo` are immutable through this operation. Return `200 OK` with the updated event. Published, expired, historical, or discarded events return `409 Conflict`.
 
 A proposed update must leave at least 48 hours before start. If the event has already started or is no longer pending, reject without changing it. Accepted changes preserve receipt time and publication deadline and are audited. A changed `tipo` returns `422 Unprocessable Entity`; attempts to change other immutable fields are rejected. A no-op returns `200 OK` and indicates no fields changed.
 
@@ -102,10 +102,11 @@ Accepts a JSON array of already-started event objects using the same resource fi
 |---|---|---|
 | `pendiente de definición de importancia` | `pending importance definition` | Accepted future event, hidden from members. Admin assigns a class for `Partido` or points for `Institucional`. Pending source data can be refreshed without resetting receipt time/deadline. |
 | `publicado` | `published` | Visible to members. Platform owns publication and scoring settings. A published `Partido` remains visible until after its start; an institutional event remains visible through the end of its event day. Source-field PUT updates are not accepted. |
+| `vencido` | `expired` | Pending event whose publication deadline passed without an Admin publishing it (HU-22, decision 65). Final: hidden from members, cannot score, cannot be published, updated, cancelled or discarded. Create retry with the same `id_externo` cannot restore it. |
 | `histórico` | `historical` | Past event imported as history; hidden from members and available for attendance recording. |
 | `descartado` | `discarded` | Admin discarded a pending/cancelled event; hidden and cannot score. Create retry cannot restore it. |
 
-Cancellation flags a pending event for administrator review and withholds it from automatic publication until disposition. Omission from a partial submission is not evidence of cancellation. Publication timing and defaults follow HU-22 and the source API: automatic publication at the earlier of 24 hours after import or 48 hours before start; default `B` for matches and 20 points for institutional events. Creation does not mean publication.
+Cancellation flags a pending event for administrator review until the Admin discards it or its deadline passes. Omission from a partial submission is not evidence of cancellation. Publication follows HU-22: only an Admin publishes, before the deadline (the earlier of 24 hours after receipt or 48 hours before start); there is no automatic publication and no default class or points, and an event not published by then becomes `vencido` / `expired` (decision 65). Creation does not mean publication.
 
 ### Event errors and audit
 

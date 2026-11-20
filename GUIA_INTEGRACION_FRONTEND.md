@@ -34,7 +34,7 @@ El backend aplica separación estricta por roles en [`app/auth.py`](file:///c:/U
 
 | Rol Requerido | Flujo de Login | Endpoints Habilitados |
 | :--- | :--- | :--- |
-| **Admin** (`user.role === 'admin'`) | `POST /auth/admin/login/request`<br>`POST /auth/admin/login/verify` | • `GET /admin/events/classes` (HU-22)<br>• `GET /admin/events/pending` (HU-22)<br>• `POST /admin/events/{id}/publish` (HU-22)<br>• `POST /admin/events/auto-publish` (HU-22)<br>• `GET`/`POST /admin/events/{id}/schedule` (HU-37)<br>• `POST /admin/events/{id}/schedule/confirm` (HU-37) |
+| **Admin** (`user.role === 'admin'`) | `POST /auth/admin/login/request`<br>`POST /auth/admin/login/verify` | • `GET /admin/events/classes` (HU-22)<br>• `GET /admin/events/pending` (HU-22)<br>• `POST /admin/events/{id}/publish` (HU-22)<br>• ~~`POST /admin/events/auto-publish`~~ (a eliminar, decisión 65)<br>• `GET`/`POST /admin/events/{id}/schedule` (HU-37)<br>• `POST /admin/events/{id}/schedule/confirm` (HU-37) |
 | **Socio** (`user.role === 'member'`) | `POST /auth/member/login/request`<br>`POST /auth/member/login/verify` | • `GET /events/upcoming` (HU-17)<br>• `GET /member/events` (HU-17)<br>• `GET /member/scoring/current` (HU-14)<br>• `GET /member/events/{id}/slot` (HU-39)<br>• `GET /member/events/history` (HU-15)<br>• `GET /member/scoring/rules/{number}` (HU-15) |
 
 > [!WARNING]
@@ -84,6 +84,7 @@ El backend aplica separación estricta por roles en [`app/auth.py`](file:///c:/U
   - `club_id`: Filtro por UUID de club
   - `limit`: Tamaño de página (por defecto 50, máximo 500)
   - `offset`: Cantidad de eventos a saltear (por defecto 0)
+- **Vencimiento (decisión 65)**: no hay publicación automática. Si nadie publica el evento antes de `deadline_publicacion`, queda vencido (`expired`) y ya no se puede publicar. Mostrar el tiempo restante de forma destacada. Hoy el backend todavía lista los vencidos con `plazo_expirado: true`; cuando se cierre la brecha dejan de aparecer en esta lista (ver `docs/brechas-codigo.md`).
 - **Paginación**: la respuesta es la página pedida, ordenada por deadline (el más urgente primero). El total de pendientes viene en el header `X-Total-Count`.
 - **Autenticación**: Bearer Token (Admin)
 - **Respuesta (200 OK)**:
@@ -133,9 +134,12 @@ El backend aplica separación estricta por roles en [`app/auth.py`](file:///c:/U
   ```
 - **Errores Posibles**:
   - `409 Conflict`: El evento ya fue publicado previamente (inmutable).
-  - `422 Unprocessable Entity`: Faltan menos de 48 horas para el inicio del evento, o se mezclaron clase y puntos.
+  - `422 Unprocessable Entity`: Faltan menos de 48 horas para el inicio del evento, o se mezclaron clase y puntos. Por la decisión 65 también se va a rechazar un evento cuyo plazo de publicación venció (pendiente en el backend).
 
-#### 4. Disparar Publicación Automática
+#### 4. ~~Disparar Publicación Automática~~ (a eliminar)
+> [!WARNING]
+> Por la decisión 65 ya no hay publicación automática: un evento que nadie publica antes del plazo queda vencido. Este endpoint sigue existiendo en el código hasta que se cierre la brecha, pero el front **no debe usarlo** ni mostrar un botón para dispararlo.
+
 - **Ruta**: `POST /admin/events/auto-publish`
 - **Autenticación**: Bearer Token (Admin)
 - **Respuesta (200 OK)**:
@@ -412,12 +416,6 @@ export function publishEvent(idInternoOExterno, { clase, puntos }) {
   return apiPost(`/admin/events/${encodeURIComponent(idInternoOExterno)}/publish`, body)
 }
 
-/**
- * HU-22: Dispara la publicación automática para eventos cuyo deadline venció.
- */
-export function triggerAutoPublish() {
-  return apiPost('/admin/events/auto-publish')
-}
 ```
 
 ### `src/services/memberEvents.js`

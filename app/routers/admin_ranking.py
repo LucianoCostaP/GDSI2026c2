@@ -1,22 +1,27 @@
-"""Cálculo del ranking de socios (HU-25).
+"""Cálculo del ranking de socios (HU-25) y rankings por pilar (HU-44).
 
 El club sale siempre de la cuenta del Admin (decisión 34): este endpoint no lee `club_id`.
 """
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from ..auth import CurrentAdmin, CurrentAdminClub
 from ..db import get_db
 from ..models import Club, Ranking, RankingState, RulesVersion, utcnow
 from ..schemas.ranking import (
+    PillarRankingsOut,
     PreflightWarningOut,
     RankingPreflightOut,
     RankingRunOut,
 )
-from ..services import ranking_preflight_service, ranking_run_service
+from ..services import (
+    pillar_ranking_service,
+    ranking_preflight_service,
+    ranking_run_service,
+)
 from ..services.formula_service import error
 
 router = APIRouter(prefix="/admin/ranking", tags=["admin ranking"])
@@ -78,3 +83,13 @@ def latest_ranking_run(club_id: CurrentAdminClub, db: Db) -> RankingRunOut:
             "Todavía no se calculó ningún ranking.",
         )
     return _run_out(db, ranking)
+
+
+@router.get("/pillars")
+def pillar_rankings(
+    club_id: CurrentAdminClub, db: Db, response: Response
+) -> PillarRankingsOut:
+    """Top 10 de cada pilar (Asistencia, Participación institucional, Antigüedad y edad) del
+    ranking vigente (HU-44). Solo lectura: no guarda nada ni se audita."""
+    response.headers["Cache-Control"] = "no-store"
+    return pillar_ranking_service.get_pillar_rankings(db, club_id)

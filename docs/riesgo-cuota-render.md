@@ -1,18 +1,19 @@
 # Riesgo: quedarnos sin cuota gratuita de Render (y de Neon) por los procesos periódicos
 
 **Estado**: abierto · **Registrado**: 2026-11-18 · **Dueño**: equipo de backend
-**Relacionado**: `docs/brechas-codigo.md` (falta de scheduler para el aviso de oleadas y la publicación automática), HU-19 (notificaciones §4, trabajo de apertura de olas), HU-22 (publicación automática, FR-005 y SC-001), `render.yaml`.
+**Relacionado**: `docs/brechas-codigo.md` (falta de scheduler para el aviso de oleadas), HU-19 (notificaciones §4, trabajo de apertura de olas), `render.yaml`.
+
+> **Actualización 2026-11-20 (decisión 65)**: HU-22 ya no publica automáticamente. Un evento pendiente que nadie publicó antes de su plazo queda `expired` (vencido), y eso se deriva del plazo al leer, sin ningún proceso periódico. El único trabajo periódico que queda es el aviso de apertura de oleadas; las partes de este documento sobre la publicación automática se quitaron.
 
 ## 1. Contexto
 
-Dos procesos del sistema dependen de que "algo" los corra solo, cada cierto tiempo:
+Un proceso del sistema depende de que "algo" lo corra solo, cada cierto tiempo:
 
 | Proceso | Código | Qué pide el spec | Qué pasa si se atrasa |
 |---|---|---|---|
 | Aviso de apertura de oleada (`wave_opened`) | `generators.open_waves`, hoy solo vía `POST /admin/notifications/wave-openings/run` | "Corre al menos cada minuto" (notificaciones §4) | Hasta `wave_notification_catchup_minutes` (60 min) se avisa tarde; pasado eso, la ola **se saltea para siempre** a propósito |
-| Publicación automática de eventos pendientes | `EventoService.publicar_eventos_automaticos`, hoy solo vía `POST /admin/events/auto-publish` (requiere sesión de Admin) | Publicar dentro de los 2 minutos del vencimiento (HU-22 SC-001) | Si el plazo era "48 h antes del inicio" y se pasa la tolerancia fija de **2 minutos**, el evento se omite y **no se publica nunca solo** |
 
-Hoy no corre ninguno de los dos automáticamente. La forma natural de arreglarlo, "un proceso que corra cada minuto" (un bucle dentro del servidor o un cron externo que llame a la app), choca con los planes gratuitos donde está desplegada la app.
+Hoy no corre automáticamente. La forma natural de arreglarlo, "un proceso que corra cada minuto" (un bucle dentro del servidor o un cron externo que llame a la app), choca con los planes gratuitos donde está desplegada la app.
 
 ## 2. Los planes gratuitos (verificado el 2026-11-18)
 
@@ -41,7 +42,7 @@ Estimación sin contar el tráfico real de usuarios, que suma encima:
 
 | Forma | Render (h/mes) | Neon (CU-h/mes, 0,25 CU) | ¿Entra en la cuota? |
 |---|---|---|---|
-| Bucle dentro del servidor, sin nada externo | ~0 extra, pero **no corre mientras duerme** | ~0 extra | Sí, pero no resuelve nada: la ola se saltea y el evento se omite igual |
+| Bucle dentro del servidor, sin nada externo | ~0 extra, pero **no corre mientras duerme** | ~0 extra | Sí, pero no resuelve nada: la ola se saltea igual |
 | Cron externo **cada 1 minuto** | ~744 (nunca se duerme) | ~186 (nunca se suspende) | **Render al límite (6 h de margen); Neon se agota alrededor del día 16** |
 | Cron externo **cada 10 minutos** | ~744: cada llamada lo mantiene 15 min despierto, **también nunca se duerme** | ~90–95 (despierta ~5–6 min de cada 10) | **Render al límite; Neon al borde** |
 | Cron externo **cada 30 minutos** | ~390 (≈16 min despierto de cada 30) | ~35–40 | Sí, con margen |
@@ -63,22 +64,21 @@ Conclusión clave: **cualquier intervalo de 15 minutos o menos equivale, en Rend
 - Sumar un monitor de uptime ("keep-alive") que haga ping a la app.
 - Sumar otro servicio gratuito al mismo workspace de Render.
 - Un pico de tráfico real sostenido (por ejemplo, la semana de un partido importante) sumado al cron.
-- Bajar `wave_notification_catchup_minutes` o mantener la tolerancia de 2 minutos de HU-22, porque obligan a correr más seguido.
+- Bajar `wave_notification_catchup_minutes`, porque obliga a correr más seguido.
 
 ## 4. Plan de prevención
 
-Objetivo: que los procesos periódicos funcionen bien **aunque corran poco seguido y con atraso**, para poder usar un intervalo que deje dormir a Render y a Neon.
+Objetivo: que el aviso de oleadas funcione bien **aunque corra poco seguido y con atraso**, para poder usar un intervalo que deje dormir a Render y a Neon.
 
-### P1. Diseñar los trabajos para que toleren atraso (cambios de código y de spec)
+### P1. Diseñar el trabajo para que tolere atraso
 
-1. **Publicación automática con margen (HU-22)**: no esperar a exactamente "48 h antes del inicio". El plazo pasa a ser `min(creado_en + 24 h, fecha_hora − 48 h − margen)`, con un `auto_publish_margin_minutes` configurable (sugerido 90). Un cron atrasado igual publica con al menos 48 h de antelación, y la tolerancia fija de 2 minutos deja de ser necesaria. Hay que actualizar HU-22 SC-001: "se publica entre el vencimiento y el vencimiento + intervalo del cron".
-2. **Aviso de oleada**: mantener `wave_notification_catchup_minutes` mayor que el intervalo del cron más el arranque en frío. Con un cron de 30 minutos, 60 alcanza. Documentarlo junto al setting.
-3. **Ambos son idempotentes** (ya lo son: `notify` no duplica y la publicación cambia de estado). Correrlos de más nunca duplica nada, así que el cron puede reintentar sin riesgo.
+1. **Aviso de oleada**: mantener `wave_notification_catchup_minutes` mayor que el intervalo del cron más el arranque en frío. Con un cron de 30 minutos, 60 alcanza. Documentarlo junto al setting.
+2. **Es idempotente** (ya lo es: `notify` no duplica). Correrlo de más nunca duplica nada, así que el cron puede reintentar sin riesgo.
+3. **El vencimiento de eventos no necesita cron** (decisión 65): un evento pendiente pasa a `expired` en cuanto vence su plazo, derivado al leer.
 
 ### P2. Un solo endpoint para el cron, sin sesión de Admin
 
-- `POST /internal/jobs/run`, protegido con un token secreto (`JOBS_TOKEN` en las variables de Render, comparado en tiempo constante). Corre, en orden, la publicación automática y el aviso de oleadas de **todos** los clubes, y devuelve cuántos eventos publicó y cuántos avisos generó.
-- Una sola llamada despierta la app una sola vez para ambos trabajos.
+- `POST /internal/jobs/run`, protegido con un token secreto (`JOBS_TOKEN` en las variables de Render, comparado en tiempo constante). Corre el aviso de oleadas de **todos** los clubes y devuelve cuántos avisos generó.
 - No usar `/healthz` ni `/readyz` para esto. `/readyz` consulta la base, así que un monitor que lo llame mantiene despierto a Neon.
 
 ### P3. Intervalo del cron: 30 minutos
@@ -89,7 +89,7 @@ Objetivo: que los procesos periódicos funcionen bien **aunque corran poco segui
 
 ### P4. Despertar oportunista
 
-Cuando la app ya está despierta por tráfico real, aprovecharla: un middleware que corra los trabajos como mucho una vez por minuto, en segundo plano y sin demorar la respuesta. No consume horas extra (la app ya estaba despierta) y acerca el aviso al minuto exacto cuando hay usuarios. El cron de P3 queda como red de seguridad para cuando no hay tráfico.
+Cuando la app ya está despierta por tráfico real, aprovecharla: un middleware que corra el trabajo como mucho una vez por minuto, en segundo plano y sin demorar la respuesta. No consume horas extra (la app ya estaba despierta) y acerca el aviso al minuto exacto cuando hay usuarios. El cron de P3 queda como red de seguridad para cuando no hay tráfico.
 
 ### P5. Higiene del workspace
 
@@ -108,28 +108,26 @@ Qué hacer si el riesgo igual se materializa o se acerca.
 | CU-hora consumidas | Consola de Neon, *Usage* | Más de 60 CU-h antes del día 20 |
 | El cron no está corriendo | Historial de cron-job.org o de GitHub Actions; respuesta de `/internal/jobs/run` | Dos corridas seguidas fallidas |
 | Avisos salteados por la ventana de recuperación | Logs de la app: `open_waves: se saltea la ola` | Cualquier aparición |
-| Eventos omitidos por la publicación automática | Respuesta de `/internal/jobs/run` (`omitidos > 0`) | Cualquier aparición |
 
 Revisar el uso una vez por semana. Durante el mes de un partido importante, dos veces por semana.
 
 ### Respuesta escalonada
 
 1. **Consumo por encima del umbral, sin caída**:
-   - Estirar el intervalo del cron (30 → 60 minutos). Con P1 aplicado no se pierden avisos ni publicaciones; solo llegan más tarde.
+   - Estirar el intervalo del cron (30 → 60 minutos). Con P1 aplicado no se pierden avisos; solo llegan más tarde.
    - Quitar cualquier monitor de uptime o servicio extra del workspace.
    - Avisar al equipo.
 2. **Faltan pocas horas para agotar la cuota**:
    - Pausar el cron.
-   - Correr los trabajos a mano cuando haga falta, con los endpoints de Admin que ya existen (`POST /admin/events/auto-publish` y `POST /admin/notifications/wave-openings/run`), concentrados en los días con eventos.
-   - Avisar a los Admins del club que la publicación automática queda en pausa y que publiquen a mano antes del plazo (HU-22 lo permite).
+   - Correr el aviso de oleadas a mano cuando haga falta, con el endpoint de Admin que ya existe (`POST /admin/notifications/wave-openings/run`), concentrado en los días con eventos.
 3. **Render suspendió el servicio, o Neon la base**:
    - Decidir entre esperar al mes siguiente o pasar temporalmente a un plan pago: Render Starter (USD 7/mes, sin suspensión por inactividad) o el plan por uso de Neon.
    - Si hay un partido o una apertura de olas cerca, conviene pasar a pago al menos ese mes. No duplicar servicios ni workspaces para estirar la cuota: va contra los términos de uso.
    - Comunicar la caída a los Admins del club con una estimación de regreso.
 4. **Al volver el servicio**:
-   - Correr los trabajos a mano una vez.
+   - Correr el aviso de oleadas a mano una vez.
    - Para no perder avisos de olas que abrieron durante la caída, subir temporalmente `wave_notification_catchup_minutes` a lo que duró la caída, correr el aviso de oleadas y volverlo a 60.
-   - Revisar en el panel de Admin los eventos omitidos por la publicación automática y publicarlos a mano si todavía corresponde.
+   - Los eventos pendientes cuyo plazo venció durante la caída quedan `expired` (decisión 65); avisar a los Admins para que el club los reenvíe con un `id_externo` nuevo si todavía hay 48 horas de antelación.
    - Registrar el incidente y la causa en este documento.
 
 ### Criterio de salida del plan gratuito
@@ -142,7 +140,6 @@ Pasar al plan pago de Render (y, si hace falta, de Neon) cuando se cumpla cualqu
 
 ## 6. Decisiones pendientes
 
-- [ ] Aprobar el margen de la publicación automática (P1.1) y actualizar HU-22 SC-001.
 - [ ] Elegir el proveedor del cron (cron-job.org o GitHub Actions) y quién es el dueño de la cuenta.
 - [ ] Implementar `POST /internal/jobs/run` con `JOBS_TOKEN` (P2) y, opcionalmente, el despertar oportunista (P4).
-- [ ] Al cerrar estas brechas, borrar las filas correspondientes de `docs/brechas-codigo.md`.
+- [ ] Al cerrar esta brecha, borrar las filas correspondientes de `docs/brechas-codigo.md`.
