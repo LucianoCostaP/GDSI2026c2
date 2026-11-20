@@ -199,7 +199,6 @@ def clean_club_data() -> None:
     """
     memory_repository.tabla_eventos_pendientes.clear()
     memory_repository.tabla_eventos_visibles.clear()
-    memory_repository.tabla_eventos_cambios_pendientes.clear()
     if _is_postgres_available():
         try:
             with engine.begin() as conn:
@@ -376,3 +375,30 @@ def member_token(client: TestClient, outbox: Outbox, member: Member) -> str:
 
 def bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+INACTIVE_TYPE = "event_rescheduled"
+
+
+@pytest.fixture
+def inactive_type(monkeypatch: pytest.MonkeyPatch) -> str:
+    """Marca `INACTIVE_TYPE` como inactivo (notificaciones §2) y devuelve su clave.
+
+    Desde HU-23 el catálogo no trae ningún tipo inactivo, pero el mecanismo sigue (lo usará
+    el próximo tipo que se defina antes de generarse): `notify` no lo genera y la bandeja no
+    lo muestra.
+    """
+    from dataclasses import replace
+
+    from app.notifications import notify as notify_module
+    from app.services import notification_service
+
+    by_key = dict(notify_module.BY_KEY)
+    by_key[INACTIVE_TYPE] = replace(by_key[INACTIVE_TYPE], active=False)
+    monkeypatch.setattr(notify_module, "BY_KEY", by_key)
+    monkeypatch.setattr(
+        notification_service,
+        "ACTIVE_TYPES",
+        tuple(t for t in notification_service.ACTIVE_TYPES if t != INACTIVE_TYPE),
+    )
+    return INACTIVE_TYPE

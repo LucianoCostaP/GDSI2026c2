@@ -10,7 +10,7 @@ from collections import defaultdict
 from collections.abc import Collection
 from datetime import date, datetime, time
 
-from sqlalchemy import exists, select
+from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session
 
 from ..core.date_utils import BUENOS_AIRES_TZ, a_hora_buenos_aires
@@ -58,6 +58,10 @@ def load_loaded_matches(
             EventoVisibleDB.club_id == club_id,
             EventoVisibleDB.tipo == TipoEvento.PARTIDO.value,
             EventoVisibleDB.clase.is_not(None),
+            or_(
+                EventoVisibleDB.estado.is_(None),
+                EventoVisibleDB.estado.notin_(["withdrawn", "retirado"]),
+            ),
             EventoVisibleDB.fecha_hora >= window_from,
             EventoVisibleDB.fecha_hora <= until,
             attendance_loaded,
@@ -122,6 +126,10 @@ def load_institutional_events_by_dni(
             AsistenciaDB.club_id == club_id,
             EventoVisibleDB.tipo == TipoEvento.INSTITUCIONAL.value,
             EventoVisibleDB.puntos.is_not(None),
+            or_(
+                EventoVisibleDB.estado.is_(None),
+                EventoVisibleDB.estado.notin_(["withdrawn", "retirado"]),
+            ),
             EventoVisibleDB.fecha_hora >= window_from,
             EventoVisibleDB.fecha_hora <= until,
         )

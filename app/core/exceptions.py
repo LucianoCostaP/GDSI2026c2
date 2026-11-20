@@ -1,4 +1,21 @@
-from fastapi import status
+from fastapi import HTTPException, status
+
+# HU-23B US5 escenario 7: un evento retirado no acepta nada más del club.
+EVENT_WITHDRAWN_MESSAGE = "El evento fue retirado y no acepta cambios ni asistencias."
+
+
+def event_withdrawn_error() -> HTTPException:
+    """422 `EVENT_WITHDRAWN` con la forma de error del contrato del club."""
+    return HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail={
+            "error": {
+                "code": "EVENT_WITHDRAWN",
+                "message": EVENT_WITHDRAWN_MESSAGE,
+                "field": "id_externo",
+            }
+        },
+    )
 
 
 class PasioDe10Exception(Exception):
@@ -17,12 +34,12 @@ class PasioDe10Exception(Exception):
 
 
 class AntelacionInsuficienteError(PasioDe10Exception):
-    """422: La antelación del evento tipo Partido es inferior a 48 horas."""
+    """422: La antelación del evento tipo Partido o Institucional es inferior a 48 horas."""
 
     def __init__(
         self, message: str = "No cumple con la antelación mínima de 48 horas."
     ):
-        super().__init__(message, status_code=422, code="UNPROCESSABLE_ENTITY")
+        super().__init__(message, status_code=422, code="INSUFFICIENT_LEAD")
 
 
 class EventoFinalizadoError(PasioDe10Exception):

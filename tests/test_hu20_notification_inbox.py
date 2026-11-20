@@ -692,8 +692,9 @@ def test_la_lectura_queda_guardada_y_baja_el_contador(
     ("type", "reference"),
     [
         ("event_published", {"event_id": "evt-1"}),
-        # `event_rescheduled` lleva al evento igual que `event_published`, pero está inactivo
-        # hasta HU-23 y no se puede abrir (ver la sección del catálogo).
+        ("event_rescheduled", {"event_id": "evt-2"}),
+        ("event_withdrawn", {"event_id": "evt-4"}),
+        ("wave_rescheduled", {"event_id": "evt-5"}),
         ("wave_opened", {"event_id": "evt-3"}),
         ("ranking_completed", {"ranking_id": 42}),
     ],
@@ -1230,20 +1231,44 @@ def test_marcar_como_leida_es_solo_para_socios(
 # --- Catálogo: un tipo inactivo no aparece en ningún lado (notificaciones §2) ----------------
 
 
-def test_el_catalogo_trae_los_cuatro_tipos_con_event_rescheduled_inactivo() -> None:
+def test_el_catalogo_trae_siete_tipos_activos() -> None:
+    """HU-23B (decisión 62): el retiro es definitivo, así que `event_restored` queda
+    inactivo y no se muestra. La confirmación del cronograma avisa (decisión 63)."""
     assert [(t.key, t.active) for t in CATALOG] == [
         ("event_published", True),
-        ("event_rescheduled", False),
+        ("event_rescheduled", True),
+        ("event_withdrawn", True),
+        ("wave_schedule_confirmed", True),
+        ("wave_rescheduled", True),
         ("wave_opened", True),
         ("ranking_completed", True),
+        ("event_restored", False),
     ]
-    assert ACTIVE_TYPES == ("event_published", "wave_opened", "ranking_completed")
+    assert ACTIVE_TYPES == (
+        "event_published",
+        "event_rescheduled",
+        "event_withdrawn",
+        "wave_schedule_confirmed",
+        "wave_rescheduled",
+        "wave_opened",
+        "ranking_completed",
+    )
 
 
 def test_el_catalogo_tiene_los_nombres_y_textos_del_spec() -> None:
     assert {t.key: (t.name, t.title) for t in CATALOG} == {
         "event_published": ("Nuevo evento publicado", "Nuevo evento publicado"),
         "event_rescheduled": ("Evento reprogramado", "Evento reprogramado"),
+        "event_withdrawn": ("Evento suspendido", "Evento suspendido"),
+        "event_restored": ("Evento restaurado", "Evento restaurado"),
+        "wave_schedule_confirmed": (
+            "Cronograma de reserva",
+            "Ya tenés tu turno de reserva",
+        ),
+        "wave_rescheduled": (
+            "Turno de reserva reprogramado",
+            "Tu turno de reserva cambió",
+        ),
         "wave_opened": (
             "Turno de reserva habilitado",
             "Tu turno de reserva está habilitado",
@@ -1256,21 +1281,43 @@ def test_el_catalogo_tiene_los_nombres_y_textos_del_spec() -> None:
         "Ya podés reservar para Fecha 12 vs. Rival. "
         "Tu acceso está habilitado hasta el 07/11/2026 a las 18:00."
     )
-
-
-def inactive_and_active(db: Session, user: User) -> tuple[Notification, Notification]:
-    hidden = notify(
-        db, user, created_at=at("2026-11-05T13:00:00Z"), type="event_rescheduled"
+    assert BY_KEY["event_withdrawn"].message.format(
+        titulo="Fecha 12 vs. Rival", fecha="07/11/2026", hora="18:00"
+    ) == (
+        "Fecha 12 vs. Rival, del 07/11/2026 a las 18:00, se suspendió. "
+        "Si compraste entradas, comunicate con el club."
     )
+    assert BY_KEY["wave_schedule_confirmed"].message.format(
+        titulo="Fecha 12 vs. Rival", fecha="07/11/2026", hora="15:00"
+    ) == (
+        "Ya está el cronograma de reservas para Fecha 12 vs. Rival. "
+        "Tu turno se habilita el 07/11/2026 a las 15:00."
+    )
+    assert BY_KEY["wave_rescheduled"].message.format(
+        titulo="Fecha 12 vs. Rival", fecha="07/11/2026", hora="15:00"
+    ) == (
+        "Tu turno de reserva para Fecha 12 vs. Rival cambió: se habilita el 07/11/2026 "
+        "a las 15:00."
+    )
+
+
+def inactive_and_active(
+    db: Session, user: User, inactive_type: str
+) -> tuple[Notification, Notification]:
+    hidden = notify(db, user, created_at=at("2026-11-05T13:00:00Z"), type=inactive_type)
     shown = notify(db, user, created_at=at("2026-11-04T13:00:00Z"))
     return hidden, shown
 
 
 def test_un_tipo_inactivo_no_aparece_en_la_bandeja_ni_en_sus_cuentas(
-    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+    client: TestClient,
+    db: Session,
+    outbox: Outbox,
+    make_member: MakeMember,
+    inactive_type: str,
 ) -> None:
     member = make_member(activated=True)
-    _, shown = inactive_and_active(db, account_of(db, member))
+    _, shown = inactive_and_active(db, account_of(db, member), inactive_type)
 
     body = client.get(INBOX, headers=headers(client, outbox, member)).json()
 
@@ -1279,10 +1326,14 @@ def test_un_tipo_inactivo_no_aparece_en_la_bandeja_ni_en_sus_cuentas(
 
 
 def test_un_tipo_inactivo_no_suma_al_contador(
-    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+    client: TestClient,
+    db: Session,
+    outbox: Outbox,
+    make_member: MakeMember,
+    inactive_type: str,
 ) -> None:
     member = make_member(activated=True)
-    inactive_and_active(db, account_of(db, member))
+    inactive_and_active(db, account_of(db, member), inactive_type)
 
     response = client.get(UNREAD_COUNT, headers=headers(client, outbox, member))
 
@@ -1290,10 +1341,14 @@ def test_un_tipo_inactivo_no_suma_al_contador(
 
 
 def test_una_notificacion_de_tipo_inactivo_no_se_encuentra_al_marcarla(
-    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+    client: TestClient,
+    db: Session,
+    outbox: Outbox,
+    make_member: MakeMember,
+    inactive_type: str,
 ) -> None:
     member = make_member(activated=True)
-    hidden, _ = inactive_and_active(db, account_of(db, member))
+    hidden, _ = inactive_and_active(db, account_of(db, member), inactive_type)
 
     response = read(client, headers(client, outbox, member), hidden)
 
@@ -1301,10 +1356,14 @@ def test_una_notificacion_de_tipo_inactivo_no_se_encuentra_al_marcarla(
 
 
 def test_marcar_todas_no_cuenta_ni_toca_las_de_tipo_inactivo(
-    client: TestClient, db: Session, outbox: Outbox, make_member: MakeMember
+    client: TestClient,
+    db: Session,
+    outbox: Outbox,
+    make_member: MakeMember,
+    inactive_type: str,
 ) -> None:
     member = make_member(activated=True)
-    hidden, _ = inactive_and_active(db, account_of(db, member))
+    hidden, _ = inactive_and_active(db, account_of(db, member), inactive_type)
 
     response = client.post(READ_ALL, headers=headers(client, outbox, member))
 

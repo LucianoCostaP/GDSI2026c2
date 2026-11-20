@@ -6,13 +6,16 @@ Escenario 2: `wave_opened` cuando llega la hora de inicio de una ola de un crono
 Escenarios 3 y 4: cronogramas que no avisan y ventana de recuperación.
 Escenarios 5 y 6: `ranking_completed` al completar el ranking (HU-25), nada si falla.
 Escenario 7: un evento institucional se avisa como un Partido y no tiene `wave_opened`.
-Escenario 8: `event_rescheduled` no se genera hasta HU-23.
+Escenario 8: `event_rescheduled` solo lo genera la reprogramación de HU-23B (se prueba en
+`tests/test_hu23b_reschedule.py` y `tests/test_hu23b_wave_notifications.py`); ningún otro
+disparador.
 Escenario 9: sin cuenta activada o dado de baja al generar, el Socio no recibe nada.
 
 Las notificaciones se ven por la bandeja de HU-20, que es lo que recibe el Socio.
 """
 
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -314,13 +317,13 @@ def test_notify_nunca_le_tira_el_error_a_quien_lo_llama(
 
 
 def test_notify_no_genera_un_tipo_inactivo(
-    db: Session, make_member: MakeMember
+    db: Session, make_member: MakeMember, inactive_type: str
 ) -> None:
     user = account_of(db, make_member(activated=True))
 
     created = notify(
         db,
-        "event_rescheduled",
+        inactive_type,
         "event:x:rescheduled:1",
         [user.id],
         club_id=BOCA_ID,
@@ -765,16 +768,21 @@ def test_un_evento_institucional_no_tiene_avisos_de_ola(club: Club) -> None:
     assert institucional.id_interno not in references
 
 
-# === Escenario 8: `event_rescheduled` antes de HU-23 =========================================
+# === Escenario 8: `event_rescheduled` ======================================================
 #
-# Que el tipo está inactivo y no aparece en la bandeja ni en el contador ya lo prueba HU-20
-# (`test_el_catalogo_trae_los_cuatro_tipos_con_event_rescheduled_inactivo` y siguientes), y que
-# `notify` no lo genera, `test_notify_no_genera_un_tipo_inactivo`. Que no se le ofrece en la
-# pantalla de preferencias se prueba con la user story 1 de HU-19.
+# Desde HU-23 el tipo está activo y lo genera la aprobación de un cambio (tests de HU-23). Que un
+# tipo inactivo no se genera ni aparece en la bandeja lo siguen probando
+# `test_notify_no_genera_un_tipo_inactivo` y los de inactivos de HU-20, con `inactive_type`.
 
 
-def test_ningun_disparador_genera_event_rescheduled(club: Club) -> None:
-    """Publicar, abrir las olas y completar el ranking: nada genera `event_rescheduled`."""
+# `event_restored` queda inactivo con HU-23B (decisión 62): no lo genera nadie.
+HU23_TYPES = ("event_rescheduled", "event_withdrawn", "event_restored")
+HU23B_ACTIVE_TYPES = ("event_rescheduled", "event_withdrawn")
+
+
+def test_ningun_disparador_genera_los_tipos_de_hu23(club: Club) -> None:
+    """Publicar, abrir las olas y completar el ranking: nada genera los tipos de HU-23
+    (decisión 61)."""
     club.ready()
     club.member_at(1)
     generators.event_published(club.db, club.event.id_interno)
@@ -782,8 +790,11 @@ def test_ningun_disparador_genera_event_rescheduled(club: Club) -> None:
         generators.open_waves(club.db, now=club.wave_start(order) + MINUTE)
     generators.ranking_completed(club.db, club.ranking.id)
 
+    assert notifications_count(club.db, type="event_published") > 0
     assert notifications_count(club.db, type="wave_opened") > 0
-    assert notifications_count(club.db, type="event_rescheduled") == 0
+    assert notifications_count(club.db, type="ranking_completed") > 0
+    for type in HU23_TYPES:
+        assert notifications_count(club.db, type=type) == 0, type
 
 
 # === Escenario 9: sin cuenta activada o dado de baja =========================================
@@ -862,3 +873,49 @@ def test_un_socio_del_ranking_dado_de_baja_no_recibe_el_aviso(club: Club) -> Non
     assert created == 1
     assert [i["type"] for i in inbox_with(club.client, activo)] == ["ranking_completed"]
     assert inbox_with(club.client, de_baja) == []
+
+
+# --- Escenario 9 con los tipos de HU-23 -------------------------------------------------------
+
+
+def hu23_generator(type: str) -> Callable[[Session, str], int]:
+    """El generador de HU-23 de `type`, como lo llama el router después del commit."""
+    generator: Callable[[Session, str], int] = {
+        "event_rescheduled": lambda db, event_id: generators.event_rescheduled(
+            db, event_id, "c-1"
+        ),
+        "event_withdrawn": lambda db, event_id: generators.event_withdrawn(
+            db, event_id
+        ),
+    }[type]
+    return generator
+
+
+@pytest.mark.parametrize("type", HU23B_ACTIVE_TYPES)
+def test_los_tipos_de_hu23_solo_llegan_a_los_socios_activados_y_de_alta_del_club(
+    client: TestClient,
+    db: Session,
+    make_member: MakeMember,
+    make_admin: MakeAdmin,
+    admin_headers: dict[str, str],
+    type: str,
+) -> None:
+    """Como `event_published`: cada socio del club con cuenta activada, salvo el dado de baja;
+    nada para una cuenta sin activar, otro club ni un Admin (notificaciones §2)."""
+    activo, de_baja = make_socio(db), make_socio(db)
+    activo_user, de_baja_user = account_for(db, activo), account_for(db, de_baja)
+    pending = make_member(activated=False)
+    river = account_of(db, make_member(activated=True, club_id=RIVER_ID))
+    admin = make_admin(BOCA_ID)
+    event_id = pending_event(db)
+    assert publish(client, admin_headers, event_id).status_code == 200
+    dar_de_baja(db, de_baja)
+
+    created = hu23_generator(type)(db, event_id)
+
+    assert created == 1
+    assert notifications_count(db, user_id=activo_user.id, type=type) == 1
+    assert notifications_count(db, user_id=de_baja_user.id, type=type) == 0
+    assert notifications_count(db, user_id=river.id) == 0
+    assert notifications_count(db, user_id=admin.id) == 0
+    assert db.scalar(select(User).where(User.member_id == pending.member_id)) is None

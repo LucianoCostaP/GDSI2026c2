@@ -25,13 +25,16 @@ from .routers import (
     admin_notifications,
     admin_participacion,
     admin_ranking,
+    admin_reports,
     admin_rules_simulation,
     admin_segmentation,
     admin_simulator,
     admin_wave_schedule,
     auth,
+    debug_inbox,
     eventos,
     member_auth,
+    member_club,
     member_events,
     member_notifications,
     member_scoring,
@@ -128,14 +131,17 @@ app.include_router(admin_events.router)
 app.include_router(admin_formulas.router)
 app.include_router(admin_participacion.router)
 app.include_router(admin_ranking.router)
+app.include_router(admin_reports.router)
 app.include_router(admin_rules_simulation.router)
 app.include_router(admin_segmentation.router)
 app.include_router(admin_simulator.router)
 app.include_router(admin_wave_schedule.router)
 app.include_router(member_events.router)
 app.include_router(member_scoring.router)
+app.include_router(member_club.router)
 app.include_router(member_notifications.router)
 app.include_router(admin_notifications.router)
+app.include_router(debug_inbox.router)
 
 # Rutas de API unificada de clubes (HU-21, HU-22, HU-43, HU-24)
 app.include_router(eventos.router, prefix=settings.api_v1_prefix)

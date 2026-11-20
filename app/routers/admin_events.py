@@ -5,19 +5,33 @@ from fastapi import APIRouter, Depends, Header, Query, Response, status
 from sqlalchemy.orm import Session
 
 from ..audit import record
-from ..auth import CurrentAdmin
+from ..auth import CurrentAdmin, CurrentAdminClub
 from ..config import settings
 from ..db import get_db
+from ..models.enums import TipoEvento
 from ..notifications import generators
 from ..repositories.base import EventoRepository
 from ..repositories.factory import get_evento_repository
 from ..schemas.eventos import (
     AutoPublishResponse,
     ClaseInfoResponse,
+    EventoDescarteRequest,
+    EventoDescarteResponse,
     EventoPendientePublicacionResponse,
+    MovedWaveOut,
     PublicarEventoRequest,
     PublicarEventoResponse,
+    PublishedEventOut,
+    PublishedScheduleOut,
+    RescheduleImpactOut,
+    RescheduleNotificationsOut,
+    RescheduleOut,
+    ReschedulePreviewRequest,
+    RescheduleRequest,
+    WithdrawOut,
+    WithdrawRequest,
 )
+from ..services import published_events_service
 from ..services.evento_service import EventoService
 
 router = APIRouter(tags=["Gestión y Publicación de Eventos (Admin - HU-22)"])
@@ -224,4 +238,253 @@ def ejecutar_publicacion_automatica(
     for publicado in res.detalle:
         generators.event_published(db, publicado.id_interno)
 
+    return res
+
+
+# ==============================================================================
+# HU-23B: REPROGRAMACIÓN Y RETIRO DE EVENTOS PUBLICADOS; DESCARTE DE PENDIENTES (HU-21)
+# ==============================================================================
+
+
+@router.get(
+    "/admin/events/published",
+    response_model=list[PublishedEventOut],
+    summary="Eventos publicados que todavía no empezaron (HU-23B)",
+    description=(
+        "Eventos publicados del club del Admin cuyo inicio no pasó, el más cercano "
+        "primero, con su cronograma de olas si lo tienen. El club sale de la cuenta del "
+        "Admin (decisión 34): no se acepta `club_id`."
+    ),
+)
+@router.get(
+    "/api/admin/events/published",
+    response_model=list[PublishedEventOut],
+    include_in_schema=False,
+)
+@router.get(
+    "/api/v1/admin/events/published",
+    response_model=list[PublishedEventOut],
+    include_in_schema=False,
+)
+def listar_eventos_publicados_admin(
+    club_id: CurrentAdminClub,
+    db: Session = Depends(get_db),
+) -> list[PublishedEventOut]:
+    return [
+        _published_out(item)
+        for item in published_events_service.list_upcoming(db, club_id)
+    ]
+
+
+def _published_out(item: published_events_service.PublishedEvent) -> PublishedEventOut:
+    return PublishedEventOut(
+        id_interno=item.event.id_interno,
+        id_externo=item.event.id_externo,
+        titulo=item.event.titulo,
+        tipo=TipoEvento(item.event.tipo),
+        fecha_hora=item.event.fecha_hora,
+        lugar=item.event.lugar,
+        descripcion=item.event.descripcion,
+        clase=item.event.clase,
+        puntos=item.event.puntos,
+        cancelado_por_el_club=item.event.cancelado_por_el_club,
+        version=item.event.version,
+        schedule=(
+            PublishedScheduleOut(
+                status=item.schedule.status.value,
+                opening_at=item.schedule.opening_at,
+                closing_at=item.schedule.effective_closing,
+                merged_into_order=item.schedule.merged_into_order,
+                adjusted=item.schedule.effective_closing_at is not None,
+            )
+            if item.schedule is not None
+            else None
+        ),
+    )
+
+
+def _impact_out(plan: published_events_service.ReschedulePlan) -> RescheduleImpactOut:
+    impact = plan.impact
+    return RescheduleImpactOut(
+        previous_fecha_hora=plan.previous_start,
+        new_fecha_hora=plan.new_start,
+        schedule_effect=impact.effect.value,
+        previous_closing_at=impact.previous_closing,
+        new_closing_at=impact.new_closing,
+        merged_into_order=impact.merged_into_order,
+        moved_waves=[
+            MovedWaveOut(order=w.order, socios=w.socios) for w in plan.moved_waves
+        ],
+        target_wave_starts_at=plan.target_starts_at,
+        target_wave_open=impact.target_open,
+        notifications=RescheduleNotificationsOut(
+            event_rescheduled=plan.event_rescheduled,
+            wave_rescheduled=plan.wave_rescheduled,
+            wave_opened=plan.wave_opened,
+        ),
+    )
+
+
+@router.post(
+    "/admin/events/{event_id}/reschedule/preview",
+    response_model=RescheduleImpactOut,
+    summary="Vista previa de una reprogramación (HU-23B)",
+    description=(
+        "Valida la fecha y hora nueva como la reprogramación y devuelve qué le pasaría al "
+        "cronograma de olas, sin cambiar nada. El club sale de la cuenta del Admin."
+    ),
+)
+@router.post(
+    "/api/admin/events/{event_id}/reschedule/preview",
+    response_model=RescheduleImpactOut,
+    include_in_schema=False,
+)
+@router.post(
+    "/api/v1/admin/events/{event_id}/reschedule/preview",
+    response_model=RescheduleImpactOut,
+    include_in_schema=False,
+)
+def previsualizar_reprogramacion(
+    event_id: str,
+    body: ReschedulePreviewRequest,
+    club_id: CurrentAdminClub,
+    db: Session = Depends(get_db),
+) -> RescheduleImpactOut:
+    return _impact_out(
+        published_events_service.preview(
+            db,
+            club_id,
+            event_id,
+            body.fecha_hora,
+            other_fields=(body.model_extra or {}).keys(),
+        )
+    )
+
+
+@router.post(
+    "/admin/events/{event_id}/reschedule",
+    response_model=RescheduleOut,
+    summary="Reprogramar la fecha y hora de un evento publicado (HU-23B)",
+    description=(
+        "Cambia solo la fecha y la hora: el evento sigue publicado con su clase o puntos "
+        "y los datos del club, y el cronograma de olas se ajusta como en la vista previa. "
+        "Otro campo en el cuerpo responde `FIELD_NOT_EDITABLE`; un formato inválido, "
+        "`INVALID_DATETIME`; la misma fecha, `NO_CHANGES`; una fecha que no es futura, "
+        "`START_NOT_IN_FUTURE`; una `expected_version` vieja, `EVENT_CHANGED`. Después de "
+        "guardar avisa `event_rescheduled` a los socios y, a los de las olas sumadas, "
+        "`wave_rescheduled` (o `wave_opened` si la ola de destino ya abrió). El club sale "
+        "de la cuenta del Admin (decisión 34)."
+    ),
+)
+@router.post(
+    "/api/admin/events/{event_id}/reschedule",
+    response_model=RescheduleOut,
+    include_in_schema=False,
+)
+@router.post(
+    "/api/v1/admin/events/{event_id}/reschedule",
+    response_model=RescheduleOut,
+    include_in_schema=False,
+)
+def reprogramar_evento(
+    event_id: str,
+    body: RescheduleRequest,
+    admin: CurrentAdmin,
+    club_id: CurrentAdminClub,
+    db: Session = Depends(get_db),
+) -> RescheduleOut:
+    done = published_events_service.reschedule(
+        db,
+        admin,
+        club_id,
+        event_id,
+        body.fecha_hora,
+        expected_version=body.expected_version,
+        expected_schedule_effect=body.expected_schedule_effect,
+        expected_merged_into_order=body.expected_merged_into_order,
+        other_fields=(body.model_extra or {}).keys(),
+    )
+    out = RescheduleOut(
+        **_published_out(done.published).model_dump(),
+        id_reprogramacion=str(done.reprogramming_id),
+        impact=_impact_out(done.plan),
+    )
+    # Escenario 10 y US4: después del commit, sin poder deshacer la reprogramación (US4
+    # escenario 7).
+    published_events_service.notify_rescheduled(db, done)
+    return out
+
+
+@router.post(
+    "/admin/events/{event_id}/withdraw",
+    response_model=WithdrawOut,
+    summary="Retirar un evento publicado (HU-23B)",
+    description=(
+        "Retira para siempre un evento publicado que no empezó: pasa a `withdrawn`, deja de "
+        "verse para los socios y la administración, y se borran su segmentación y su "
+        "cronograma de olas. Pide `confirmed: true` (`CONFIRMATION_REQUIRED`) y la "
+        "`expected_version` del listado (`EVENT_CHANGED`). Después de guardar avisa "
+        "`event_withdrawn` a los socios. El club sale de la cuenta del Admin (decisión 34)."
+    ),
+)
+@router.post(
+    "/api/admin/events/{event_id}/withdraw",
+    response_model=WithdrawOut,
+    include_in_schema=False,
+)
+@router.post(
+    "/api/v1/admin/events/{event_id}/withdraw",
+    response_model=WithdrawOut,
+    include_in_schema=False,
+)
+def retirar_evento(
+    event_id: str,
+    body: WithdrawRequest,
+    admin: CurrentAdmin,
+    club_id: CurrentAdminClub,
+    db: Session = Depends(get_db),
+) -> WithdrawOut:
+    done = published_events_service.withdraw(
+        db,
+        admin,
+        club_id,
+        event_id,
+        confirmed=body.confirmed,
+        expected_version=body.expected_version,
+    )
+    # Escenarios 5 y 11: después del commit, sin poder deshacer el retiro.
+    published_events_service.notify_withdrawn(db, done)
+    return WithdrawOut(
+        id_interno=done.event_id,
+        segmentation_deleted=done.segmentation_deleted,
+        schedule_deleted=done.schedule_deleted,
+    )
+
+
+@router.post(
+    "/admin/events/{id_externo_o_interno}/discard",
+    response_model=EventoDescarteResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Descartar un evento pendiente (HU-21)",
+    description=(
+        "Pasa un evento pendiente a 'descartado': nunca se publica ni lo ven los socios. "
+        "El motivo es opcional. Un publicado se retira con /withdraw (HU-23B)."
+    ),
+)
+def descartar_evento(
+    id_externo_o_interno: str,
+    admin: CurrentAdmin,
+    club_id: CurrentAdminClub,
+    db: Annotated[Session, Depends(get_db)],
+    service: EventoService = Depends(get_evento_service),
+    payload: EventoDescarteRequest | None = None,
+) -> EventoDescarteResponse:
+    res = service.descartar_evento_pendiente(
+        db=db,
+        club_id=str(club_id),
+        id_externo_o_interno=id_externo_o_interno,
+        admin_id=admin.id,
+        motivo=payload.motivo if payload else None,
+    )
+    db.commit()
     return res

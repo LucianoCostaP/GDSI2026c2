@@ -28,7 +28,12 @@ from ..models import (
     WaveSegmentation,
 )
 from ..models.auth import utcnow
-from ..scoring.wave_schedule import WaveState, schedule_waves, wave_state
+from ..scoring.wave_schedule import (
+    ScheduledWave,
+    WaveState,
+    schedule_waves,
+    wave_state,
+)
 from ..scoring.waves import build_waves
 from .notify import notify
 
@@ -63,34 +68,74 @@ def _club_members(db: Session, club_id: uuid.UUID) -> list[int]:
     )
 
 
+def club_member_ids(db: Session, club_id: uuid.UUID) -> list[int]:
+    """Los destinatarios de una notificación de evento del club (para contarlos antes de
+    generarla, como la vista previa de una reprogramación de HU-23B)."""
+    return _club_members(db, club_id)
+
+
+def _event_to_club(
+    db: Session,
+    type: str,
+    event_id: str,
+    occurrence: str,
+    *,
+    params: dict[str, str] | None = None,
+    now: datetime | None = None,
+) -> int:
+    """`type` sobre el evento `event_id` para todos los socios activados de su club, con la
+    clave `event:{event_id}:{occurrence}`. Lee el evento ya confirmado, así que el texto lleva
+    su título, fecha y hora vigentes."""
+    try:
+        event = db.get(EventoVisibleDB, event_id)
+        if event is None:
+            logger.warning("%s: no existe el evento publicado %s", type, event_id)
+            return 0
+        recipients = _club_members(db, event.club_id)
+        club_id, titulo, when = event.club_id, event.titulo, _when(event.fecha_hora)
+    except Exception:
+        db.rollback()
+        logger.exception("%s: no se pudieron leer los destinatarios", type)
+        return 0
+    return notify(
+        db,
+        type,
+        f"event:{event_id}:{occurrence}",
+        recipients,
+        club_id=club_id,
+        reference={"event_id": event_id},
+        params={"titulo": titulo, **when, **(params or {})},
+        now=now,
+    )
+
+
 def event_published(db: Session, event_id: str, *, now: datetime | None = None) -> int:
     """`event_published` para todos los socios activados del club del evento (escenario 1).
 
     Se llama al final de la publicación de HU-22, manual o automática, después del commit.
     Devuelve cuántas notificaciones creó.
     """
-    try:
-        event = db.get(EventoVisibleDB, event_id)
-        if event is None:
-            logger.warning(
-                "event_published: no existe el evento publicado %s", event_id
-            )
-            return 0
-        recipients = _club_members(db, event.club_id)
-    except Exception:
-        db.rollback()
-        logger.exception("event_published: no se pudieron leer los destinatarios")
-        return 0
-    return notify(
-        db,
-        "event_published",
-        f"event:{event.id_interno}:published",
-        recipients,
-        club_id=event.club_id,
-        reference={"event_id": event.id_interno},
-        params={"titulo": event.titulo, **_when(event.fecha_hora)},
-        now=now,
+    return _event_to_club(db, "event_published", event_id, "published", now=now)
+
+
+def event_rescheduled(
+    db: Session, event_id: str, reprogramming_id: str, *, now: datetime | None = None
+) -> int:
+    """`event_rescheduled` para todos los socios activados del club cuando el Admin reprograma
+    un evento publicado (HU-23B US2 escenario 10, US4 escenario 1; clave
+    `event:{event_id}:rescheduled:{reprogramming_id}`). El texto lleva la fecha y la hora
+    nuevas. Se llama después del commit, que nunca se deshace por esto."""
+    return _event_to_club(
+        db, "event_rescheduled", event_id, f"rescheduled:{reprogramming_id}", now=now
     )
+
+
+def event_withdrawn(db: Session, event_id: str, *, now: datetime | None = None) -> int:
+    """`event_withdrawn` para todos los socios activados del club cuando el Admin retira un
+    evento publicado (HU-23B US5 escenario 5). El texto es genérico, sin motivo, con la fecha
+    y la hora que tenía el evento al retirarse. El retiro es definitivo, así que hay una sola
+    ocurrencia por evento (`event:{event_id}:withdrawn`)."""
+    return _event_to_club(db, "event_withdrawn", event_id, "withdrawn", now=now)
 
 
 def _ranked_members(
@@ -117,6 +162,142 @@ def _ranked_members(
     if positions is not None:
         query = query.where(RankingEntry.position.between(*positions))
     return list(db.scalars(query))
+
+
+def ranked_member_ids(
+    db: Session, ranking_id: int, club_id: uuid.UUID, positions: tuple[int, int]
+) -> list[int]:
+    """Los destinatarios de un aviso de turno entre dos posiciones del ranking (para contarlos
+    antes de generarlo, como la vista previa de una reprogramación de HU-23B)."""
+    return _ranked_members(db, ranking_id, club_id, positions)
+
+
+def waves_moved(
+    db: Session,
+    event_id: str,
+    reprogramming_id: str,
+    *,
+    schedule_id: int,
+    joined_order: int,
+    first_moved_order: int,
+    joined_open: bool,
+    now: datetime | None = None,
+) -> int:
+    """El aviso a los socios de las olas que una reprogramación sumó a la ola `joined_order`
+    (HU-23B US4, escenarios 2 y 3). Se llama después del commit, con el cronograma ya ajustado.
+
+    Si la ola a la que se sumaron todavía no abrió, `wave_rescheduled` con su hora de inicio
+    (clave `event:{event_id}:wave-moved:{reprogramming_id}`); el trabajo de olas les avisa
+    `wave_opened` cuando llegue. Si ya abrió, `wave_opened` en el momento, con el cierre
+    nuevo y la misma clave del trabajo, que así no lo repite. Devuelve cuántas creó.
+    """
+    try:
+        schedule = db.get_one(WaveSchedule, schedule_id)
+        segmentation = db.get_one(WaveSegmentation, schedule.segmentation_id)
+        event = db.get_one(EventoVisibleDB, event_id)
+        waves = schedule_waves(
+            build_waves(segmentation.ranked_total, segmentation.percentile_step),
+            asegurar_utc(schedule.opening_at),
+            asegurar_utc(schedule.closing_at),
+            schedule.merged_into_order,
+        )
+        # Las olas movidas son las últimas: de `first_moved_order` a la N.
+        recipients = _ranked_members(
+            db,
+            segmentation.ranking_id,
+            segmentation.club_id,
+            (
+                waves[first_moved_order - 1].wave.position_from,
+                waves[-1].wave.position_to,
+            ),
+        )
+        joined_starts_at = waves[joined_order - 1].starts_at
+        closing = asegurar_utc(schedule.effective_closing)
+        titulo, club_id = event.titulo, event.club_id
+    except Exception:
+        db.rollback()
+        logger.exception("waves_moved: no se pudieron leer los destinatarios")
+        return 0
+    if joined_open:
+        return notify(
+            db,
+            "wave_opened",
+            f"event:{event_id}:wave:{joined_order}:schedule:{schedule_id}",
+            recipients,
+            club_id=club_id,
+            reference={"event_id": event_id},
+            params={"titulo": titulo, **_when(closing)},
+            now=now,
+        )
+    return notify(
+        db,
+        "wave_rescheduled",
+        f"event:{event_id}:wave-moved:{reprogramming_id}",
+        recipients,
+        club_id=club_id,
+        reference={"event_id": event_id},
+        params={"titulo": titulo, **_when(joined_starts_at)},
+        now=now,
+    )
+
+
+def schedule_confirmed(
+    db: Session, schedule_id: int, *, now: datetime | None = None
+) -> int:
+    """`wave_schedule_confirmed` para los socios de todas las olas del cronograma recién
+    confirmado (HU-19 escenario 10, decisión 63), cada uno con la hora de inicio de su ola. Se
+    llama después del commit de la confirmación (HU-37). La clave lleva el momento de la
+    confirmación: confirmar de nuevo después de regenerar avisa las horas nuevas, y reintentar
+    la misma confirmación no duplica. Devuelve cuántas creó."""
+    try:
+        schedule = db.get_one(WaveSchedule, schedule_id)
+        if (
+            schedule.status != WaveScheduleStatus.CONFIRMED
+            or schedule.confirmed_at is None
+        ):
+            return 0
+        segmentation = db.get_one(WaveSegmentation, schedule.segmentation_id)
+        event = db.get_one(EventoVisibleDB, schedule.event_id)
+        waves = schedule_waves(
+            build_waves(segmentation.ranked_total, segmentation.percentile_step),
+            asegurar_utc(schedule.opening_at),
+            asegurar_utc(schedule.closing_at),
+            schedule.merged_into_order,
+        )
+        groups = [
+            (
+                starts_at,
+                _ranked_members(
+                    db, segmentation.ranking_id, segmentation.club_id, positions
+                ),
+            )
+            for _, starts_at, positions in _wave_groups(
+                waves, schedule.merged_into_order
+            )
+        ]
+        key = (
+            f"event:{event.id_interno}:schedule:{schedule_id}:confirmed:"
+            f"{asegurar_utc(schedule.confirmed_at).isoformat()}"
+        )
+        event_id, titulo, club_id = event.id_interno, event.titulo, event.club_id
+    except Exception:
+        db.rollback()
+        logger.exception("schedule_confirmed: falló el cronograma %s", schedule_id)
+        return 0
+    # Una llamada por ola, porque cada una lleva su hora; la clave es la misma para todas.
+    return sum(
+        notify(
+            db,
+            "wave_schedule_confirmed",
+            key,
+            recipients,
+            club_id=club_id,
+            reference={"event_id": event_id},
+            params={"titulo": titulo, **_when(starts_at)},
+            now=now,
+        )
+        for starts_at, recipients in groups
+    )
 
 
 def ranking_completed(db: Session, ranking_id: int) -> int:
@@ -179,41 +360,64 @@ def open_waves(
     )
 
 
+def _wave_groups(
+    waves: list[ScheduledWave], merged_into_order: int | None
+) -> list[tuple[int, datetime, tuple[int, int]]]:
+    """Las olas que abren por separado: orden, hora de inicio y posiciones del ranking. Con
+    una fusión, la ola k incluye las posiciones de las olas k+1 a N (HU-23B US3)."""
+    groups: list[tuple[int, datetime, tuple[int, int]]] = []
+    for scheduled in waves:
+        wave = scheduled.wave
+        if merged_into_order is not None and wave.order > merged_into_order:
+            order, starts_at, (first, _) = groups[-1]
+            groups[-1] = (order, starts_at, (first, wave.position_to))
+        else:
+            groups.append(
+                (
+                    wave.order,
+                    scheduled.starts_at,
+                    (wave.position_from, wave.position_to),
+                )
+            )
+    return groups
+
+
 def _open_schedule_waves(db: Session, schedule_id: int, now: datetime) -> int:
     catchup = timedelta(minutes=settings.wave_notification_catchup_minutes)
     try:
         schedule = db.get_one(WaveSchedule, schedule_id)
         segmentation = db.get_one(WaveSegmentation, schedule.segmentation_id)
         event = db.get_one(EventoVisibleDB, schedule.event_id)
-        closing = asegurar_utc(schedule.closing_at)
+        # Abre hasta el cierre efectivo, y las olas fusionadas por una reprogramación (HU-23B)
+        # abren con la ola a la que se sumaron, con su misma clave.
+        closing = asegurar_utc(schedule.effective_closing)
         waves = schedule_waves(
             build_waves(segmentation.ranked_total, segmentation.percentile_step),
             asegurar_utc(schedule.opening_at),
-            closing,
+            asegurar_utc(schedule.closing_at),
+            schedule.merged_into_order,
         )
         opened: list[tuple[int, list[int]]] = []
-        for scheduled in waves:
-            if wave_state(scheduled.starts_at, closing, now) != WaveState.OPEN:
+        for order, starts_at, positions in _wave_groups(
+            waves, schedule.merged_into_order
+        ):
+            if wave_state(starts_at, closing, now) != WaveState.OPEN:
                 continue
-            if now - scheduled.starts_at > catchup:
+            if now - starts_at > catchup:
                 logger.info(
                     "open_waves: se saltea la ola %s del evento %s (cronograma %s): abrió "
                     "hace más de %s minutos",
-                    scheduled.wave.order,
+                    order,
                     event.id_interno,
                     schedule_id,
                     settings.wave_notification_catchup_minutes,
                 )
                 continue
-            wave = scheduled.wave
             opened.append(
                 (
-                    wave.order,
+                    order,
                     _ranked_members(
-                        db,
-                        segmentation.ranking_id,
-                        segmentation.club_id,
-                        (wave.position_from, wave.position_to),
+                        db, segmentation.ranking_id, segmentation.club_id, positions
                     ),
                 )
             )

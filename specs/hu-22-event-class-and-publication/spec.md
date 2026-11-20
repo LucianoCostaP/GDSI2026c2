@@ -38,7 +38,7 @@ As an Admin, I want to define the importance/weight of an event and publish it, 
 - **Scheduler failure**: the publication job is idempotent, runs at least every minute and retries; a missed run publishes on the next run and is flagged in the audit, unless the 48-hour lead was lost, in which case the Admin is warned on screen.
 - **Historical and discarded events** (HU-21) are not listed here.
 - **Events cancelled by the club** while pending (HU-21) are not published automatically.
-- **Club data** (date, time, venue, type) is read-only here; only the class or the points are adjusted. After publication, changes sent by the club are omitted in the MVP and reviewed through HU-23 once it exists.
+- **Club data** (date, time, venue, type) is read-only here; only the class or the points are adjusted. After publication, changes sent by the club are omitted; outside the MVP, the Admin can reprogram the date and time or withdraw the event (HU-23B), but never change its class or points.
 - **Class applies only to Partidos; points apply only to institutional/amateur events.**
 
 ## Requirements *(mandatory)*
@@ -80,3 +80,4 @@ As an Admin, I want to define the importance/weight of an event and publish it, 
 - v3.1: institutional/amateur events (elections and assemblies included) get their points when published.
 - v3.4: the base data comes from the club (HU-21); here the Admin adjusts only the class or the points.
 - v4: title and input as in the backlog; the deadline counts from the reception of the event (the club sends it); no dependency on the club at the deadline; HU-23 is outside the MVP.
+- v4.1: HU-23B replaces HU-23; after publication the Admin can reprogram the date and time or withdraw the event, never change the class or points (decision 62).

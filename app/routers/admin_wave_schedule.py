@@ -13,6 +13,8 @@ from ..auth import CurrentAdmin, CurrentAdminClub
 from ..config import settings
 from ..core.date_utils import asegurar_utc
 from ..db import get_db
+from ..models import WaveScheduleInvalidation
+from ..notifications import generators
 from ..schemas.segmentation import SegmentationEventOut
 from ..schemas.wave_schedule import (
     GenerateScheduleIn,
@@ -38,7 +40,14 @@ def _schedule_out(view: wave_schedule_service.ScheduleView) -> WaveScheduleOut:
         ),
         status=schedule.status,
         opening_at=schedule.opening_at,
-        closing_at=schedule.closing_at,
+        closing_at=schedule.effective_closing,
+        generated_closing_at=schedule.closing_at,
+        merged_into_order=schedule.merged_into_order,
+        invalidation_reason=(
+            WaveScheduleInvalidation(schedule.invalidation_reason)
+            if schedule.invalidation_reason
+            else None
+        ),
         step_seconds=step_seconds(
             asegurar_utc(schedule.opening_at),
             asegurar_utc(schedule.closing_at),
@@ -100,5 +109,9 @@ def generate_schedule(
 def confirm_schedule(
     event_id: str, admin: CurrentAdmin, club_id: CurrentAdminClub, db: Db
 ) -> WaveScheduleOut:
-    """Confirma el borrador: desde ahí lo ven los socios."""
-    return _schedule_out(wave_schedule_service.confirm(db, admin, club_id, event_id))
+    """Confirma el borrador: desde ahí lo ven los socios, y se les avisa su turno después
+    del commit (`wave_schedule_confirmed`, decisión 63)."""
+    view = wave_schedule_service.confirm(db, admin, club_id, event_id)
+    out = _schedule_out(view)
+    generators.schedule_confirmed(db, view.schedule.id)
+    return out
