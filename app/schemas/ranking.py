@@ -56,3 +56,42 @@ class ScoreBreakdownResponse(BaseModel):
     total: str | None = None
     position: int | None = None
     components: list[ScoreComponentOut] = []
+
+
+class PillarRankingRowOut(BaseModel):
+    """Una fila del top de un pilar (HU-44). Sin DNI, email ni distancia."""
+
+    position: int
+    numero_socio: str
+    nombre: str
+    # Puntos del pilar con dos decimales, iguales a los del desglose (HU-16).
+    points: str
+
+
+class PillarRankingOut(BaseModel):
+    # `attendance`, `institutional` o `seniority_age`.
+    key: str
+    name: str
+    rows: list[PillarRankingRowOut]
+    # Texto en lugar de la tabla cuando `rows` está vacío.
+    empty_message: str | None = None
+
+
+class PillarRankingSourceOut(BaseModel):
+    """La corrida de donde salen las tablas: el ranking vigente."""
+
+    id: int
+    rules_version: int
+    calculation_date: date
+    completed_at: datetime
+
+
+class PillarRankingsOut(BaseModel):
+    """Rankings por pilar del ranking vigente (HU-44, `docs/contrato-api-ranking-pilares.md`)."""
+
+    has_ranking: bool
+    message: str | None = None
+    # `true` mientras hay un cálculo en curso: las tablas siguen siendo las del último completado.
+    updating: bool = False
+    ranking: PillarRankingSourceOut | None = None
+    pillars: list[PillarRankingOut] = []

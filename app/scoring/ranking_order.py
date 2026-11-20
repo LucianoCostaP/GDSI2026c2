@@ -12,6 +12,7 @@ El total se compara a dos decimales, tal como se guarda y se muestra. Como el do
 en el club, el orden es total: nunca quedan dos socios con la misma posición.
 """
 
+import heapq
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -56,6 +57,14 @@ def assign_positions(
 ) -> list[tuple[int, RankingCandidate]]:
     """Posición (desde 1, sin saltos ni repetidos) de cada candidato, en orden de ranking."""
     ordered = sorted(candidates, key=_sort_key)
+    return list(enumerate(ordered, start=1))
+
+
+def top_positions(
+    candidates: Iterable[RankingCandidate], limit: int
+) -> list[tuple[int, RankingCandidate]]:
+    """Los primeros `limit` de `assign_positions`, sin ordenar a todos (HU-44)."""
+    ordered = heapq.nsmallest(limit, candidates, key=_sort_key)
     return list(enumerate(ordered, start=1))
 
 
